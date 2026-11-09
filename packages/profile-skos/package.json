@@ -1,0 +1,16 @@
+{
+  "name": "@ondata-extended/profile-skos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SKOS vocabulary profile with backend adapters (TemaTres first).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ondata-extended/core": "0.0.0",
+    "@ondata-extended/profile-contract": "0.0.0",
+    "zod": "^3.25.76"
+  }
+}

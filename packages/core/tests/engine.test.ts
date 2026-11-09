@@ -1,0 +1,251 @@
+/**
+ * Engine wiring, profile registration, config prefixes, instance registry and the Workers
+ * host. New code; the registration tests go through a real MCP client over an in-memory
+ * transport, so they test what a client sees.
+ */
+
+import { describe, it, expect, vi } from "vitest";
+import { z } from "zod";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { Profile } from "@ondata-extended/profile-contract";
+import {
+  createConfig,
+  createEngine,
+  createInstanceRegistry,
+  createMcpServer,
+  createTextPrompt,
+  createWorkerHandler,
+  noteTelemetry,
+  pickTelemetryFields,
+  registerProfiles,
+  validateProfiles
+} from "../src/index.js";
+
+function testProfile(over: Partial<Profile> = {}): Profile {
+  return {
+    id: "demo",
+    version: "0.0.1",
+    toolPrefix: "demo_",
+    shrinkableKeys: ["items"],
+    telemetryFields: ["q"],
+    untrustedSourceLabel: "the demo service",
+    honestUserAgent: "Demo/0.0.1",
+    tools: [
+      {
+        name: "demo_echo",
+        description: "Echo",
+        inputSchema: { q: z.string(), response_format: z.enum(["markdown", "json"]).default("markdown") },
+        handler: async (args, ctx) => {
+          ctx.telemetry.note({ echoed: args.q });
+          return args.response_format === "json" ? ctx.output.json({ q: args.q }) : ctx.output.text(`echo ${args.q}`);
+        }
+      },
+      {
+        name: "demo_fail",
+        description: "Always fails",
+        inputSchema: { response_format: z.enum(["markdown", "json"]).default("markdown") },
+        handler: async () => { throw new Error("boom"); }
+      }
+    ],
+    prompts: [
+      { name: "demo-guide", description: "Guide", referencedTools: ["demo_echo"], build: () => createTextPrompt("Call demo_echo") }
+    ],
+    describeError: (_e, tool) => (tool === "demo_fail" ? "→ Try demo_echo instead." : null),
+    ...over
+  };
+}
+
+const engine = () => createEngine({ configPrefixes: ["APP"], configSource: {}, cacheOrigin: "https://test-cache.internal" });
+
+async function connect(profiles: Profile[]) {
+  const server = createMcpServer({ name: "test", version: "0.0.0" });
+  registerProfiles(server, profiles, engine());
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "t", version: "0" });
+  await Promise.all([server.connect(a), client.connect(b)]);
+  return { server, client };
+}
+
+describe("validateProfiles", () => {
+  it("rejects a tool without the profile prefix unless it is shared", () => {
+    const p = testProfile();
+    p.tools[0] = { ...p.tools[0], name: "echo" };
+    p.prompts = [];
+    expect(() => validateProfiles([p])).toThrow('does not start with "demo_"');
+    p.tools[0] = { ...p.tools[0], shared: true };
+    expect(() => validateProfiles([p])).not.toThrow();
+  });
+
+  it("rejects the same tool name in two profiles", () => {
+    expect(() => validateProfiles([testProfile(), testProfile({ id: "other" })])).toThrow("more than one profile");
+  });
+
+  it("rejects a prompt that tells the model to call a tool that does not exist", () => {
+    const p = testProfile({
+      prompts: [{ name: "bad", description: "x", referencedTools: ["demo_missing"], build: () => createTextPrompt("x") }]
+    });
+    expect(() => validateProfiles([p])).toThrow('refers to tool "demo_missing"');
+  });
+});
+
+describe("registerProfiles through an MCP client", () => {
+  it("lists the profile's tools and prompts", async () => {
+    const { client } = await connect([testProfile()]);
+    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(["demo_echo", "demo_fail"]);
+    expect((await client.listPrompts()).prompts.map((p) => p.name)).toEqual(["demo-guide"]);
+  });
+
+  it("calls a tool and returns its markdown and JSON forms", async () => {
+    const { client } = await connect([testProfile()]);
+    const md = await client.callTool({ name: "demo_echo", arguments: { q: "hej" } });
+    expect((md.content as { text: string }[])[0].text).toBe("echo hej");
+    const js = await client.callTool({ name: "demo_echo", arguments: { q: "hej", response_format: "json" } });
+    expect(js.structuredContent).toEqual({ q: "hej" });
+  });
+
+  it("turns an uncaught error into isError with the profile's hint, in the caller's format", async () => {
+    const { client } = await connect([testProfile()]);
+    const md = await client.callTool({ name: "demo_fail", arguments: {} });
+    expect(md.isError).toBe(true);
+    expect((md.content as { text: string }[])[0].text).toBe("boom\n→ Try demo_echo instead.");
+    const js = await client.callTool({ name: "demo_fail", arguments: { response_format: "json" } });
+    expect(JSON.parse((js.content as { text: string }[])[0].text)).toEqual({ error: "boom\n→ Try demo_echo instead.", _error: true });
+  });
+
+  it("notes telemetry on the server instance that handled the call", async () => {
+    const { server, client } = await connect([testProfile()]);
+    await client.callTool({ name: "demo_echo", arguments: { q: "x" } });
+    const { takeTelemetry } = await import("../src/index.js");
+    expect(takeTelemetry(server)).toMatchObject({ echoed: "x" });
+    expect(takeTelemetry(server)).toBeNull();
+  });
+
+  it("uses the profile's untrusted-source label", () => {
+    const ctx = engine().contextFor(testProfile(), {});
+    expect(ctx.output.wrapUntrusted("hi")).toContain("untrusted content from the demo service");
+  });
+
+  it("shrinks the profile's arrays first when JSON is over the limit", () => {
+    const e = createEngine({ configPrefixes: ["APP"], configSource: { APP_CHARACTER_LIMIT: "300" }, cacheOrigin: "https://x.internal" });
+    const ctx = e.contextFor(testProfile(), {});
+    const out = ctx.output.json({ items: Array.from({ length: 50 }, (_, i) => ({ i, pad: "x".repeat(20) })) });
+    const parsed = JSON.parse(out.content[0].text);
+    expect(parsed._truncated).toBe(true);
+    expect(parsed._original_count).toBe(50);
+    expect(out.content[0].text.length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe("createConfig", () => {
+  it("reads prefixes in order and names the primary one", () => {
+    const c = createConfig({ OLD_ALLOWED_DOMAINS: "old.example", NEW_TIMEOUT_MS: "5" }, ["NEW", "OLD"]);
+    expect(c.get("ALLOWED_DOMAINS")).toBe("old.example");
+    expect(c.get("TIMEOUT_MS")).toBe("5");
+    expect(c.nameOf("ALLOWED_DOMAINS")).toBe("NEW_ALLOWED_DOMAINS");
+  });
+
+  it("prefers the first prefix and treats empty as unset", () => {
+    const c = createConfig({ NEW_X: "", OLD_X: "old", NEW_Y: "new", OLD_Y: "old" }, ["NEW", "OLD"]);
+    expect(c.get("X")).toBe("old");
+    expect(c.get("Y")).toBe("new");
+  });
+
+  it("refuses an empty or malformed prefix list", () => {
+    expect(() => createConfig({}, [])).toThrow();
+    expect(() => createConfig({}, ["bad-prefix"])).toThrow("Invalid config prefix");
+  });
+});
+
+describe("createInstanceRegistry", () => {
+  const reg = createInstanceRegistry([
+    { id: "one", baseUrl: "https://one.example/api/", aliases: ["https://ONE-old.example"], ext: { a: 1 } },
+    { id: "two", baseUrl: "https://two.example", ext: { a: 2 } }
+  ]);
+
+  it("finds by id, by URL ignoring trailing slash and host case, and by alias", () => {
+    expect(reg.find("one")?.id).toBe("one");
+    expect(reg.find("https://ONE.example/api")?.id).toBe("one");
+    expect(reg.find("https://one-old.example/")?.id).toBe("one");
+    expect(reg.find("https://three.example")).toBeUndefined();
+  });
+
+  it("finds by hostname", () => {
+    expect(reg.byHostname("TWO.example")?.ext).toEqual({ a: 2 });
+  });
+
+  it("refuses duplicate ids and malformed URLs", () => {
+    expect(() => createInstanceRegistry([{ id: "x", baseUrl: "https://a", ext: 0 }, { id: "x", baseUrl: "https://b", ext: 0 }])).toThrow("Duplicate");
+    expect(() => createInstanceRegistry([{ id: "x", baseUrl: "not a url", ext: 0 }])).toThrow();
+  });
+});
+
+describe("createWorkerHandler", () => {
+  const handler = (log = vi.fn()) => {
+    vi.spyOn(console, "log").mockImplementation(log);
+    return createWorkerHandler<Record<string, never>>({
+      buildServer: () => {
+        const s = createMcpServer({ name: "w", version: "0" });
+        registerProfiles(s, [testProfile()], engine());
+        return s;
+      },
+      health: () => ({ status: "ok", tools: 2 }),
+      logEntry: (tool, args) => pickTelemetryFields(tool, args, ["q"]),
+      extraHeaders: { "X-Test": "1" }
+    });
+  };
+  const call = (body: unknown) => new Request("https://w.example/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+    body: JSON.stringify(body)
+  });
+
+  it("answers /health, refuses GET /mcp and answers the CORS preflight", async () => {
+    const h = handler();
+    expect(await (await h.fetch(new Request("https://w.example/health"), {})).json()).toEqual({ status: "ok", tools: 2 });
+    expect((await h.fetch(new Request("https://w.example/mcp"), {})).status).toBe(405);
+    expect((await h.fetch(new Request("https://w.example/mcp", { method: "OPTIONS" }), {})).status).toBe(204);
+    expect((await h.fetch(new Request("https://w.example/nope"), {})).status).toBe(404);
+  });
+
+  it("serves a tool call statelessly and logs the allowed fields plus what the tool noted", async () => {
+    const log = vi.fn();
+    const h = handler(log);
+    const res = await h.fetch(call({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "demo_echo", arguments: { q: "x", secret: "no" } } }), {});
+    expect(res.headers.get("X-Test")).toBe("1");
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const body = await res.json() as { result: { content: { text: string }[] } };
+    expect(body.result.content[0].text).toBe("echo x");
+    const entry = JSON.parse(log.mock.calls.at(-1)![0]);
+    expect(entry).toMatchObject({ tool: "demo_echo", q: "x", echoed: "x", status: "ok" });
+    expect(entry).not.toHaveProperty("secret");
+    vi.restoreAllMocks();
+  });
+
+  it("logs an error kind for a failed call", async () => {
+    const log = vi.fn();
+    const h = handler(log);
+    await h.fetch(call({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "demo_fail", arguments: {} } }), {});
+    expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ status: "error", error_kind: "other" });
+    vi.restoreAllMocks();
+  });
+});
+
+describe("pickTelemetryFields", () => {
+  it("keeps listed fields, caps strings and serializes objects", () => {
+    expect(pickTelemetryFields("t", { q: "a".repeat(500), f: { x: 1 }, n: 3, other: 1 }, ["q", "f", "n"]))
+      .toEqual({ tool: "t", q: "a".repeat(200), f: '{"x":1}', n: 3 });
+  });
+});
+
+describe("noteTelemetry", () => {
+  it("merges notes per server instance and keeps instances apart", async () => {
+    const { takeTelemetry } = await import("../src/index.js");
+    const a = {}, b = {};
+    noteTelemetry(a, { x: 1 });
+    noteTelemetry(a, { y: 2 });
+    noteTelemetry(b, { x: 9 });
+    expect(takeTelemetry(a)).toEqual({ x: 1, y: 2 });
+    expect(takeTelemetry(b)).toEqual({ x: 9 });
+  });
+});

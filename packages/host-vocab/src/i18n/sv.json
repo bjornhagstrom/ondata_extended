@@ -1,0 +1,9 @@
+{
+  "title": "MCP-server för begreppslistor",
+  "intro": "En MCP-server för kontrollerade vokabulärer (SKOS-begreppsscheman). Anslut en MCP-klient till adressen nedan för att söka begrepp, läsa definitioner och bläddra i hierarkin.",
+  "endpoint": "MCP-adress",
+  "tools": "Verktyg",
+  "vocabularies": "Vokabulärer",
+  "status": "Status: testtjänst. Inte knuten till föreningen onData; motorn bygger på deras ckan-mcp-server (MIT).",
+  "language": "English"
+}

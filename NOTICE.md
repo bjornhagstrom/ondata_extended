@@ -1,0 +1,30 @@
+# Notices
+
+## Origin
+
+This project is derived from **ckan-mcp-server** by the onData association (Andrea Borruso and contributors),
+https://github.com/ondata/ckan-mcp-server, released under the MIT License, Copyright (c) 2025 onData association.
+The extraction was made from commit `09e8cdc` (release 0.4.138/0.4.139, November 2026).
+
+Code taken from that project keeps the MIT license and its copyright notice (see `LICENSE`). Files derived from it
+say so in their header comment, naming the original file. The security hardening in `packages/core` (SSRF guards,
+DNS pinning, redirect re-validation, size caps, parseable JSON truncation, untrusted-content handling) is the work
+of the ckan-mcp-server maintainers; the GHSA references in comments point to their advisories.
+
+The contract spike in `packages/spike-parliament` and the shared SPARQL helpers in `packages/core/src/sparql.ts`
+(read-only SELECT validation, string-literal escaping, binding flattening) and the per-host throttle are derived from
+**italianparliament-mcp** by Andrea Borruso, https://github.com/ondata/italianparliament-mcp, MIT License,
+Copyright (c) 2026 Andrea Borruso, commit `fd46810`; the files say which original they follow.
+
+This project is not affiliated with or endorsed by the onData association.
+
+## Third-party dependencies
+
+| Package | License | Copyright |
+|---|---|---|
+| @modelcontextprotocol/sdk | MIT | Copyright (c) 2024 Anthropic, PBC |
+| zod | MIT | Copyright (c) 2020 Colin McDonnell |
+| undici | MIT | Copyright (c) Matteo Collina and Undici contributors |
+| express | MIT | Copyright (c) 2009-2014 TJ Holowaychuk, 2013-2014 Roman Shtylman, 2014-2015 Douglas Christopher Wilson |
+
+Development dependencies (TypeScript, Vitest, esbuild, Wrangler) are not distributed.

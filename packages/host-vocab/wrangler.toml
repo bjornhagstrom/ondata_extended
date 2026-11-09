@@ -1,0 +1,11 @@
+# Local development only (`npx wrangler dev`). Deployment is not decided (docs/DECISIONS.md).
+name = "vocab-mcp-server"
+main = "dist/worker.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+command = "npm run build:worker"
+
+[vars]
+VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"

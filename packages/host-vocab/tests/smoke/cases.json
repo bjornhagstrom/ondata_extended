@@ -1,0 +1,15 @@
+{
+  "about": "Known-answer cases against the live test vocabulary begrepp.hagstrom.nu (recorded 2026-11-09). Each case names the concept that must come back, not how many. The vocabulary will change a little; a failure is first a question about the data, then about the code.",
+  "cases": [
+    { "name": "scheme info names the vocabulary", "tool": "vocab_scheme_info", "args": {}, "expect": { "jsonPath": "scheme.title", "equals": "Svada - termer och begrepp" } },
+    { "name": "search 'dataområde' finds concept 2", "tool": "vocab_search_concepts", "args": { "query": "dataområde" }, "expect": { "jsonPath": "concepts", "containsId": "2" } },
+    { "name": "search on an English alt label finds the Swedish concept", "tool": "vocab_search_concepts", "args": { "query": "data space participant" }, "expect": { "jsonPath": "concepts", "containsId": "4" } },
+    { "name": "concept 2 has altLabel dataspace and a definition", "tool": "vocab_get_concept", "args": { "id": "2" }, "expect": { "jsonPath": "concept.altLabels", "containsValue": "dataspace", "alsoPath": "concept.notes", "alsoContainsType": "definition" } },
+    { "name": "concept 10 by URI has broader 36", "tool": "vocab_broader", "args": { "id": "https://begrepp.hagstrom.nu/skos/10" }, "expect": { "jsonPath": "concepts", "containsId": "36" } },
+    { "name": "narrower of 36 keeps the service's alphabetical order (Dataägare, then Dataproducent; id order would put 11 second)", "tool": "vocab_narrower", "args": { "id": "36" }, "expect": { "jsonPath": "concepts", "firstId": "10", "secondId": "15" } },
+    { "name": "related of 2 includes Deltagare", "tool": "vocab_related", "args": { "id": "2" }, "expect": { "jsonPath": "concepts", "containsId": "4" } },
+    { "name": "top concepts include Stadens roller", "tool": "vocab_top_concepts", "args": {}, "expect": { "jsonPath": "concepts", "containsId": "36" } },
+    { "name": "suggest 'datas' offers Datasteward", "tool": "vocab_suggest", "args": { "prefix": "datas" }, "expect": { "jsonPath": "concepts", "containsId": "25" } },
+    { "name": "unknown concept is an error with a hint", "tool": "vocab_get_concept", "args": { "id": "99999" }, "expect": { "isError": true, "textContains": "vocab_search_concepts" } }
+  ]
+}

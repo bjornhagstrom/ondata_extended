@@ -1,0 +1,21 @@
+{
+  "name": "@ondata-extended/host-vocab",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deployment of the SKOS vocabulary profile: stdio binary, Node HTTP server, Cloudflare Worker.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "vocab-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/node.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --external:@modelcontextprotocol/sdk --external:express --external:zod --external:undici",
+    "build:worker": "esbuild src/worker.ts --bundle --platform=browser --format=esm --target=es2022 --minify --outfile=dist/worker.js",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ondata-extended/core": "0.0.0",
+    "@ondata-extended/profile-contract": "0.0.0",
+    "@ondata-extended/profile-skos": "0.0.0"
+  }
+}

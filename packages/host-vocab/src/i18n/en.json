@@ -1,0 +1,9 @@
+{
+  "title": "Vocabulary MCP server",
+  "intro": "An MCP server for controlled vocabularies (SKOS concept schemes). Connect an MCP client to the endpoint below to search concepts, read definitions and browse the hierarchy.",
+  "endpoint": "MCP endpoint",
+  "tools": "Tools",
+  "vocabularies": "Vocabularies",
+  "status": "Status: test service. Not affiliated with the onData association; the engine is derived from their ckan-mcp-server (MIT).",
+  "language": "Svenska"
+}

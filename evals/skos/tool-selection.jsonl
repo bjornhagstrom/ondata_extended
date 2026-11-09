@@ -1,0 +1,16 @@
+{"id":"sv-01","lang":"sv","question":"Vad betyder dataområde?","expect_tools":["vocab_search_concepts","vocab_get_concept"],"expect_concept":"2"}
+{"id":"sv-02","lang":"sv","question":"Vilka roller finns under Stadens roller i datastyrningen?","expect_tools":["vocab_search_concepts","vocab_narrower"],"expect_concept":"36"}
+{"id":"sv-03","lang":"sv","question":"Vad är överordnat begreppet dataägare?","expect_tools":["vocab_search_concepts","vocab_broader"],"expect_concept":"10"}
+{"id":"sv-04","lang":"sv","question":"Vilka begrepp hänger ihop med dataområde?","expect_tools":["vocab_search_concepts","vocab_related"],"expect_concept":"2"}
+{"id":"sv-05","lang":"sv","question":"Vad är skillnaden mellan dataägare och datasteward?","expect_tools":["vocab_search_concepts","vocab_get_concept"],"expect_concept":"10"}
+{"id":"sv-06","lang":"sv","question":"Vilken svensk term används för data space participant?","expect_tools":["vocab_search_concepts"],"expect_concept":"4"}
+{"id":"sv-07","lang":"sv","question":"Hur många begrepp finns i Svada-vokabulären och vem har skapat den?","expect_tools":["vocab_scheme_info"],"expect_concept":null}
+{"id":"sv-08","lang":"sv","question":"Var börjar hierarkin i begreppslistan?","expect_tools":["vocab_top_concepts"],"expect_concept":null}
+{"id":"sv-09","lang":"sv","question":"Jag skriver 'datap' – vilka begrepp kan jag mena?","expect_tools":["vocab_suggest"],"expect_concept":null}
+{"id":"sv-10","lang":"sv","question":"Ge mig definitionen av rättighetsinnehavare och var den kommer ifrån.","expect_tools":["vocab_search_concepts","vocab_get_concept"],"expect_concept":"8"}
+{"id":"en-01","lang":"en","question":"What does 'data holder' mean in the Svada vocabulary?","expect_tools":["vocab_search_concepts","vocab_get_concept"],"expect_concept":"1"}
+{"id":"en-02","lang":"en","question":"List the narrower concepts of 'Stadens roller (datastyrning)'.","expect_tools":["vocab_search_concepts","vocab_narrower"],"expect_concept":"36"}
+{"id":"en-03","lang":"en","question":"Which vocabulary is this server connected to, and what software does it run on?","expect_tools":["vocab_scheme_info"],"expect_concept":null}
+{"id":"en-04","lang":"en","question":"Show me the full path from the top of the hierarchy to 'Dataägare'.","expect_tools":["vocab_search_concepts","vocab_get_concept"],"expect_concept":"10"}
+{"id":"en-05","lang":"en","question":"Is there a Swedish concept for 'data steward', and what is it related to?","expect_tools":["vocab_search_concepts","vocab_related"],"expect_concept":"25"}
+{"id":"en-06","lang":"en","question":"Find concepts about data sponsors.","expect_tools":["vocab_search_concepts"],"expect_concept":"26"}

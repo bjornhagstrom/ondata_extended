@@ -1,0 +1,14 @@
+{
+  "name": "@ondata-extended/profile-contract",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Types shared by the core and the profiles.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "zod": "^3.25.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@ondata-extended/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Backend-agnostic MCP engine: hardened HTTP client, cache, rate limit, output shaping, transports. Derived from ondata/ckan-mcp-server.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@ondata-extended/profile-contract": "0.0.0",
+    "express": "^4.21.2",
+    "undici": "^7.16.0",
+    "zod": "^3.25.76"
+  }
+}

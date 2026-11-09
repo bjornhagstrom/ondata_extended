@@ -1,0 +1,14 @@
+{
+  "name": "@ondata-extended/spike-parliament",
+  "version": "0.0.0",
+  "private": true,
+  "description": "THROWAWAY contract spike: four tools of ondata's italianparliament-mcp on the core, to test the profile contract against a third kind of backend (SPARQL, fixed endpoints, per-host throttle/retry, tables). Not a product; see docs/spike-parliament.md.",
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@ondata-extended/core": "0.0.0",
+    "@ondata-extended/profile-contract": "0.0.0",
+    "zod": "^3.25.76"
+  }
+}
