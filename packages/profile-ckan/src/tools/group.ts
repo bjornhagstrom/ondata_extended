@@ -1,0 +1,396 @@
+/**
+ * CKAN Group tools
+ *
+ * Ported from ondata/ckan-mcp-server src/tools/group.ts at 09e8cdc (MIT, see NOTICE.md).
+ */
+
+import { z } from "zod";
+import { formatDate, formatError, sanitizeInline } from "@ondata-extended/core";
+import { ResponseFormat, ResponseFormatSchema, defineTool } from "../types.js";
+import { makeCkanRequest, formatCkanError } from "../utils/http.js";
+import { addDemoFooter, wrapUntrusted } from "../utils/formatting.js";
+
+type GroupFacetItem = {
+  name: string;
+  display_name?: string;
+  count: number;
+};
+
+function getGroupViewUrl(serverUrl: string, group: { name?: string }): string {
+  const cleanServerUrl = serverUrl.replace(/\/$/, '');
+  return `${cleanServerUrl}/group/${encodeURIComponent(group.name ?? '')}`;
+}
+
+export function formatGroupShowMarkdown(result: { id: string; name: string; title?: string; description?: string; package_count?: number; created?: string; state?: string; packages?: { title?: string; name: string }[] }, serverUrl: string): string {
+  let markdown = `# Group: ${sanitizeInline(result.title || result.name)}\n\n`;
+  markdown += `**Server**: ${serverUrl}\n`;
+  markdown += `**Link**: ${getGroupViewUrl(serverUrl, result)}\n\n`;
+
+  markdown += `## Details\n\n`;
+  markdown += `- **ID**: \`${sanitizeInline(result.id)}\`\n`;
+  markdown += `- **Name**: \`${sanitizeInline(result.name)}\`\n`;
+  markdown += `- **Datasets**: ${result.package_count || 0}\n`;
+  markdown += `- **Created**: ${formatDate(result.created)}\n`;
+  markdown += `- **State**: ${sanitizeInline(result.state)}\n\n`;
+
+  if (result.description) {
+    markdown += `## Description\n\n${wrapUntrusted(result.description)}\n\n`;
+  }
+
+  if (result.packages && result.packages.length > 0) {
+    const displayed = Math.min(result.packages.length, 20);
+    const totalHint = result.package_count && result.package_count !== result.packages.length
+      ? ` — ${result.package_count} total`
+      : '';
+    markdown += `## Datasets (showing ${displayed} of ${result.packages.length} returned${totalHint})\n\n`;
+    for (const pkg of result.packages.slice(0, 20)) {
+      markdown += `- **${sanitizeInline(pkg.title || pkg.name)}** (\`${sanitizeInline(pkg.name)}\`)\n`;
+    }
+    if (result.packages.length > 20) {
+      markdown += `\n... and ${result.packages.length - 20} more datasets\n`;
+    }
+    markdown += '\n';
+  }
+
+  return markdown;
+}
+
+function normalizeGroupFacets(result: unknown): GroupFacetItem[] {
+  const r = result as Record<string, unknown>;
+  const items = (r?.search_facets as Record<string, unknown>)?.groups as Record<string, unknown> | undefined;
+  const itemsArr = (items as Record<string, unknown>)?.items;
+  if (Array.isArray(itemsArr)) {
+    return itemsArr.map((item: GroupFacetItem) => ({
+      name: item?.name || item?.display_name || String(item),
+      display_name: item?.display_name,
+      count: typeof item?.count === 'number' ? item.count : 0
+    }));
+  }
+
+  const facets = (r?.facets as Record<string, unknown>)?.groups;
+  if (Array.isArray(facets)) {
+    if (facets.length > 0 && typeof facets[0] === 'object') {
+      return facets.map((item: GroupFacetItem) => ({
+        name: item?.name || item?.display_name || String(item),
+        display_name: item?.display_name,
+        count: typeof item?.count === 'number' ? item.count : 0
+      }));
+    }
+    return facets.map((name: string) => ({ name, count: 0 }));
+  }
+
+  if (facets && typeof facets === 'object') {
+    return Object.entries(facets).map(([name, count]) => ({
+      name,
+      count: typeof count === 'number' ? count : Number(count) || 0
+    }));
+  }
+
+  return [];
+}
+
+/**
+ * Compact JSON for group_list results.
+ */
+export function compactGroupList(result: any): object {
+  if (!Array.isArray(result)) return result;
+  return {
+    count: result.length,
+    groups: result.map((group: any) => {
+      if (typeof group === 'string') return group;
+      return {
+        id: group.id,
+        name: group.name,
+        title: group.title || group.name,
+        package_count: group.package_count ?? 0
+      };
+    })
+  };
+}
+
+/**
+ * Compact JSON for group_show results.
+ */
+export function compactGroupShow(result: any): object {
+  return {
+    id: result.id,
+    name: result.name,
+    title: result.title || result.name,
+    description: result.description || null,
+    package_count: result.package_count ?? 0,
+    created: result.created || null,
+    packages: (result.packages || []).map((pkg: any) => ({
+      id: pkg.id,
+      name: pkg.name,
+      title: pkg.title || pkg.name,
+      metadata_modified: pkg.metadata_modified || null
+    }))
+  };
+}
+
+export const groupList = defineTool({
+  name: "ckan_group_list",
+  title: "List CKAN Groups",
+  description: `List all groups on a CKAN server.
+
+Groups are thematic collections of datasets.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - all_fields (boolean): Return full objects vs just names (default: false)
+  - sort (string): Sort field (default: "name asc")
+  - limit (number): Maximum results (default: 100). Use 0 to get only the count via faceting
+  - offset (number): Pagination offset (default: 0)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  List of groups with metadata. When limit=0, returns only the count of groups with datasets.
+
+Typical workflow: ckan_group_list → ckan_group_show (inspect one) → ckan_package_search with fq="groups:name" (browse its datasets)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    all_fields: z.boolean().optional().default(false).describe("Return full group objects (true) or just name slugs (false)"),
+    sort: z.string().optional().default("name asc").describe("Sort field and direction (e.g., 'name asc', 'package_count desc')"),
+    limit: z.number().int().min(0).optional().default(100).describe("Max groups to return. Use 0 to get only the count via faceting"),
+    offset: z.number().int().min(0).optional().default(0).describe("Pagination offset"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      if (params.limit === 0) {
+        const searchResult = await makeCkanRequest<any>(
+          ctx,
+          params.server_url,
+          'package_search',
+          {
+            rows: 0,
+            'facet.field': JSON.stringify(['groups']),
+            'facet.limit': -1
+          }
+        );
+
+        const groupCount = searchResult.search_facets?.groups?.items?.length || 0;
+
+        if (params.response_format === ResponseFormat.JSON) {
+          // A single count: no array to shrink, cannot approach the limit (#39).
+          return {
+            content: [{ type: "text", text: JSON.stringify({ count: groupCount }, null, 2) }],
+            structuredContent: { count: groupCount }
+          };
+        }
+
+        const markdown = `# CKAN Groups Count\n\n**Server**: ${params.server_url}\n**Total groups (with datasets)**: ${groupCount}\n`;
+
+        return {
+          content: [{ type: "text", text: markdown }]
+        };
+      }
+
+      const result = await makeCkanRequest<any>(
+        ctx,
+        params.server_url,
+        'group_list',
+        {
+          all_fields: params.all_fields,
+          sort: params.sort,
+          limit: params.limit,
+          offset: params.offset
+        }
+      );
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const compact = compactGroupList(result);
+        return ctx.output.json(compact);
+      }
+
+      let markdown = `# CKAN Groups\n\n`;
+      markdown += `**Server**: ${params.server_url}\n`;
+      markdown += `**Total**: ${Array.isArray(result) ? result.length : 'Unknown'}\n\n`;
+
+      if (Array.isArray(result)) {
+        if (params.all_fields) {
+          for (const group of result) {
+            markdown += `## ${sanitizeInline(group.title || group.name)}\n\n`;
+            markdown += `- **ID**: \`${sanitizeInline(group.id)}\`\n`;
+            markdown += `- **Name**: \`${sanitizeInline(group.name)}\`\n`;
+            if (group.description) markdown += `- **Description**: ${sanitizeInline(group.description.substring(0, 200))}\n`;
+            markdown += `- **Datasets**: ${group.package_count || 0}\n`;
+            markdown += `- **Created**: ${formatDate(group.created)}\n`;
+            markdown += `- **Link**: ${getGroupViewUrl(params.server_url, group)}\n\n`;
+          }
+        } else {
+          markdown += result.map((name: string) => `- ${sanitizeInline(name)}`).join('\n');
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_group_list"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+export const groupShow = defineTool({
+  name: "ckan_group_show",
+  title: "Show CKAN Group Details",
+  description: `Get details of a specific group.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - id (string): Group ID or name
+  - include_datasets (boolean): Include list of datasets (default: true)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  Group details with optional datasets
+
+Typical workflow: ckan_group_show → ckan_package_show (inspect a dataset) → ckan_datastore_search (query its data)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    id: z.string().min(1).describe("Group ID (UUID) or machine-readable name slug (e.g., 'transport', 'energia')"),
+    include_datasets: z.boolean().optional().default(true).describe("Include the list of datasets belonging to this group"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      const result = await makeCkanRequest<any>(
+        ctx,
+        params.server_url,
+        'group_show',
+        {
+          id: params.id,
+          include_datasets: params.include_datasets
+        }
+      );
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const compact = compactGroupShow(result);
+        return ctx.output.json(compact);
+      }
+
+      const markdown = formatGroupShowMarkdown(result, params.server_url);
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_group_show"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+export const groupSearch = defineTool({
+  name: "ckan_group_search",
+  title: "Search CKAN Groups by Name",
+  description: `Search for groups by name pattern.
+
+This tool provides a simpler interface than package_search for finding groups.
+Wildcards are automatically added around the search pattern.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - pattern (string): Search pattern (e.g., "energia", "salute")
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  List of matching groups with dataset counts
+
+Typical workflow: ckan_group_search → ckan_group_show (get details) → ckan_package_search with fq="groups:name"`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    pattern: z.string().min(1).describe("Name pattern to search for (wildcards added automatically, e.g., 'energia', 'salute')"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
+  },
+  async handler(params, ctx) {
+    try {
+      const query = `groups:*${params.pattern}*`;
+
+      const result = await makeCkanRequest<any>(
+        ctx,
+        params.server_url,
+        'package_search',
+        {
+          q: query,
+          rows: 0,
+          'facet.field': JSON.stringify(['groups']),
+          'facet.limit': 500
+        }
+      );
+
+      const groupFacets = normalizeGroupFacets(result);
+      const totalDatasets = result.count || 0;
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const jsonResult = {
+          count: groupFacets.length,
+          total_datasets: totalDatasets,
+          groups: groupFacets.map(group => ({
+            name: group.name,
+            display_name: group.display_name,
+            dataset_count: group.count
+          }))
+        };
+
+        return ctx.output.json(jsonResult);
+      }
+
+      let markdown = `# CKAN Group Search Results\n\n`;
+      markdown += `**Server**: ${params.server_url}\n`;
+      markdown += `**Pattern**: "${params.pattern}"\n`;
+      markdown += `**Groups Found**: ${groupFacets.length}\n`;
+      markdown += `**Total Datasets**: ${totalDatasets}\n\n`;
+
+      if (groupFacets.length === 0) {
+        markdown += `No groups found matching pattern "${params.pattern}".\n`;
+        markdown += `\n> **Note**: No data was found on this portal. Do not use information from other sources to supplement this result.\n`;
+      } else {
+        markdown += `## Matching Groups\n\n`;
+        markdown += `| Group | Datasets |\n`;
+        markdown += `|-------|----------|\n`;
+
+        for (const group of groupFacets) {
+          markdown += `| ${sanitizeInline(group.display_name || group.name)} | ${group.count} |\n`;
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_group_search"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+export const GROUP_TOOLS = [groupList, groupShow, groupSearch];

@@ -38,12 +38,15 @@ export interface McpCaller {
   callTool(name: string, args: Record<string, unknown>): Promise<Observed>;
   readResource(uri: string): Promise<Observed>;
   getPrompt(name: string, args: Record<string, string>): Promise<Observed>;
+  /** tools/list as a client sees it, by name. */
+  listTools(): Promise<Record<string, unknown>>;
 }
 
 type AnyClient = {
   callTool(req: unknown): Promise<{ content: { text?: string }[]; isError?: boolean; structuredContent?: unknown }>;
   readResource(req: unknown): Promise<{ contents: { text?: string; mimeType?: string; uri?: string }[] }>;
   getPrompt(req: unknown): Promise<{ messages: { role: string; content: { text?: string } }[] }>;
+  listTools(): Promise<{ tools: { name: string }[] }>;
 };
 
 /** One observation shape for both servers' clients. */
@@ -60,6 +63,10 @@ export function observe(client: AnyClient): McpCaller {
     async getPrompt(name, args) {
       const r = await client.getPrompt({ name, arguments: args });
       return { text: r.messages.map((m) => m.content.text ?? "").join("\n"), isError: false, extra: r.messages.map((m) => m.role) };
+    },
+    async listTools() {
+      const r = await client.listTools();
+      return Object.fromEntries(r.tools.map((t) => [t.name, t]));
     }
   };
 }
@@ -95,7 +102,8 @@ export async function ondataClient(): Promise<McpCaller & { setDnsResolver(fn: u
     resetState: () => scheming.__resetSchemaCacheForTests(),
     callTool: (name, args) => withOndataFetchPath(() => caller.callTool(name, args)),
     readResource: (uri) => withOndataFetchPath(() => caller.readResource(uri)),
-    getPrompt: (name, args) => withOndataFetchPath(() => caller.getPrompt(name, args))
+    getPrompt: (name, args) => withOndataFetchPath(() => caller.getPrompt(name, args)),
+    listTools: () => caller.listTools()
   };
 }
 

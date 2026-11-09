@@ -135,7 +135,7 @@ export function safeUrlText(url: unknown): string {
   return "`" + s.replace(/`/g, "ʼ").replace(/[\r\n]+/g, " ") + "`";
 }
 
-export function formatDate(dateStr: string): string {
+export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "Invalid Date";
   const date = new Date(dateStr);
   if (Number.isNaN(date.getTime())) return "Invalid Date";

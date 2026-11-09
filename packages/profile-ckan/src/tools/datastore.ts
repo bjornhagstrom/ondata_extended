@@ -1,0 +1,332 @@
+/**
+ * CKAN DataStore tools
+ *
+ * Ported from ondata/ckan-mcp-server src/tools/datastore.ts at 09e8cdc (MIT, see NOTICE.md).
+ */
+
+import { z } from "zod";
+import type { EngineContext } from "@ondata-extended/profile-contract";
+import { formatError, sanitizeInline } from "@ondata-extended/core";
+import { ResponseFormat, ResponseFormatSchema, defineTool, type CkanField } from "../types.js";
+import { makeCkanRequest, formatCkanError, CkanApiError } from "../utils/http.js";
+import { addDemoFooter } from "../utils/formatting.js";
+
+const MAX_TABLE_COLUMNS = 8;
+
+/**
+ * CKAN internal columns. `_full_text` is only returned by `datastore_search_sql`
+ * on `SELECT *`: it repeats the whole row as one concatenated string, so it
+ * carries no new information and must not take up a table slot.
+ */
+const INTERNAL_FIELDS = ['_id', '_full_text'];
+const isInternalField = (id: string) => INTERNAL_FIELDS.includes(id);
+
+const MAX_LISTED_OMITTED_COLUMNS = 15;
+
+/**
+ * Warn when the record table shows only a subset of the columns, so the model
+ * does not read a truncated table as the full set of available columns.
+ */
+function formatOmittedColumnsNote(allFields: string[], hint: string): string {
+  if (allFields.length <= MAX_TABLE_COLUMNS) return '';
+  const omitted = allFields.slice(MAX_TABLE_COLUMNS);
+  const listed = omitted.slice(0, MAX_LISTED_OMITTED_COLUMNS).map(sanitizeInline).join(', ');
+  const rest = omitted.length > MAX_LISTED_OMITTED_COLUMNS
+    ? ` and ${omitted.length - MAX_LISTED_OMITTED_COLUMNS} more`
+    : '';
+  return `\n> **Note**: the table above shows only the first ${MAX_TABLE_COLUMNS} of ${allFields.length} columns. Columns not shown: ${listed}${rest}. They do hold values — ${hint}\n`;
+}
+
+export function formatDatastoreSearchMarkdown(
+  result: { fields?: { id: string; type: string }[]; records?: Record<string, unknown>[]; total?: number },
+  serverUrl: string,
+  resourceId: string,
+  offset: number,
+  limit: number
+): string {
+  let markdown = `# DataStore Query Results\n\n`;
+  markdown += `**Server**: ${serverUrl}\n`;
+  markdown += `**Resource ID**: \`${resourceId}\`\n`;
+  markdown += `**Total Records**: ${result.total || 0}\n`;
+  markdown += `**Returned**: ${result.records ? result.records.length : 0} records\n\n`;
+
+  const declaredFields = (result.fields || []).filter((f: CkanField) => f.id !== '_full_text');
+  if (declaredFields.length > 0) {
+    markdown += `## Fields\n\n`;
+    markdown += declaredFields.map((f: CkanField) => `- **${sanitizeInline(f.id)}** (${sanitizeInline(f.type)})`).join('\n') + '\n\n';
+  }
+
+  if (result.records && result.records.length > 0) {
+    markdown += `## Records\n\n`;
+    const fields = result.fields ? result.fields.map((f: CkanField) => f.id).filter(id => !isInternalField(id)) : [];
+    const displayFields = fields.slice(0, MAX_TABLE_COLUMNS);
+    markdown += `| ${displayFields.map(sanitizeInline).join(' | ')} |\n`;
+    markdown += `| ${displayFields.map(() => '---').join(' | ')} |\n`;
+    for (const record of result.records.slice(0, 50)) {
+      const values = displayFields.map(field => {
+        const val = record[field];
+        if (val === null || val === undefined) return '-';
+        // Clip first, escape second: escaping after the cut can slice a `\|` in half.
+        const raw = String(val);
+        return sanitizeInline(raw.length > 80 ? raw.substring(0, 77) + '...' : raw);
+      });
+      markdown += `| ${values.join(' | ')} |\n`;
+    }
+    markdown += formatOmittedColumnsNote(fields, 'use the `fields` parameter to select them, or `response_format: "json"` to get every column.');
+    if (result.records.length > 50) {
+      markdown += `\n... and ${result.records.length - 50} more records\n`;
+    }
+    markdown += '\n';
+  } else {
+    markdown += 'No records found.\n';
+    markdown += '\n> **Note**: No data was found on this portal. Do not use information from other sources to supplement this result.\n';
+  }
+
+  if (result.total && result.total > offset + (result.records?.length || 0)) {
+    const nextOffset = offset + limit;
+    markdown += `**More results available**: Use \`offset: ${nextOffset}\` for next page.\n`;
+  }
+
+  return markdown;
+}
+
+export function formatDatastoreSqlMarkdown(
+  result: { fields?: { id: string; type: string }[]; records?: Record<string, unknown>[] },
+  serverUrl: string,
+  sql: string
+): string {
+  const records = result.records || [];
+  const fieldIds = (result.fields?.map((field: CkanField) => field.id) || Object.keys(records[0] || {})).filter(id => !isInternalField(id));
+
+  let markdown = `# DataStore SQL Results\n\n`;
+  markdown += `**Server**: ${serverUrl}\n`;
+  markdown += `**SQL**: \`${sql}\`\n`;
+  markdown += `**Returned**: ${records.length} records\n\n`;
+
+  const declaredFields = (result.fields || []).filter((field: CkanField) => field.id !== '_full_text');
+  if (declaredFields.length > 0) {
+    markdown += `## Fields\n\n`;
+    markdown += declaredFields.map((field: CkanField) => `- **${sanitizeInline(field.id)}** (${sanitizeInline(field.type)})`).join('\n') + '\n\n';
+  }
+
+  if (records.length > 0 && fieldIds.length > 0) {
+    markdown += `## Records\n\n`;
+    const displayFields = fieldIds.slice(0, MAX_TABLE_COLUMNS);
+    markdown += `| ${displayFields.map(sanitizeInline).join(' | ')} |\n`;
+    markdown += `| ${displayFields.map(() => '---').join(' | ')} |\n`;
+    for (const record of records.slice(0, 50)) {
+      const values = displayFields.map((field) => {
+        const value = record[field];
+        if (value === null || value === undefined) return '-';
+        // Clip first, escape second: escaping after the cut can slice a `\|` in half.
+        const raw = String(value);
+        return sanitizeInline(raw.length > 80 ? raw.substring(0, 77) + '...' : raw);
+      });
+      markdown += `| ${values.join(' | ')} |\n`;
+    }
+    markdown += formatOmittedColumnsNote(fieldIds, 'name them explicitly in the SELECT clause, or use `response_format: "json"` to get every column.');
+    if (records.length > 50) {
+      markdown += `\n... and ${records.length - 50} more records\n`;
+    }
+    markdown += '\n';
+  } else {
+    markdown += 'No records returned by the SQL query.\n';
+    markdown += '\n> **Note**: No data was found on this portal. Do not use information from other sources to supplement this result.\n';
+  }
+
+  return markdown;
+}
+
+/**
+ * Compact datastore result: filter CKAN internal columns from fields and records.
+ */
+export function compactDatastoreResult(result: any): object {
+  const fields = (result.fields || []).filter((f: CkanField) => !isInternalField(f.id));
+  const records = (result.records || []).map((record: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(record).filter(([key]) => !isInternalField(key)))
+  );
+  return {
+    resource_id: result.resource_id || null,
+    fields,
+    records,
+    total: result.total ?? 0
+  };
+}
+
+/**
+ * Some portals lose the `sql` parameter on GET: donnees.montreal.ca answers 409
+ * `sql: Valeur manquante` to any query and runs the same one sent by POST. SQL errors come
+ * under `query:`, so a reason under `sql:` is about the parameter, not the query.
+ * A query too long for a URL gets 414 on GET and runs the same way.
+ */
+async function runDatastoreSql(ctx: EngineContext, serverUrl: string, sql: string): Promise<any> {
+  try {
+    return await makeCkanRequest<any>(ctx, serverUrl, "datastore_search_sql", { sql });
+  } catch (error) {
+    const lostOnGet = error instanceof CkanApiError &&
+      (error.status === 414 || (error.status === 409 && error.ckanReason?.startsWith("sql:")));
+    if (lostOnGet) {
+      return await makeCkanRequest<any>(ctx, serverUrl, "datastore_search_sql", { sql }, { post: true });
+    }
+    throw error;
+  }
+}
+
+/**
+ * DataStore search
+ */
+export const datastoreSearch = defineTool({
+  name: "ckan_datastore_search",
+  title: "Search CKAN DataStore",
+  description: `Query data from a CKAN DataStore resource.
+
+The DataStore allows SQL-like queries on tabular data. Not all resources have DataStore enabled.
+
+The response always includes a Fields section listing all available column names and types.
+Use limit=0 to discover column names without fetching data — do this before using filters
+to avoid guessing column names and getting HTTP 400 errors.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - resource_id (string): ID of the DataStore resource
+  - q (string): Full-text search query (optional)
+  - filters (object): Key-value filters (e.g., { "anno": 2023 })
+  - limit (number): Max rows to return (default: 100, max: 32000)
+  - offset (number): Pagination offset (default: 0)
+  - fields (array): Specific fields to return (optional)
+  - sort (string): Sort field with direction (e.g., "anno desc")
+  - distinct (boolean): Return distinct values (default: false)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  DataStore records matching query, always including available column names and types
+
+Examples:
+  - { server_url: "...", resource_id: "abc-123", limit: 0 }  ← discover columns first
+  - { server_url: "...", resource_id: "abc-123", limit: 50 }
+  - { server_url: "...", resource_id: "...", filters: { "regione": "Sicilia" } }
+  - { server_url: "...", resource_id: "...", sort: "anno desc", limit: 100 }
+
+Typical workflow: ckan_package_search → ckan_package_show (find resource_id with datastore_active=true) → ckan_datastore_search (limit=0 to get columns) → ckan_datastore_search (with filters)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    resource_id: z.string().min(1).describe("UUID of the DataStore resource (from ckan_package_show resource.id where datastore_active is true)"),
+    q: z.string().optional().describe("Full-text search across all fields"),
+    filters: z.record(z.any()).optional().describe("Key-value filters for exact matches (e.g., { \"regione\": \"Sicilia\", \"anno\": 2023 })"),
+    limit: z.coerce.number().int().min(0).max(32000).optional().default(100).describe("Max rows to return (default 100, max 32000); use 0 to get only column names without data"),
+    offset: z.coerce.number().int().min(0).optional().default(0).describe("Pagination offset"),
+    fields: z.array(z.string()).optional().describe("Specific field names to return; omit to return all fields"),
+    sort: z.string().optional().describe("Sort expression (e.g., 'anno desc', 'nome asc')"),
+    distinct: z.boolean().optional().default(false).describe("Return only distinct rows"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      const apiParams: Record<string, any> = {
+        resource_id: params.resource_id,
+        limit: params.limit,
+        offset: params.offset,
+        distinct: params.distinct
+      };
+
+      if (params.q) apiParams.q = params.q;
+      if (params.filters) apiParams.filters = JSON.stringify(params.filters);
+      if (params.fields) apiParams.fields = params.fields.join(',');
+      if (params.sort) apiParams.sort = params.sort;
+
+      const result = await makeCkanRequest<any>(
+        ctx,
+        params.server_url,
+        'datastore_search',
+        apiParams
+      );
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const compact = compactDatastoreResult(result);
+        return {
+          content: [{ type: "text", text: ctx.output.truncateJson(compact) }]
+        };
+      }
+
+      const markdown = formatDatastoreSearchMarkdown(result, params.server_url, params.resource_id, params.offset, params.limit);
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_datastore_search"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+/**
+ * DataStore SQL search
+ */
+export const datastoreSearchSql = defineTool({
+  name: "ckan_datastore_search_sql",
+  title: "Search CKAN DataStore with SQL",
+  description: `Run SQL queries on a CKAN DataStore resource.
+
+This endpoint is only available on CKAN portals with DataStore enabled and SQL access exposed.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - sql (string): SQL query (e.g., SELECT * FROM "resource_id" LIMIT 10)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  SQL query results from DataStore
+
+Examples:
+  - { server_url: "...", sql: "SELECT * FROM \"abc-123\" LIMIT 10" }
+  - { server_url: "...", sql: "SELECT COUNT(*) AS total FROM \"abc-123\"" }
+
+Typical workflow: ckan_package_show (get resource_id) → ckan_datastore_search_sql (run SQL on it)
+
+Security note: SQL queries are forwarded directly to the CKAN DataStore API. The CKAN server enforces its own access controls and read-only permissions. No local database is exposed. Queries are limited to public DataStore resources on the target portal.`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    sql: z.string().min(1).describe("SQL SELECT query; resource_id is the table name, must be double-quoted (e.g., SELECT * FROM \"abc-123\" LIMIT 10)"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      // CKAN wraps the query in a subquery, where a final `;` is a syntax error.
+      const sql = params.sql.replace(/[;\s]+$/, "");
+      const result = await runDatastoreSql(ctx, params.server_url, sql);
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const compact = compactDatastoreResult(result);
+        return ctx.output.json(compact);
+      }
+
+      const markdown = formatDatastoreSqlMarkdown(result, params.server_url, sql);
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_datastore_search_sql"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+export const DATASTORE_TOOLS = [datastoreSearch, datastoreSearchSql];

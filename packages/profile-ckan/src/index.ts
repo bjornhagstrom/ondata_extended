@@ -10,6 +10,9 @@ import { SHRINKABLE_KEYS, UNTRUSTED_SOURCE } from "./utils/formatting.js";
 import { STATUS_TOOLS } from "./tools/status.js";
 import { TAG_TOOLS } from "./tools/tag.js";
 import { ORGANIZATION_TOOLS } from "./tools/organization.js";
+import { GROUP_TOOLS } from "./tools/group.js";
+import { PACKAGE_TOOLS } from "./tools/package.js";
+import { DATASTORE_TOOLS } from "./tools/datastore.js";
 
 export const PROFILE_ID = "ckan";
 export const TOOL_PREFIX = "ckan_";
@@ -23,7 +26,7 @@ export const TELEMETRY_FIELDS = [
   "country", "language", "has_datastore", "min_datasets", "page", "page_size", "offset", "distinct", "filters", "fields"
 ];
 
-export const CKAN_TOOLS: ToolSpec<any>[] = [...STATUS_TOOLS, ...TAG_TOOLS, ...ORGANIZATION_TOOLS];
+export const CKAN_TOOLS: ToolSpec<any>[] = [...PACKAGE_TOOLS, ...ORGANIZATION_TOOLS, ...DATASTORE_TOOLS, ...STATUS_TOOLS, ...TAG_TOOLS, ...GROUP_TOOLS];
 
 export function createCkanProfile(): Profile {
   return {

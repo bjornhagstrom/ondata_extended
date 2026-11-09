@@ -83,9 +83,8 @@ during each call. Both servers then read upstream HTTP from the same recordings.
 
 | ondata tests | Count | Goes to |
 |---|---|---|
-| `scheming.test.ts` `getDatasetSchema`, dataset page, JSON output | 9 | CKAN profile |
-| `sanitize-inline.test.ts` CKAN formatters | 10 | CKAN profile |
-| everything else (tools, resources, prompts, integration) | 324 | CKAN profile, next rounds (434 before round 2, less the 110 tool, utility and integration tests ported then) |
+| `sanitize-inline.test.ts` `ckan_analyze_datasets` block (45-71) | 1 | CKAN profile, with that tool |
+| everything else (tools, resources, prompts, integration) | 109 | CKAN profile, next rounds (434 before round 2; round 2 ported 110, round 3 215) |
 
 ## Ported so far (CKAN profile)
 
@@ -100,6 +99,22 @@ during each call. Both servers then read upstream HTTP from the same recordings.
 | `tests/integration/status-hint.test.ts` | all | 2 (4 with `it.each`) | `status-hint.test.ts` | tool called through the profile on the core; axios ECONNABORTED → a fetch that never answers until a 50 ms `CKAN_TIMEOUT_MS` aborts it |
 
 190 ondata tests ported in round 2 (grep count), all green. Changed expectations: two, both D9.
+
+### Round 3 (groups, datasets, DataStore)
+
+| ondata file (09e8cdc) | Tests | Here | How the reach changed |
+|---|---|---|---|
+| `tests/unit/group-formatting`, `package-show-formatting`, `datastore-formatting` | 7, 9, 19 | same names | import paths; one result typed `any` |
+| `tests/unit/package-scoring.test.ts` | 82 | same name | import paths; the two functions taking a `CkanPackage` called through untyped aliases (the test data are partial objects) |
+| `tests/unit/sanitize-inline.test.ts` | 9 of the 10 CKAN tests | `sanitize-inline-ckan.test.ts` | import paths (the analyze test waits for that tool) |
+| `tests/unit/scheming.test.ts` 198-300 | 9 | `scheming.test.ts` | `makeCkanRequest` mocked as in ondata, now called with `ctx` first; the core's `jsonToolResult` given ondata's shrinkable keys |
+| `tests/integration/group`, `package`, `datastore`, `datastore-sql-errors` | 5, 45, 19, 13 | `*-integration.test.ts`, `datastore-sql-errors.test.ts` | tools called through the profile on the core (`ckanClient`); axios mocks → fake `fetch` (a rejection with a response → that status and body; ECONNABORTED → a fetch aborted by a 50 ms `CKAN_TIMEOUT_MS`); request parameters read from the URL the portal receives, so expected numbers and booleans are compared as the strings sent; the SQL GET/POST fallback asserted on the `sql` query parameter and the JSON body; ondata's separate "Workers" block runs on the one path |
+| `tests/integration/package-show-scheming`, `relevant-zero-hint`, `search-telemetry` | 7, 3, 6 | same names | as above; ondata's `takeSearchResults(server)` read through the core's `takeTelemetry` (which also clears the `cache_hit` noted with it) |
+
+233 ondata tests ported in round 3 (grep count), all green, no expectation changed, nothing skipped. New parity
+cases: an OR query (the Solr parser probe, 6 requests), paging, DataStore filters/fields/sort, columns only, an SQL
+error, a missing resource, a missing group, resources of a second portal, each in both formats: 111 cases in all, each on three passes. A new check compares
+`tools/list` (name, title, description, input schema, annotations) for every tool the profile registers with ondata's.
 
 ## Ported from ondata's italianparliament-mcp (commit `fd46810`)
 

@@ -143,3 +143,18 @@ Contract and core changes, each the smallest the port needed:
   messages.
 
 The argument validation error text comes from the SDK and is shorter in 1.32.2 than in ondata's 1.27.1 (D8).
+
+## 2026-11-09: CKAN profile, round 3 (groups, datasets, DataStore)
+
+The group, package (search, relevant datasets, show, list resources) and DataStore tools are ported from ondata's
+files; with round 2 that is 14 of ondata's 18 tools. What changed in the port, beyond threading `ctx`:
+
+- **Scheming fields** use the core's generic field renderer (`renderFields`, `formatFieldsMarkdown`), which was
+  extracted from ondata's `scheming.ts` in step 3; the profile keeps ondata's never-added fields, labels, notes, and
+  the schema fetch with its negative cache.
+- **Search telemetry** goes through `ctx.telemetry` (the core keys it per server instance, as ondata's WeakMap did).
+- **Module-level state stays module-level** where ondata had it (the per-portal Solr parser probe, the "no schema"
+  cache): it is a cache across requests, not request state, and per isolate on Workers as in ondata.
+- **Types**: the CKAN interfaces gain the optional fields the tools read (`owner_org`, `groups`, `extras`, ...), and
+  the core's `formatDate` accepts `undefined`. Types only: ondata's own `tsc` run does not complete here (it crashes),
+  and its build (esbuild) does not typecheck, so its code had never been checked under `strict`.

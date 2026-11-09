@@ -97,6 +97,18 @@ describe.runIf(ondataAvailable() && recordings.length > 0)("parity with ondata/c
     }
   });
 
+  it("tools/list: every tool we register is described exactly as ondata describes it", async () => {
+    vi.resetModules();
+    const theirs = await (await ondataClient()).listTools();
+    vi.resetModules();
+    const ours = await (await ourClient()).listTools();
+    expect(Object.keys(ours).length).toBeGreaterThan(0);
+    for (const [name, tool] of Object.entries(ours)) {
+      // name, title, description, input schema (as JSON Schema), annotations, output schema
+      expect({ name, tool }).toEqual({ name, tool: theirs[name] });
+    }
+  });
+
   describe("our CKAN profile gives the same observation", () => {
     for (const rec of recordings) {
       (implemented(rec.case) ? it : it.todo)(rec.case.id, async () => {

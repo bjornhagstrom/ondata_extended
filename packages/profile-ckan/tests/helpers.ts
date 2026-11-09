@@ -9,7 +9,7 @@ import { vi } from "vitest";
 import type { EngineContext } from "@ondata-extended/profile-contract";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { __setDnsResolverForTests, createEngine, createMcpServer, registerProfiles, type Engine } from "@ondata-extended/core";
+import { __setDnsResolverForTests, createEngine, createMcpServer, registerProfiles, takeTelemetry, type Engine } from "@ondata-extended/core";
 import { createCkanProfile } from "../src/index.js";
 
 export const PUBLIC_ADDRESS = [{ address: "93.184.216.34", family: 4 }];
@@ -66,6 +66,8 @@ export async function ckanClient(env: Record<string, string> = {}) {
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);
   return {
+    /** The McpServer instance: the key the core files telemetry under (`takeTelemetry(server)`). */
+    server,
     async callTool(name: string, args: Record<string, unknown>) {
       return client.callTool({ name, arguments: args }) as Promise<{
         isError?: boolean;
@@ -75,3 +77,16 @@ export async function ckanClient(env: Record<string, string> = {}) {
     }
   };
 }
+
+/**
+ * ondata's `takeSearchResults(server)`: the search fields the tools noted for this server
+ * instance, or null. The core keeps them with the call's other telemetry (`cache_hit`), so
+ * only the four search fields are picked; the rest of the note is cleared with them.
+ */
+export function takeSearchResults(server: object): Record<string, unknown> | null {
+  const all = takeTelemetry(server);
+  if (!all) return null;
+  const keys = ["result_count", "result_start", "result_ids", "result_names"].filter((k) => k in all);
+  return keys.length ? Object.fromEntries(keys.map((k) => [k, all[k]])) : null;
+}
+

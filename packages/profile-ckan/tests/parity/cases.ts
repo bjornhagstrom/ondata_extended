@@ -62,6 +62,15 @@ export const COVERAGE_CASES: ParityCase[] = [
   ...both("organization-list-count", "ckan_organization_list", { server_url: MILAN, limit: 0 }),
   ...both("organization-list-all", "ckan_organization_list", { server_url: MILAN, all_fields: true, limit: 3 }),
   ...both("tag-list-query", "ckan_tag_list", { server_url: MILAN, tag_query: "aria", limit: 5 }),
+  // Added in CKAN round 3 (2026-11-09).
+  ...both("package-search-or", "ckan_package_search", { server_url: MILAN, q: "aria OR acqua", rows: 2 }),
+  ...both("package-search-page", "ckan_package_search", { server_url: ITALY, q: "trasporti", page: 2, page_size: 2 }),
+  ...both("datastore-search-filters", "ckan_datastore_search", { server_url: MILAN, resource_id: MILAN_RESOURCE, filters: { inquinante: "SO2" }, fields: ["data", "valore"], sort: "valore desc", limit: 3 }),
+  ...both("datastore-search-columns", "ckan_datastore_search", { server_url: MILAN, resource_id: MILAN_RESOURCE, limit: 0 }),
+  ...both("datastore-sql-bad-column", "ckan_datastore_search_sql", { server_url: MILAN, sql: `SELECT no_such_column FROM "${MILAN_RESOURCE}" LIMIT 1` }),
+  ...both("datastore-search-missing", "ckan_datastore_search", { server_url: MILAN, resource_id: "00000000-0000-0000-0000-000000000000", limit: 1 }),
+  ...both("group-show-missing", "ckan_group_show", { server_url: MILAN, id: "no-such-group-parity" }),
+  ...both("list-resources-italy", "ckan_list_resources", { server_url: ITALY, id: ITALY_DATASET }),
   // No network: argument validation and the guards, where the SDK versions (1.27.1 there,
   // 1.32.2 here) or the core's guards could word things differently.
   { id: "offline-unknown-arg", kind: "tool", name: "ckan_status_show", args: { server_url: MILAN, bogus: 1 } },

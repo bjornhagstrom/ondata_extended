@@ -1,6 +1,7 @@
 /**
  * Ported from ondata/ckan-mcp-server src/types.ts at 09e8cdc (MIT, see NOTICE.md).
- * `CHARACTER_LIMIT` is the core's (`ctx.limits.characterLimit`, same default).
+ * Fields the tools read but ondata's interfaces did not declare are added (types only: ondata is
+ * built with esbuild, which does not typecheck). `CHARACTER_LIMIT` is the core's (`ctx.limits.characterLimit`, same default).
  */
 
 import { z } from "zod";
@@ -21,6 +22,8 @@ export interface CkanTag {
   id?: string;
   name: string;
   display_name?: string;
+  /** Some portals send this spelling (read in normalizePackage). */
+  'display-name'?: string;
 }
 
 export interface CkanResource {
@@ -34,6 +37,7 @@ export interface CkanResource {
   last_modified?: string;
   datastore_active?: boolean;
   access_services?: string;
+  description?: string;
   [key: string]: unknown;
 }
 
@@ -45,7 +49,12 @@ export interface CkanPackage {
   metadata_created?: string;
   metadata_modified?: string;
   score?: number;
-  organization?: { name: string; title?: string };
+  organization?: { name: string; title?: string; id?: string };
+  owner_org?: string;
+  issued?: string;
+  modified?: string;
+  groups?: { name: string; title?: string }[];
+  extras?: { key: string; value: unknown }[];
   tags?: CkanTag[];
   resources?: CkanResource[];
   /** DCAT-AP_IT dct:rightsHolder — actual owner of the dataset (may differ from organization/catalog). */
