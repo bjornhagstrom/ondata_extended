@@ -98,3 +98,68 @@ export async function ondataClient(): Promise<McpCaller & { setDnsResolver(fn: u
     getPrompt: (name, args) => withOndataFetchPath(() => caller.getPrompt(name, args))
   };
 }
+
+/**
+ * ondata on its Node path (axios, what the npm package runs), answered from the same recordings
+ * through an axios adapter. Requests are matched by meaning (method, URL path, decoded query
+ * pairs in order, body), because axios encodes a query differently from `URLSearchParams`
+ * (`*:*` against `*%3A*`): the portal reads both the same. Redirects in a recording are followed
+ * here as axios' follow-redirects would. `misses` collects requests with no recording.
+ */
+export async function ondataNodeClient(exchanges: { current: import("./replay.js").RecordedExchange[] }, misses: string[]): Promise<McpCaller & { setDnsResolver(fn: unknown): void; resetState(): void; used: Set<import("./replay.js").RecordedExchange> }> {
+  const axiosModule = await import(`${ONDATA_REPO}/node_modules/axios/index.js`);
+  const axios = axiosModule.default;
+  const { AxiosError } = axiosModule;
+  const used = new Set<import("./replay.js").RecordedExchange>();
+  axios.defaults.adapter = async (config: { method?: string; data?: unknown; url?: string; params?: unknown; maxRedirects?: number; headers?: Record<string, unknown> }) => {
+    let uri = axios.getUri(config) as string;
+    const method = (config.method ?? "get").toUpperCase();
+    const body = typeof config.data === "string" ? config.data : "";
+    for (let hop = 0; ; hop++) {
+      const want = semanticKey(method, uri, hop === 0 ? body : "");
+      const e = exchanges.current.find((x) => !used.has(x) && semanticKey(...splitKey(x.key)) === want);
+      if (!e) {
+        misses.push(`NOT RECORDED (node path): ${want}`);
+        throw new AxiosError("no recording", "ECONNREFUSED", config);
+      }
+      used.add(e);
+      if ([301, 302, 303, 307, 308].includes(e.status) && e.headers.location && hop < (config.maxRedirects ?? 5)) {
+        uri = new URL(e.headers.location, uri).toString();
+        continue;
+      }
+      const bytes = e.bodyText !== undefined ? Buffer.from(e.bodyText, "utf8") : Buffer.from(e.bodyBase64 ?? "", "base64");
+      const response = { data: bytes, status: e.status, statusText: e.statusText, headers: e.headers, config, request: {} };
+      if (e.status >= 200 && e.status < 300) return response;
+      throw new AxiosError(`Request failed with status code ${e.status}`, e.status >= 500 ? "ERR_BAD_RESPONSE" : "ERR_BAD_REQUEST", config, {}, response);
+    }
+  };
+  const { createServer, registerAll } = await import(`${ONDATA_REPO}/src/server.ts`);
+  const http = await import(`${ONDATA_REPO}/src/utils/http.ts`);
+  const scheming = await import(`${ONDATA_REPO}/src/utils/scheming.ts`);
+  const { Client } = await import(`${ONDATA_REPO}/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js`);
+  const { InMemoryTransport } = await import(`${ONDATA_REPO}/node_modules/@modelcontextprotocol/sdk/dist/esm/inMemory.js`);
+  const server = createServer();
+  registerAll(server);
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "parity", version: "0" });
+  await Promise.all([server.connect(a), client.connect(b)]);
+  return {
+    ...observe(client),
+    setDnsResolver: (fn) => http.__setDnsResolverForTests(fn),
+    resetState: () => scheming.__resetSchemaCacheForTests(),
+    /** Exchanges the adapter answered. */
+    used
+  };
+}
+
+function splitKey(key: string): [string, string, string] {
+  const [method, url, ...rest] = key.split(" ");
+  return [method, url, rest.join(" ")];
+}
+
+/** Method, origin and path, decoded query pairs in order, body. */
+function semanticKey(method: string, uri: string, body: string): string {
+  const u = new URL(uri);
+  const pairs = [...u.searchParams.entries()].map(([k, v]) => `${k}=${v}`).join("&");
+  return `${method} ${u.origin}${u.pathname} ?${pairs} ${body}`;
+}

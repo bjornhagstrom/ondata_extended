@@ -32,10 +32,13 @@ import {
   type NetPolicy
 } from "./guards.js";
 
+/** What kind of transport failure: lets a profile word it in its own terms. */
+export type TransportErrorKind = "timeout" | "network" | "not-found" | "too-many-redirects" | "edge";
+
 /** The request never got an answer: DNS, socket, timeout, or an edge that could not reach the origin. */
 export class TransportError extends Error {
   /** `retryable: false` for failures that repeating cannot fix (a redirect loop). */
-  constructor(message: string, readonly url: string, readonly retryable = true) {
+  constructor(message: string, readonly url: string, readonly retryable = true, readonly kind: TransportErrorKind = "network") {
     super(message);
     this.name = "TransportError";
   }
@@ -178,7 +181,7 @@ export async function safeFetch(
   } catch (error) {
     // Still fail closed (no request is made), but an unknown host on the first hop is a
     // missing server, as ondata reported it ("Server not found"), not a refused destination.
-    if (error instanceof DnsResolutionError) throw new TransportError(`Server not found: ${url}`, url);
+    if (error instanceof DnsResolutionError) throw new TransportError(`Server not found: ${url}`, url, true, "not-found");
     throw error;
   }
   let current = url;
@@ -194,7 +197,7 @@ export async function safeFetch(
     if (!isRedirect) return { response, url: current };
 
     await response.body?.cancel().catch(() => undefined);
-    if (hop >= maxHops) throw new TransportError(`Too many redirects (>${maxHops})`, url, false);
+    if (hop >= maxHops) throw new TransportError(`Too many redirects (>${maxHops})`, url, false, "too-many-redirects");
     const next = new URL(location as string, current).toString();
     if (opts.httpsOnly && new URL(next).protocol !== "https:") {
       throw new SsrfGuardError("Redirect to a non-HTTPS URL is not allowed");
@@ -203,6 +206,26 @@ export async function safeFetch(
     validateUrl(next, opts.policy, guardSettings);
     await assertHostnameResolvesSafe(new URL(next).hostname, guardSettings);
     current = next;
+  }
+}
+
+/**
+ * A gzip body the server did not declare (no Content-Encoding, or `identity`, so the runtime left it packed),
+ * recognised by its magic bytes, as ondata's decoder did on Node.
+ */
+function isUndeclaredGzip(bytes: Uint8Array, headers: Record<string, string>): boolean {
+  // As ondata: unpack by magic bytes unless the header named a coding the runtime already undid.
+  return bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b && !/gzip|br|deflate/i.test(headers["content-encoding"] ?? "");
+}
+
+/** Unpack it within the decompressed-size cap; if it is not valid gzip, keep the bytes as they came. */
+async function gunzipBounded(bytes: Uint8Array, maxBytes: number, url: string): Promise<Uint8Array> {
+  try {
+    const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return await readBoundedBytes(new Response(stream), maxBytes, url);
+  } catch (error) {
+    if (error instanceof ResponseTooLargeError) throw error;
+    return bytes;
   }
 }
 
@@ -228,7 +251,10 @@ export class HttpClient {
 
   async request(url: string, init: RequestInit = {}, opts: FetchOptions = {}): Promise<HttpResponse> {
     const s = this.settings;
-    validateUrl(url, s.policy, { allowPrivateHosts: opts.allowPrivateHosts === true });
+    validateUrl(url, s.policy, {
+      allowPrivateHosts: opts.allowPrivateHosts === true,
+      ...(opts.allowlistedAs ? { allowlistHostname: new URL(opts.allowlistedAs).hostname } : {})
+    });
 
     const method = (init.method ?? "GET").toUpperCase();
     const body = typeof init.body === "string" ? init.body : init.body == null ? null : undefined;
@@ -301,7 +327,7 @@ export class HttpClient {
       // An edge (Cloudflare) answers these itself when it cannot reach the origin: the
       // upstream was never reached, so this is a transport failure, not an answer.
       if ((res.status >= 520 && res.status <= 527) || res.status === 530) {
-        throw new TransportError(`Network error: the upstream could not be reached (HTTP ${res.status})`, url);
+        throw new TransportError(`Network error: the upstream could not be reached (HTTP ${res.status})`, url, true, "edge");
       }
       let parsed: unknown = null;
       try {
@@ -323,7 +349,7 @@ export class HttpClient {
     // headers and then stalled kept a call open for minutes in the original.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const timeoutError = () => new TransportError(`Request timeout connecting to ${url}`, url);
+    const timeoutError = () => new TransportError(`Request timeout connecting to ${url}`, url, true, "timeout");
     const headers = new Headers(init.headers);
     if (!headers.has("Accept")) headers.set("Accept", "application/json, text/plain, */*");
     headers.set("User-Agent", honest ? s.userAgents.honest : s.userAgents.browser);
@@ -382,6 +408,7 @@ export class HttpClient {
         if (controller.signal.aborted) throw timeoutError();
         throw new TransportError(`Network error: ${error instanceof Error ? error.message : String(error)}`, url);
       }
+      if (isUndeclaredGzip(bytes, responseHeaders)) bytes = await gunzipBounded(bytes, s.maxDecompressedBytes, url);
       return {
         url: finalUrl,
         status: response.status,

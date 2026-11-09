@@ -116,7 +116,7 @@ export async function callTask(
   if (res.status < 200 || res.status >= 300) {
     // An edge answering for an origin it could not reach: no answer from the service (as the core's json()).
     if ((res.status >= 520 && res.status <= 527) || res.status === 530) {
-      throw new TransportError(`Network error: the vocabulary service could not be reached (HTTP ${res.status})`, url);
+      throw new TransportError(`Network error: the vocabulary service could not be reached (HTTP ${res.status})`, url, true, "edge");
     }
     throw new HttpStatusError(res.status, res.statusText, url, null);
   }

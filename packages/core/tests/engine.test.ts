@@ -313,3 +313,51 @@ describe("row-level tools (rows instead of handler)", () => {
     await expect(runRowsTool(testProfile(), "demo_echo", { q: "x" }, engine())).rejects.toThrow("returns a document, not rows");
   });
 });
+
+describe("strict tool input (strictInput)", () => {
+  const shape = { q: z.string() };
+  const profile = (strict: boolean) => testProfile({
+    tools: [{ name: "demo_args", description: "Args", inputSchema: shape, strictInput: strict, handler: async (args, ctx) => ctx.output.text(JSON.stringify(args)) }],
+    prompts: []
+  });
+
+  it("rejects an unknown argument when the tool asks for it, as a Zod .strict() object does", async () => {
+    const { client } = await connect([profile(true)]);
+    const r = await client.callTool({ name: "demo_args", arguments: { q: "x", extra: 1 } }) as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("Unrecognized key(s) in object: 'extra'");
+  });
+
+  it("drops an unknown argument otherwise", async () => {
+    const { client } = await connect([profile(false)]);
+    const r = await client.callTool({ name: "demo_args", arguments: { q: "x", extra: 1 } }) as { isError?: boolean; content: { text: string }[] };
+    expect(r.isError).toBeFalsy();
+    expect(JSON.parse(r.content[0].text)).toEqual({ q: "x" });
+  });
+
+  it("applies to runRowsTool too", async () => {
+    const { runRowsTool, inputSchemaOf } = await import("../src/index.js");
+    expect(() => inputSchemaOf({ inputSchema: shape, strictInput: true }).parse({ q: "x", extra: 1 })).toThrow("Unrecognized key");
+    const rowsProfile = testProfile({
+      tools: [{ name: "demo_rows", description: "Rows", inputSchema: shape, strictInput: true, rows: async () => ({ rows: [] }) }],
+      prompts: []
+    });
+    await expect(runRowsTool(rowsProfile, "demo_rows", { q: "x", extra: 1 }, engine())).rejects.toThrow("Unrecognized key");
+  });
+});
+
+describe("EngineContext additions for profiles with their own request layer", () => {
+  it("validateUrl passes a configured private host only when asked", () => {
+    const e = createEngine({ configPrefixes: ["APP"], configSource: { APP_PRIVATE_HOSTS: "10.1.2.3" }, cacheOrigin: "https://test-cache.internal" });
+    const ctx = e.contextFor(testProfile(), {});
+    expect(() => ctx.http.validateUrl("http://10.1.2.3/")).toThrow("private/internal");
+    expect(() => ctx.http.validateUrl("http://10.1.2.3/", { allowPrivateHosts: true })).not.toThrow();
+  });
+
+  it("cache.defaultTtlSeconds is the configured default, 300 s unless set", () => {
+    expect(engine().contextFor(testProfile(), {}).cache.defaultTtlSeconds).toBe(300);
+    const e = createEngine({ configPrefixes: ["APP"], configSource: { APP_CACHE_TTL_DEFAULT: "42" }, cacheOrigin: "https://test-cache.internal" });
+    expect(e.contextFor(testProfile(), {}).cache.defaultTtlSeconds).toBe(42);
+  });
+});
+

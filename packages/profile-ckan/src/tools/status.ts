@@ -1,0 +1,105 @@
+/**
+ * CKAN Status tools
+ *
+ * Ported from ondata/ckan-mcp-server src/tools/status.ts at 09e8cdc (MIT, see NOTICE.md).
+ */
+
+import { z } from "zod";
+import { cappedStructured } from "@ondata-extended/core";
+import { makeCkanRequest, formatCkanError, CkanApiError, CkanTransportError } from "../utils/http.js";
+import { addDemoFooter, SHRINKABLE_KEYS } from "../utils/formatting.js";
+import { getPortalSparqlConfig, getPortalHvdConfig, getPortalMigration } from "../utils/portal-config.js";
+import { defineTool } from "../types.js";
+
+export function formatStatusMarkdown(result: { ckan_version?: string; site_title?: string; site_url?: string; locale_default?: string }, serverUrl: string, hvdCount?: number): string {
+  const sparql = getPortalSparqlConfig(serverUrl);
+  const sparqlLine = sparql ? `**SPARQL Endpoint**: ${sparql.endpoint_url}\n` : "";
+  const hvdLine = hvdCount !== undefined ? `**HVD Datasets**: ${hvdCount}\n` : "";
+  const localeLine = result.locale_default ? `**Portal Locale**: ${result.locale_default}\n` : "";
+  return `# CKAN Server Status\n\n` +
+    `**Server**: ${serverUrl}\n` +
+    `**Status**: ✅ Online\n` +
+    `**CKAN Version**: ${result.ckan_version || 'Unknown'}\n` +
+    `**Site Title**: ${result.site_title || 'N/A'}\n` +
+    `**Site URL**: ${result.site_url || 'N/A'}\n` +
+    localeLine +
+    sparqlLine +
+    hvdLine;
+}
+
+/**
+ * Check CKAN server status
+ */
+export const statusShow = defineTool({
+  name: "ckan_status_show",
+  title: "Check CKAN Server Status",
+  description: `Check if a CKAN server is available and get version information.
+
+Useful to verify server accessibility before making other requests.
+Also shows the count of High-Value Datasets (HVD) when the portal supports it.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+
+Returns:
+  Server status, version information, and HVD dataset count (if available)
+
+Typical workflow: ckan_status_show (verify server is up) → ckan_package_search (discover datasets)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server")
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      const hvdConfig = getPortalHvdConfig(params.server_url);
+
+      const [result, hvdCount] = await Promise.all([
+        makeCkanRequest<any>(ctx, params.server_url, 'status_show', {}),
+        hvdConfig
+          ? makeCkanRequest<any>(ctx, params.server_url, 'package_search', { fq: `${hvdConfig.category_field}:*`, rows: 0 })
+              .then((r) => r.count as number)
+              .catch(() => undefined)
+          : Promise.resolve(undefined)
+      ]);
+
+      const markdown = formatStatusMarkdown(result, params.server_url, hvdCount);
+
+      // Text channel is Markdown, so there is no truncated JSON to derive the structured
+      // payload from — cap it on its own. status_show is echoed straight from the portal,
+      // so its field lengths are upstream-controlled and not bounded by anything (#39).
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }],
+        structuredContent: cappedStructured(result, ctx.limits.characterLimit, SHRINKABLE_KEYS) as Record<string, unknown>
+      };
+    } catch (error) {
+      // A portal that left CKAN is neither offline nor invalid: the migration notice
+      // is the whole diagnosis, and the usual prefix would contradict it.
+      const migrated =
+        (error instanceof CkanApiError || error instanceof CkanTransportError) &&
+        error.serverUrl && getPortalMigration(error.serverUrl);
+      if (migrated) {
+        return { content: [{ type: "text", text: formatCkanError(error, "ckan_status_show") }], isError: true };
+      }
+      // The generic hints send the caller to `ckan_status_show`, which is this tool. Most
+      // failures here are a site that is up but is not the CKAN API (open.ottawa.ca is an
+      // ArcGIS Hub, data.europa.eu/data answers 404), so say that and point at discovery.
+      const detail = error instanceof CkanApiError || error instanceof CkanTransportError
+        ? `${error.message}\n→ No CKAN API answered at this address. The site may be up but not run CKAN, ` +
+          `or keep its CKAN API on another host. Use \`ckan_find_portals\` to look up the portal's CKAN API URL; ` +
+          `retry later only if this address usually works.`
+        : formatCkanError(error, "ckan_status_show");
+      return {
+        content: [{ type: "text", text: `Server appears to be offline or not a valid CKAN instance:\n${detail}` }],
+        isError: true
+      };
+    }
+  }
+});
+
+export const STATUS_TOOLS = [statusShow];

@@ -119,3 +119,27 @@ harness and the recordings (`docs/test-parity.md`, principle 3). Port approach f
 keeps ondata's file layout and code, and threads the engine context through instead of a module-global HTTP client
 (no hidden per-request state in Workers); a profile-level `makeCkanRequest(ctx, ...)` rebuilds ondata's CKAN
 errors and texts on top of `ctx.http`.
+
+## 2026-11-09: CKAN profile, round 2 (request layer, status, tags, organizations)
+
+`packages/profile-ckan` registers `ckan_status_show`, `ckan_tag_list` and the three organization tools, ported
+from ondata's files (headers name the source and commit). `makeCkanRequest(ctx, ...)` keeps ondata's fetch path and
+its error classes and texts, and sends through `ctx.http`. The axios path is not ported: the parity check now also
+replays ondata's own Node path (axios, the npm package) and finds it gives the same observation as its fetch path in
+all recorded cases, so one path serves both. The request headers differ (D9 in `docs/test-parity.md`).
+
+Contract and core changes, each the smallest the port needed:
+
+- `ToolSpec.strictInput`: reject unknown arguments, as ondata's `.strict()` schemas do (`inputSchemaOf` in the core,
+  also used by `runRowsTool`).
+- `EngineHttp.validateUrl(url, { allowPrivateHosts })`: a profile that builds its own URLs checks the caller's URL
+  with the exemption its requests use.
+- `EngineCache.defaultTtlSeconds`: ondata's per-action TTL table falls back to the configured default.
+- `FetchOptions.allowlistedAs`: the domain allowlist is checked on the caller's host, not on the API host a
+  registry rewrites it to (portals.json: `open.toronto.ca` → `ckan0.cf.opendata.inter.prod-toronto.ca`), first hop
+  only, as ondata did; redirects and the literal guards still see the real URL (found in review).
+- `TransportError.kind` (`timeout`, `network`, `not-found`, `too-many-redirects`, `edge`): a profile words transport
+  failures in its own terms (ondata names the portal as the caller wrote it, not the API URL) without parsing
+  messages.
+
+The argument validation error text comes from the SDK and is shorter in 1.32.2 than in ondata's 1.27.1 (D8).

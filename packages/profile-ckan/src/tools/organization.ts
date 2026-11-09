@@ -1,0 +1,451 @@
+/**
+ * CKAN Organization tools
+ *
+ * Ported from ondata/ckan-mcp-server src/tools/organization.ts at 09e8cdc (MIT, see NOTICE.md).
+ */
+
+import { z } from "zod";
+import { formatDate, formatError, sanitizeInline } from "@ondata-extended/core";
+import { ResponseFormat, ResponseFormatSchema, defineTool, type CkanOrganization } from "../types.js";
+import { makeCkanRequest, formatCkanError, CkanApiError } from "../utils/http.js";
+import { addDemoFooter, wrapUntrusted } from "../utils/formatting.js";
+import { getOrganizationViewUrl } from "../utils/url-generator.js";
+import { stripAccents } from "../utils/search.js";
+
+type OrgFacetItem = { name: string; display_name?: string; count: number };
+
+export function formatOrganizationShowMarkdown(result: CkanOrganization & { packages?: { title?: string; name: string }[]; users?: { name: string; capacity: string }[]; created?: string; state?: string }, serverUrl: string): string {
+  let markdown = `# Organization: ${sanitizeInline(result.title || result.name)}\n\n`;
+  markdown += `**Server**: ${serverUrl}\n`;
+  markdown += `**Link**: ${getOrganizationViewUrl(serverUrl, result)}\n\n`;
+
+  markdown += `## Details\n\n`;
+  markdown += `- **ID**: \`${sanitizeInline(result.id)}\`\n`;
+  markdown += `- **Name**: \`${sanitizeInline(result.name)}\`\n`;
+  markdown += `- **Datasets**: ${result.package_count || 0}\n`;
+  markdown += `- **Created**: ${formatDate(result.created as string)}\n`;
+  markdown += `- **State**: ${sanitizeInline(result.state)}\n\n`;
+
+  if (result.description) {
+    markdown += `## Description\n\n${wrapUntrusted(result.description)}\n\n`;
+  }
+
+  if (result.packages && result.packages.length > 0) {
+    const displayed = Math.min(result.packages.length, 20);
+    const totalHint = result.package_count && result.package_count !== result.packages.length
+      ? ` — ${result.package_count} total`
+      : '';
+    markdown += `## Datasets (showing ${displayed} of ${result.packages.length} returned${totalHint})\n\n`;
+    for (const pkg of result.packages.slice(0, 20)) {
+      markdown += `- **${sanitizeInline(pkg.title || pkg.name)}** (\`${sanitizeInline(pkg.name)}\`)\n`;
+    }
+    if (result.packages.length > 20) {
+      markdown += `\n... and ${result.packages.length - 20} more datasets\n`;
+    }
+    markdown += '\n';
+  }
+
+  if (result.users && result.users.length > 0) {
+    markdown += `## Users (${result.users.length})\n\n`;
+    for (const user of result.users) {
+      markdown += `- **${sanitizeInline(user.name)}** (${sanitizeInline(user.capacity)})\n`;
+    }
+    markdown += '\n';
+  }
+
+  return markdown;
+}
+
+/**
+ * Compact JSON for organization_list results.
+ * When all_fields=true, keeps only essential fields per org.
+ */
+export function compactOrganizationList(result: any): object {
+  if (!Array.isArray(result)) return result;
+  return {
+    count: result.length,
+    organizations: result.map((org: any) => {
+      if (typeof org === 'string') return org;
+      return {
+        id: org.id,
+        name: org.name,
+        title: org.title || org.name,
+        package_count: org.package_count ?? 0
+      };
+    })
+  };
+}
+
+/**
+ * Compact JSON for organization_show results.
+ * Keeps org metadata + slim package list, drops extras/users/groups.
+ */
+export function compactOrganizationShow(result: any, serverUrl: string): object {
+  return {
+    id: result.id,
+    name: result.name,
+    title: result.title || result.name,
+    description: result.description || null,
+    image_url: result.image_url || null,
+    package_count: result.package_count ?? 0,
+    created: result.created || null,
+    view_url: getOrganizationViewUrl(serverUrl, result),
+    packages: (result.packages || []).map((pkg: any) => ({
+      id: pkg.id,
+      name: pkg.name,
+      title: pkg.title || pkg.name,
+      metadata_modified: pkg.metadata_modified || null
+    }))
+  };
+}
+
+/**
+ * List all organizations
+ */
+export const organizationList = defineTool({
+  name: "ckan_organization_list",
+  title: "List CKAN Organizations",
+  description: `List all organizations on a CKAN server.
+
+Organizations are entities that publish and manage datasets.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - all_fields (boolean): Return full objects vs just names (default: false)
+  - sort (string): Sort field (default: "name asc")
+  - limit (number): Maximum results (default: 100). Use 0 to get only the count via faceting
+  - offset (number): Pagination offset (default: 0)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  List of organizations with metadata. When limit=0, returns only the count of organizations with datasets.
+
+Typical workflow: ckan_organization_list → ckan_organization_show (inspect one) → ckan_package_search with fq="organization:name" (browse its datasets)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    all_fields: z.boolean().optional().default(false).describe("Return full organization objects (true) or just name slugs (false)"),
+    sort: z.string().optional().default("name asc").describe("Sort field and direction (e.g., 'name asc', 'package_count desc')"),
+    limit: z.coerce.number().int().min(0).optional().default(100).describe("Max organizations to return. Use 0 to get only the count via faceting"),
+    offset: z.coerce.number().int().min(0).optional().default(0).describe("Pagination offset"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      // Special case: limit=0 means only return count using faceting
+      if (params.limit === 0) {
+        const searchResult = await makeCkanRequest<any>(
+          ctx,
+          params.server_url,
+          'package_search',
+          {
+            rows: 0,
+            'facet.field': JSON.stringify(['organization']),
+            'facet.limit': -1
+          }
+        );
+
+        const orgCount = searchResult.search_facets?.organization?.items?.length || 0;
+
+        if (params.response_format === ResponseFormat.JSON) {
+          // A single count: no array to shrink, cannot approach the limit (#39).
+          return {
+            content: [{ type: "text", text: JSON.stringify({ count: orgCount }, null, 2) }],
+            structuredContent: { count: orgCount }
+          };
+        }
+
+        const markdown = `# CKAN Organizations Count\n\n**Server**: ${params.server_url}\n**Total organizations (with datasets)**: ${orgCount}\n`;
+
+        return {
+          content: [{ type: "text", text: markdown }]
+        };
+      }
+
+      // Normal case: list organizations
+      let result: any;
+      try {
+        result = await makeCkanRequest<any>(
+          ctx,
+          params.server_url,
+          'organization_list',
+          {
+            all_fields: params.all_fields,
+            sort: params.sort,
+            limit: params.limit,
+            offset: params.offset
+          }
+        );
+      } catch (error) {
+        if (error instanceof CkanApiError && error.status === 500) {
+          const searchResult = await makeCkanRequest<any>(
+            ctx,
+            params.server_url,
+            'package_search',
+            {
+              rows: 0,
+              'facet.field': JSON.stringify(['organization']),
+              'facet.limit': -1
+            }
+          );
+
+          const items = searchResult.search_facets?.organization?.items || [];
+          const sortValue = params.sort?.toLowerCase() ?? 'name asc';
+          const sortedItems = [...items].sort((a: OrgFacetItem, b: OrgFacetItem) => {
+            if (sortValue.includes('package_count') || sortValue.includes('count')) {
+              return b.count - a.count;
+            }
+            if (sortValue.includes('name desc')) {
+              return String(b.name).localeCompare(String(a.name));
+            }
+            return String(a.name).localeCompare(String(b.name));
+          });
+
+          const pagedItems = sortedItems.slice(params.offset, params.offset + params.limit);
+          const organizations = pagedItems.map((item: OrgFacetItem) => ({
+            id: item.name,
+            name: item.name,
+            title: item.display_name || item.name,
+            package_count: item.count
+          }));
+
+          if (params.response_format === ResponseFormat.JSON) {
+            const output = { count: items.length, organizations };
+            return ctx.output.json(output);
+          }
+
+          let markdown = `# CKAN Organizations\n\n`;
+          markdown += `**Server**: ${params.server_url}\n`;
+          markdown += `**Total**: ${items.length}\n`;
+          markdown += `\nNote: organization_list returned 500; using package_search facets.\n\n`;
+          for (const org of organizations) {
+            markdown += `## ${sanitizeInline(org.title || org.name)}\n\n`;
+            markdown += `- **Name**: \`${sanitizeInline(org.name)}\`\n`;
+            markdown += `- **Datasets**: ${org.package_count || 0}\n`;
+            markdown += `- **Link**: ${getOrganizationViewUrl(params.server_url, org)}\n\n`;
+          }
+
+          return {
+            content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+          };
+        }
+        throw error;
+      }
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const compact = compactOrganizationList(result);
+        return ctx.output.json(compact);
+      }
+
+      let markdown = `# CKAN Organizations\n\n`;
+      markdown += `**Server**: ${params.server_url}\n`;
+      markdown += `**Total**: ${Array.isArray(result) ? result.length : 'Unknown'}\n\n`;
+
+      if (Array.isArray(result)) {
+        if (params.all_fields) {
+          for (const org of result) {
+            markdown += `## ${sanitizeInline(org.title || org.name)}\n\n`;
+            markdown += `- **ID**: \`${sanitizeInline(org.id)}\`\n`;
+            markdown += `- **Name**: \`${sanitizeInline(org.name)}\`\n`;
+            if (org.description) markdown += `- **Description**: ${sanitizeInline(org.description.substring(0, 200))}\n`;
+            markdown += `- **Datasets**: ${org.package_count || 0}\n`;
+            markdown += `- **Created**: ${formatDate(org.created)}\n`;
+            markdown += `- **Link**: ${getOrganizationViewUrl(params.server_url, org)}\n\n`;
+          }
+        } else {
+          markdown += result.map((name: string) => `- ${name}`).join('\n');
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_organization_list"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+/**
+ * Show organization details
+ */
+export const organizationShow = defineTool({
+  name: "ckan_organization_show",
+  title: "Show CKAN Organization Details",
+  description: `Get details of a specific organization.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - id (string): Organization ID or name
+  - include_datasets (boolean): Include list of datasets (default: true)
+  - include_users (boolean): Include list of users (default: false)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  Organization details with optional datasets and users
+
+Typical workflow: ckan_organization_show → ckan_package_show (inspect a dataset) → ckan_datastore_search (query its data)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    id: z.string().min(1).describe("Organization ID (UUID) or machine-readable name slug (e.g., 'regione-siciliana')"),
+    include_datasets: z.boolean().optional().default(true).describe("Include the list of datasets published by this organization"),
+    include_users: z.boolean().optional().default(false).describe("Include the list of users belonging to this organization"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      const result = await makeCkanRequest<any>(
+        ctx,
+        params.server_url,
+        'organization_show',
+        {
+          id: params.id,
+          include_datasets: params.include_datasets,
+          include_users: params.include_users
+        }
+      );
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const compact = compactOrganizationShow(result, params.server_url);
+        return ctx.output.json(compact);
+      }
+
+      const markdown = formatOrganizationShowMarkdown(result, params.server_url);
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_organization_show"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+/**
+ * Search organizations by name pattern
+ */
+export const organizationSearch = defineTool({
+  name: "ckan_organization_search",
+  title: "Search CKAN Organizations by Name",
+  description: `Search for organizations by name pattern.
+
+This tool provides a simpler interface than package_search for finding organizations.
+Wildcards are automatically added around the search pattern.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - pattern (string): Search pattern (e.g., "toscana", "salute")
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  List of matching organizations with dataset counts
+
+Examples:
+  - { server_url: "https://www.dati.gov.it/opendata", pattern: "toscana" }
+  - { server_url: "https://open.canada.ca/data", pattern: "health" }
+
+Typical workflow: ckan_organization_search → ckan_organization_show (get details) → ckan_package_search with fq="organization:name"`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.gov.it/opendata)"),
+    pattern: z.string().min(1).describe("Name pattern to search for (wildcards added automatically, e.g., 'toscana', 'health')"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
+  },
+  async handler(params, ctx) {
+    try {
+      // Build Solr query with wildcards. A wildcard term bypasses Solr's analysis
+      // chain, so the pattern has to be pre-normalised the way CKAN builds the name
+      // slug: lowercase and without accents. Otherwise `città` finds nothing while
+      // `citta` finds 135 organizations, `citta-metropolitana-di-*` among them.
+      const query = `organization:*${stripAccents(params.pattern.toLowerCase())}*`;
+
+      // Search using package_search with faceting
+      const result = await makeCkanRequest<any>(
+        ctx,
+        params.server_url,
+        'package_search',
+        {
+          q: query,
+          rows: 0,
+          'facet.field': JSON.stringify(['organization']),
+          'facet.limit': 500
+        }
+      );
+
+      // Extract organization facets
+      const orgFacets = result.search_facets?.organization?.items || [];
+      const totalDatasets = result.count || 0;
+
+      if (params.response_format === ResponseFormat.JSON) {
+        const jsonResult = {
+          count: orgFacets.length,
+          total_datasets: totalDatasets,
+          organizations: orgFacets.map((item: OrgFacetItem) => ({
+            name: item.name,
+            display_name: item.display_name,
+            dataset_count: item.count,
+            view_url: getOrganizationViewUrl(params.server_url, { name: item.name })
+          }))
+        };
+
+        return ctx.output.json(jsonResult);
+      }
+
+      // Markdown format
+      let markdown = `# CKAN Organization Search Results\n\n`;
+      markdown += `**Server**: ${params.server_url}\n`;
+      markdown += `**Pattern**: "${params.pattern}"\n`;
+      markdown += `**Organizations Found**: ${orgFacets.length}\n`;
+      markdown += `**Total Datasets**: ${totalDatasets}\n\n`;
+
+      if (orgFacets.length === 0) {
+        markdown += `No organizations found matching pattern "${params.pattern}".\n`;
+        markdown += `\n> **Note**: No data was found on this portal. Do not use information from other sources to supplement this result.\n`;
+      } else {
+        markdown += `## Matching Organizations\n\n`;
+        markdown += `| Organization | Datasets | Link |\n`;
+        markdown += `|--------------|----------|------|\n`;
+
+        for (const org of orgFacets) {
+          const viewUrl = getOrganizationViewUrl(params.server_url, { name: org.name });
+          markdown += `| ${sanitizeInline(org.display_name || org.name)} | ${org.count} | ${viewUrl} |\n`;
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(formatCkanError(error, "ckan_organization_search"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+export const ORGANIZATION_TOOLS = [organizationList, organizationShow, organizationSearch];

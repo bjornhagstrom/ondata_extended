@@ -8,8 +8,8 @@
  */
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import type { Profile, PromptResult, RowsResult, ToolResult } from "@ondata-extended/profile-contract";
+import { z, type ZodRawShape } from "zod";
+import type { Profile, PromptResult, RowsResult, ToolResult, ToolSpec } from "@ondata-extended/profile-contract";
 import type { Engine } from "./engine.js";
 import { SsrfGuardError } from "./net/guards.js";
 
@@ -68,7 +68,7 @@ export async function runRowsTool(profile: Profile, toolName: string, args: Reco
   const tool = profile.tools.find((t) => t.name === toolName);
   if (!tool) throw new Error(`Unknown tool "${toolName}" in profile "${profile.id}"`);
   if (!tool.rows) throw new Error(`Tool "${toolName}" returns a document, not rows; call it through MCP`);
-  const parsed = await z.object(tool.inputSchema).parseAsync(args);
+  const parsed = await inputSchemaOf(tool).parseAsync(args);
   const result = await tool.rows(parsed, engine.contextFor(profile, {}));
   return { ...result, emptyText: result.emptyText ?? profile.emptyText ?? DEFAULT_EMPTY_TEXT };
 }
@@ -91,7 +91,7 @@ export function registerProfiles(server: McpServer, profiles: readonly Profile[]
         {
           title: tool.title,
           description: describeTool(tool.description, tool.examples),
-          inputSchema: tool.inputSchema,
+          inputSchema: inputSchemaOf(tool),
           ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
           ...(tool.annotations ? { annotations: tool.annotations } : {})
         },
@@ -141,6 +141,12 @@ export function registerProfiles(server: McpServer, profiles: readonly Profile[]
       );
     }
   }
+}
+
+/** The schema the SDK validates with: the shape, made strict when the tool asks for it. */
+export function inputSchemaOf(tool: Pick<ToolSpec, "inputSchema" | "strictInput">): z.ZodObject<ZodRawShape> {
+  const schema = z.object(tool.inputSchema);
+  return tool.strictInput ? schema.strict() : schema;
 }
 
 /** The description a client sees: the profile's text, then its examples. */

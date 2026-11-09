@@ -79,6 +79,22 @@ beforeAll(async () => {
         res.end(body);
         return;
       }
+      case "/gzip-undeclared":
+        // gzip bytes without Content-Encoding: the runtime passes them through packed
+        res.setHeader("content-type", "application/json");
+        res.end(gzipSync(Buffer.from(JSON.stringify({ unpacked: true }))));
+        return;
+      case "/gzip-identity":
+        res.setHeader("content-encoding", "identity");
+        res.end(gzipSync(Buffer.from(JSON.stringify({ unpacked: true }))));
+        return;
+      case "/gzip-undeclared-bomb":
+        res.end(gzipSync(Buffer.alloc(2 * 1024 * 1024, 0x61)));
+        return;
+      case "/gzip-magic-only":
+        // starts like gzip, is not
+        res.end(Buffer.from([0x1f, 0x8b, 0x41, 0x42]));
+        return;
       case "/stall-body":
         res.setHeader("content-type", "text/plain");
         res.write("partial");
@@ -164,12 +180,33 @@ describe("HttpClient against a live server", () => {
     await expect(client.request(`${base}/gzip-bomb`, {}, PRIVATE)).rejects.toBeInstanceOf(ResponseTooLargeError);
   });
 
+  it("unpacks a gzip body the server did not declare, as ondata did on Node", async () => {
+    const res = await new HttpClient(settings()).request(`${base}/gzip-undeclared`, {}, PRIVATE);
+    expect(JSON.parse(res.text!)).toEqual({ unpacked: true });
+  });
+
+  it("unpacks gzip bytes sent as Content-Encoding: identity, as ondata did", async () => {
+    const res = await new HttpClient(settings()).request(`${base}/gzip-identity`, {}, PRIVATE);
+    expect(JSON.parse(res.text!)).toEqual({ unpacked: true });
+  });
+
+  it("holds the decompressed cap for an undeclared gzip body too", async () => {
+    const client = new HttpClient(settings({ maxResponseBytes: 1024 * 1024, maxDecompressedBytes: 100 * 1024 }));
+    await expect(client.request(`${base}/gzip-undeclared-bomb`, {}, PRIVATE)).rejects.toBeInstanceOf(ResponseTooLargeError);
+  });
+
+  it("keeps the bytes as they came when they only start like gzip", async () => {
+    const res = await new HttpClient(settings()).request(`${base}/gzip-magic-only`, {}, PRIVATE);
+    expect(res.text!.endsWith("AB")).toBe(true);
+  });
+
   it("times out while the body is stalled, not only before the headers", async () => {
     const client = new HttpClient(settings({ timeoutMs: 300 }));
     const t0 = Date.now();
     const error = await client.request(`${base}/stall-body`, {}, PRIVATE).catch((e) => e);
     expect(error).toBeInstanceOf(TransportError);
     expect(String(error.message)).toContain("timeout");
+    expect(error.kind).toBe("timeout");
     expect(Date.now() - t0).toBeLessThan(2000);
   });
 
@@ -193,7 +230,9 @@ describe("HttpClient against a live server", () => {
   });
 
   it("treats an edge 52x as a transport failure in json()", async () => {
-    await expect(new HttpClient(settings()).json(`${base}/edge-522`, {}, PRIVATE)).rejects.toBeInstanceOf(TransportError);
+    const error = await new HttpClient(settings()).json(`${base}/edge-522`, {}, PRIVATE).catch((e: unknown) => e) as TransportError;
+    expect(error).toBeInstanceOf(TransportError);
+    expect(error.kind).toBe("edge");
   });
 
   it("retries once with the honest user agent on an Anubis challenge", async () => {
@@ -251,6 +290,23 @@ describe("HttpClient redirects (stubbed fetch)", () => {
 
   const redirectTo = (location: string) => new Response(null, { status: 302, headers: { location } });
 
+  it("allowlistedAs checks the stand-in host on the first hop only; redirects are checked as usual", async () => {
+    __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
+    const listed = settings({ policy: policy({ allowedDomains: ["caller.example"] }) });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+    await expect(new HttpClient(listed).request("https://api.example/x")).rejects.toThrow('Domain "api.example" is not in the allowed list');
+    await expect(new HttpClient(listed).request("https://api.example/x", {}, { allowlistedAs: "https://caller.example/" })).resolves.toMatchObject({ status: 200 });
+    vi.stubGlobal("fetch", vi.fn(async () => redirectTo("https://elsewhere.example/")));
+    await expect(new HttpClient(listed).request("https://api.example/x", {}, { allowlistedAs: "https://caller.example/" }))
+      .rejects.toThrow('Domain "elsewhere.example" is not in the allowed list');
+  });
+
+  it("allowlistedAs does not lift the literal guards on the real URL", async () => {
+    const listed = settings({ policy: policy({ allowedDomains: ["caller.example"], privateHosts: [] }) });
+    await expect(new HttpClient(listed).request("http://169.254.169.254/x", {}, { allowlistedAs: "https://caller.example/" }))
+      .rejects.toThrow("private/internal");
+  });
+
   it("re-validates each hop and refuses a redirect to cloud metadata", async () => {
     __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
     vi.stubGlobal("fetch", vi.fn(async () => redirectTo("http://169.254.169.254/latest/meta-data/")));
@@ -277,8 +333,10 @@ describe("HttpClient redirects (stubbed fetch)", () => {
   it("stops after maxHops", async () => {
     __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
     vi.stubGlobal("fetch", vi.fn(async () => redirectTo("https://public.example/again")));
-    await expect(new HttpClient(settings()).request("https://public.example/x", {}, { maxHops: 2 }))
-      .rejects.toThrow("Too many redirects (>2)");
+    const error = await new HttpClient(settings()).request("https://public.example/x", {}, { maxHops: 2 }).catch((e) => e);
+    expect(error.message).toBe("Too many redirects (>2)");
+    expect(error.kind).toBe("too-many-redirects");
+    expect(error.retryable).toBe(false);
   });
 
   it("refuses a downgrade to http when httpsOnly", async () => {
@@ -294,6 +352,7 @@ describe("HttpClient redirects (stubbed fetch)", () => {
     const error = await new HttpClient(settings()).request("https://public.example/x").catch((e) => e);
     expect(error).toBeInstanceOf(TransportError);
     expect(error.message).toBe("Network error: fetch failed");
+    expect(error.kind).toBe("network");
   });
 });
 
@@ -313,6 +372,7 @@ describe("first-hop DNS check (independent of the pinning dispatcher)", () => {
     const error = await new HttpClient(settings()).request("https://no-such-host.example/").catch((e: unknown) => e);
     expect(error).toBeInstanceOf(TransportError);
     expect((error as Error).message).toBe("Server not found: https://no-such-host.example/");
+    expect((error as TransportError).kind).toBe("not-found");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

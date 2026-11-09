@@ -47,11 +47,21 @@ during each call. Both servers then read upstream HTTP from the same recordings.
   (`.gitignore`); re-record with `CKAN_PARITY_RECORD=1 CKAN_PARITY_ONLY=find-portals`. The other recordings
   (about 1.3 MB) are public open-data API answers; they include institutional contact addresses of dataset
   maintainers, as the portals publish them.
-- **Known limits.** The reference is ondata's fetch path. Its Node path (axios, what the npm package runs) can differ
-  in request details (e.g. how list parameters are serialized) and in error texts; no check covers it yet (to be
-  built with the profile's request layer). Hiding `process.versions.node` also turns off ondata's stderr audit log
-  during the call (no effect on tool output). The recorder buffers bodies and passes on only `content-type` and
-  `location`, so ondata's declared-size cap and its compressed-body decoding do not run in the recordings.
+- **ondata's Node path** (added in round 2): a third pass replays ondata on its Node path (axios, what the npm
+  package runs) through an axios adapter answering from the same recordings, matched by meaning (method, path,
+  decoded query pairs in order, body), because axios encodes a query differently (`*:*` against `*%3A*`); the portal
+  reads both the same. Every recorded request must be consumed. Result: ondata's two paths give the same
+  observation in all recorded cases, so the fetch path we port is what npm users see too. Their request headers
+  differ (D9).
+- **Deliberate differences** are listed per case in `parity.test.ts` (`DEVIATIONS`) with exactly how the
+  observation may differ; the rest of it is still compared (D8).
+- **Known limits.** Hiding `process.versions.node` also turns off ondata's stderr audit log during the call (no
+  effect on tool output). The recorder buffers bodies and passes on only `content-type` and `location`, so
+  ondata's declared-size cap and its compressed-body decoding do not run in the recordings; the ported unit tests
+  cover them (`packages/profile-ckan/tests/http.test.ts`).
+- **Round 2 cases** (2026-11-09): a missing organization (404 hint), `limit: 0` (count by facet), `all_fields`,
+  `tag_query` (the second, wider facet request), and seven without network: an unknown argument, an invalid URL, a
+  limit out of range, a private host (both formats), the metadata address and a `file:` URL. 95 cases in all.
 
 ## Ported so far (core)
 
@@ -69,15 +79,27 @@ during each call. Both servers then read upstream HTTP from the same recordings.
 
 164 ondata tests ported, all green, no expectation changed.
 
-### Not ported here, and where they go
+### Not yet ported, and where they go
 
 | ondata tests | Count | Goes to |
 |---|---|---|
-| `cache.test.ts` `getTtlForAction` | 4 | CKAN profile (the TTL per action is CKAN's) |
-| `http.test.ts` `makeCkanRequest`, cache integration, audit logging, `formatCkanError` (364-1024, 1054-end) | 76 | CKAN profile (URL schema, envelope, hints) |
 | `scheming.test.ts` `getDatasetSchema`, dataset page, JSON output | 9 | CKAN profile |
 | `sanitize-inline.test.ts` CKAN formatters | 10 | CKAN profile |
-| everything else (tools, resources, prompts, integration) | 434 | CKAN profile |
+| everything else (tools, resources, prompts, integration) | 324 | CKAN profile, next rounds (434 before round 2, less the 110 tool, utility and integration tests ported then) |
+
+## Ported so far (CKAN profile)
+
+| ondata file (09e8cdc) | Section | Tests | Here | How the reach changed |
+|---|---|---|---|---|
+| `tests/unit/http.test.ts` | 364-946 (`makeCkanRequest`, redirects, private hosts, Anubis) | 38 | `packages/profile-ckan/tests/http.test.ts` | axios mocks → a fake `fetch` (or a loopback server where a real connection is the point); ondata's axios `beforeRedirect` hook tested as a redirect chain; timeouts by the fetch abort with fake timers; ENOTFOUND by a DNS stub that throws; module cache and rate limiter → one engine per test. Two expectations follow D9 (below) |
+| same | 947-1024 (cache), 1054-1111 (audit log), 1112-1473 (`formatCkanError`) | 6, 3, 29 | same file | as above |
+| `tests/unit/cache.test.ts` | 64-84 (`getTtlForAction`) | 4 | same file | import path |
+| `tests/unit/ckan-error-message.test.ts` | all | 4 | `packages/profile-ckan/tests/ckan-error-message.test.ts` | import path |
+| `tests/unit/status-formatting.test.ts`, `tag.test.ts`, `organization-formatting.test.ts`, `portal-config.test.ts`, `url-generator.test.ts`, `search.test.ts` | all | 5, 2, 8, 4, 16, 61 | `packages/profile-ckan/tests/` (same names) | import paths |
+| `tests/integration/status.test.ts`, `organization.test.ts` | all | 2, 6 | `status-integration.test.ts`, `organization-integration.test.ts` | axios mock → fake `fetch` |
+| `tests/integration/status-hint.test.ts` | all | 2 (4 with `it.each`) | `status-hint.test.ts` | tool called through the profile on the core; axios ECONNABORTED → a fetch that never answers until a 50 ms `CKAN_TIMEOUT_MS` aborts it |
+
+190 ondata tests ported in round 2 (grep count), all green. Changed expectations: two, both D9.
 
 ## Ported from ondata's italianparliament-mcp (commit `fd46810`)
 
@@ -97,6 +119,10 @@ during each call. Both servers then read upstream HTTP from the same recordings.
 | `packages/host-vocab/tests/host.test.ts` | 5 | language files, generated landing page (en/sv) and /health, Worker routes |
 | `packages/core/tests/host-policy.test.ts` | 21 | per-host retry (what is retried and what never is: refused redirect, oversized body, redirect loop, Anubis single honest request, bounded attempts), shared throttle, row output and its two channels |
 | `packages/core/tests/sparql.test.ts` | 2 of 12 | `injectLimit`, `flattenBindings` (the other 10 are ported, see above) |
+| `packages/core/tests/client.test.ts` (round 2) | +6 | `allowlistedAs` (first hop only, literal guards kept); a gzip body without Content-Encoding or with `identity` is unpacked, within the decompressed cap, and kept as it came when it only starts like gzip; `TransportError.kind` asserted in the existing transport tests |
+| `packages/core/tests/engine.test.ts` (round 2) | +5 | `strictInput` (MCP and `runRowsTool`), `validateUrl` with the private-host exemption, `cache.defaultTtlSeconds` |
+| `packages/profile-ckan/tests/http.test.ts` (round 2, end of file) | 4 | the allowlist on the caller's host across the portals.json rewrite, a caller host outside it, a redirect loop without retry hint, an oversized body as `CkanApiError` |
+| `packages/profile-ckan/tests/parity/` (round 2) | 95 + 95 | our profile against ondata for the 13 cases of the ported tools plus 7 offline cases; ondata's Node path against its fetch path for all 95 |
 | `packages/spike-parliament/tests/spike.test.ts` | 14 | the contract spike through MCP: unprefixed names, examples, recorded Camera answers, per-chamber truncation, Senato throttle, Camera retry, no retry on 403, SPARQL validation and escaping |
 
 ## Deviation list (changed expectations and changed behaviour)
@@ -115,3 +141,7 @@ this core, which had dropped that first-hop check.
 | D5 | Every request gets the DNS check on the first hop, also on the CKAN path (ondata did it only on the strict paths; the CKAN path relied on the agents' pinned lookup). An unresolvable first host is reported as `Server not found: <url>` (a `TransportError`) without a request, as ondata's axios path reported ENOTFOUND. | Defence in depth: holds even if the pinning dispatcher cannot load. | One extra DNS lookup per uncached request. | None. |
 | D6 | Default redirect limit 5 for every request; ondata's `safeFetch` defaulted to 3 (sparql, quality, portal discovery) and its CKAN path used 5. | One default. | The CKAN profile passes `maxHops: 3` where ondata used `safeFetch`'s default. | None, if the profile does so. |
 | D7 | `jsonToolResult` wraps a top-level array or null as `{ items: ... }` in `structuredContent`, which MCP requires to be an object. ondata passed it through (no ondata caller passes an array at 09e8cdc). | Protocol conformance. | None today. | None. |
+| D8 | Argument validation errors (unknown key, invalid URL, out of range) read `Invalid arguments for tool X: <message> at <path>`, one line per issue, instead of the Zod issues as a JSON array. | SDK 1.32.2 here, 1.27.1 in ondata: the SDK writes this text. | Shorter, same facts. | None. ondata gets the same text when it upgrades the SDK. |
+| D9 | The CKAN request headers on Node are those of ondata's fetch path (its Worker): `Accept`, `Accept-Encoding: identity`, the browser `User-Agent`. ondata's Node path (axios) also sent `Accept-Language`, `Accept-Encoding: gzip, deflate, br`, `Connection: keep-alive` and the `Sec-CH-UA*` hints, and set `proxy: false` (here the pinning dispatcher bypasses environment proxies). | One request path for Node and Workers. | None seen: the parity check replays ondata's Node path and it gives the same observation in every recorded case. A firewall that demands the client hints would refuse the Worker today too. | None. If a portal needs the hints, add them to the profile's request headers. |
+| D10 | A gzip body without `Content-Encoding` (or with one that names no coding the runtime undoes, e.g. `identity`) is unpacked on every runtime, by the core client (ondata did it on Node, not on Workers). Past the decompressed cap it is refused as too large; ondata kept the packed bytes, which then failed as `success=false`. | One behaviour everywhere; a clearer error. | Workers users get these portals' answers; a decompression bomb reads `Response too large`. | None. |
+

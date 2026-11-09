@@ -67,6 +67,13 @@ export interface FetchOptions {
    * (loopback, RFC 1918, unique-local). Default false: closed even for listed hosts.
    */
   allowPrivateHosts?: boolean;
+  /**
+   * A URL whose host is checked against the domain allowlist instead of the request's host, on
+   * the first hop only (redirects are checked as usual). For a profile that rewrites the caller's
+   * host to a known API host from its own registry; the caller's URL must already have passed
+   * `validateUrl`. All other guards still see the real URL.
+   */
+  allowlistedAs?: string;
 }
 
 /**
@@ -114,8 +121,11 @@ export interface EngineHttp {
   request(url: string, init?: RequestInit, opts?: FetchOptions): Promise<HttpResponse>;
   /** `request` + 2xx check + JSON parse. Throws the engine's HttpStatusError / TransportError. */
   json<T = unknown>(url: string, init?: RequestInit, opts?: FetchOptions): Promise<T>;
-  /** The literal SSRF guards and the domain allowlist, without a request. Throws SsrfGuardError. */
-  validateUrl(url: string): void;
+  /**
+   * The literal SSRF guards and the domain allowlist, without a request. Throws SsrfGuardError.
+   * `allowPrivateHosts` as in `FetchOptions`: the configured private hosts pass.
+   */
+  validateUrl(url: string, opts?: { allowPrivateHosts?: boolean }): void;
 }
 
 export interface EngineCache {
@@ -124,6 +134,8 @@ export interface EngineCache {
   /** A collision-proof key from any JSON-serializable parts. */
   key(parts: unknown[]): Promise<string>;
   readonly enabled: boolean;
+  /** The deployment's default TTL (`<PREFIX>_CACHE_TTL_DEFAULT`, 300 s unless set). */
+  readonly defaultTtlSeconds: number;
 }
 
 /** A flat table: every value a string, as SPARQL bindings or CSV give them. */
@@ -213,6 +225,8 @@ export interface ToolSpec<Shape extends ZodRawShape = ZodRawShape> {
   /** Example calls; the core appends them to the description ("Examples:"). */
   examples?: string[];
   inputSchema: Shape;
+  /** Reject unknown arguments instead of dropping them (a Zod `.strict()` object). */
+  strictInput?: boolean;
   outputSchema?: ZodRawShape;
   annotations?: ToolAnnotations;
   /** A small tool the core offers to several profiles (e.g. a SPARQL query); exempt from the prefix. */

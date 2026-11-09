@@ -57,6 +57,19 @@ export const COVERAGE_CASES: ParityCase[] = [
   ...both("migrated-portal", "ckan_package_search", { server_url: "https://catalog.data.gov", q: "water", rows: 2 }),
   // id from ondata's smoke case "scheming portal" (tests/smoke/cases.json)
   ...both("canada-show", "ckan_package_show", { server_url: CANADA, id: "01313060-f926-4460-a537-4204e47c88a5" }),
+  // Added in CKAN round 2 (2026-11-09): branches the first set did not reach.
+  ...both("organization-show-missing", "ckan_organization_show", { server_url: MILAN, id: "no-such-organization-parity" }),
+  ...both("organization-list-count", "ckan_organization_list", { server_url: MILAN, limit: 0 }),
+  ...both("organization-list-all", "ckan_organization_list", { server_url: MILAN, all_fields: true, limit: 3 }),
+  ...both("tag-list-query", "ckan_tag_list", { server_url: MILAN, tag_query: "aria", limit: 5 }),
+  // No network: argument validation and the guards, where the SDK versions (1.27.1 there,
+  // 1.32.2 here) or the core's guards could word things differently.
+  { id: "offline-unknown-arg", kind: "tool", name: "ckan_status_show", args: { server_url: MILAN, bogus: 1 } },
+  { id: "offline-bad-url", kind: "tool", name: "ckan_status_show", args: { server_url: "not a url" } },
+  { id: "offline-limit-range", kind: "tool", name: "ckan_tag_list", args: { server_url: MILAN, limit: 5000 } },
+  ...both("offline-private-host", "ckan_organization_show", { server_url: "http://127.0.0.1", id: "x" }),
+  { id: "offline-metadata-host", kind: "tool", name: "ckan_organization_list", args: { server_url: "http://169.254.169.254/latest" } },
+  { id: "offline-file-scheme", kind: "tool", name: "ckan_tag_list", args: { server_url: "file:///etc/passwd" } },
   { id: "res-dataset", kind: "resource", uri: `ckan://dati.comune.milano.it/dataset/${MILAN_DATASET}` },
   { id: "res-resource", kind: "resource", uri: `ckan://dati.comune.milano.it/resource/${MILAN_RESOURCE}` },
   { id: "res-organization", kind: "resource", uri: "ckan://dati.comune.milano.it/organization/comunedimilano" },

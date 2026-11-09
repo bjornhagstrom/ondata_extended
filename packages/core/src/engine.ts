@@ -86,10 +86,11 @@ export function createEngine(options: EngineOptions): Engine {
         http: {
           request: (url, init, opts) => client.request(url, init, opts),
           json: (url, init, opts) => client.json(url, init, opts),
-          validateUrl: (url) => client.validateUrl(url)
+          validateUrl: (url, opts) => client.validateUrl(url, opts)
         },
         cache: {
           enabled: cache !== null,
+          defaultTtlSeconds: cacheConfig.ttlDefault,
           get: async (key) => (cache ? cache.get(key) : undefined),
           set: async (key, value, ttl) => {
             if (!cache) return;

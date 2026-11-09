@@ -16,6 +16,7 @@ export {
   createTextPrompt,
   describeTool,
   runRowsTool,
+  inputSchemaOf,
   DEFAULT_EMPTY_TEXT,
   McpServer,
   type ServerInfo
@@ -32,7 +33,8 @@ export {
   safeFetch,
   createHostThrottle,
   DEFAULT_BROWSER_USER_AGENT,
-  type HttpClientSettings
+  type HttpClientSettings,
+  type TransportErrorKind
 } from "./net/client.js";
 export {
   SsrfGuardError,
