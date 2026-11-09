@@ -361,3 +361,30 @@ describe("EngineContext additions for profiles with their own request layer", ()
   });
 });
 
+describe("resources through an MCP client", () => {
+  it("matches the template, hands the variables and the context to read, and returns its contents", async () => {
+    let seen: { uri: string; variables: unknown; hasContext: boolean } | null = null;
+    const profile = testProfile({
+      resources: [{
+        name: "demo-item",
+        uriTemplate: "demo://{host}/item/{id}",
+        title: "Demo item",
+        description: "One item",
+        mimeType: "application/json",
+        read: async (uri, variables, ctx) => {
+          seen = { uri: uri.href, variables, hasContext: typeof ctx.http.request === "function" };
+          return { contents: [{ uri: uri.href, mimeType: "application/json", text: ctx.output.truncateJson({ id: variables.id }) }] };
+        }
+      }]
+    });
+    const { client } = await connect([profile]);
+    const templates = await client.listResourceTemplates();
+    expect(templates.resourceTemplates).toEqual([
+      expect.objectContaining({ name: "demo-item", uriTemplate: "demo://{host}/item/{id}", title: "Demo item", mimeType: "application/json" })
+    ]);
+    const r = await client.readResource({ uri: "demo://example.org/item/42" });
+    expect(seen).toEqual({ uri: "demo://example.org/item/42", variables: { host: "example.org", id: "42" }, hasContext: true });
+    expect(r.contents).toEqual([{ uri: "demo://example.org/item/42", mimeType: "application/json", text: JSON.stringify({ id: "42" }, null, 2) }]);
+  });
+});
+

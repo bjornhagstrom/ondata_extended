@@ -110,6 +110,10 @@ with Andrea Borruso as the natural owner of the core, since it reduces the code 
   CKAN interfaces lack). Cause of the memory use not yet established (suspected: zod/SDK type instantiation in
   `registerTool`). A possible small PR: make `tsc` complete, fix what it then reports. Nothing goes upstream
   without Björn's ok.
+- **Upstream candidate (backlog): a prompt names a tool that does not exist.** ondata's `ckan-analyze-dataset` prompt
+  (src/prompts/dataset-analysis.ts:19-21 at 09e8cdc) tells the model to call `ckan_resource_show`, which ondata does
+  not register. The port keeps the text (parity) and lists only registered tools as the prompt's references (the core
+  checks them). A one-line fix upstream; nothing goes upstream without Björn's ok.
 - **Row-level tool results: yes** (Björn's decision), so a profile can serve both MCP and a CLI. Next step.
 
 ## 2026-11-09: row-level tool results (C6), built
@@ -153,7 +157,7 @@ The argument validation error text comes from the SDK and is shorter in 1.32.2 t
 ## 2026-11-09: CKAN profile, round 3 (groups, datasets, DataStore)
 
 The group, package (search, relevant datasets, show, list resources) and DataStore tools are ported from ondata's
-files; with round 2 that is 14 of ondata's 18 tools. What changed in the port, beyond threading `ctx`:
+files; with round 2 that is 14 of ondata's 20 tools. What changed in the port, beyond threading `ctx`:
 
 - **Scheming fields** use the core's generic field renderer (`renderFields`, `formatFieldsMarkdown`), which was
   extracted from ondata's `scheming.ts` in step 3; the profile keeps ondata's never-added fields, labels, notes, and
@@ -167,7 +171,7 @@ files; with round 2 that is 14 of ondata's 18 tools. What changed in the port, b
 
 ## 2026-11-09: CKAN profile, round 4 (quality, analysis, SPARQL, portal discovery)
 
-All 18 of ondata's tools are ported. ondata's direct `safeFetch` calls (MQA on data.europa.eu, SPARQL endpoints,
+All 20 of ondata's tools are ported. ondata's direct `safeFetch` calls (MQA on data.europa.eu, SPARQL endpoints,
 the datashades.info registry) go through `fetchAsResponse` (`packages/profile-ckan/src/utils/fetch.ts`): the core's
 request with what ondata's call had (its identity, its timeout, at most three redirects, no rate token, no honest
 retry), returned as a `Response` so the ported code reads it unchanged, with fetch-style errors. Contract additions,
@@ -182,3 +186,11 @@ each the smallest that worked:
 
 The parity harness treats a request without `Accept` as `Accept: */*`, which is what `fetch` sends (Fetch
 standard), since the core always sets one. `sparql_query` keeps ondata's unprefixed name (`shared`).
+
+## 2026-11-09: CKAN profile, round 5 (resources and prompts): the port is complete
+
+The seven resource templates and six prompts are ported; with rounds 2-4 the CKAN profile registers everything
+ondata's server registers at 09e8cdc (20 tools, 7 resource templates, 6 prompts) and the parity check requires the
+same lists. Not ported: the DataStore table UI resource, which ondata does not register. Still to do before the
+profile can replace ondata's server: the CKAN hosts (stdio/HTTP bin `ckan-mcp-server`, `/`, `/health`, `/mcp`, the
+Worker with ondata's telemetry fields, `CKAN_*` env names), and the smoke run against the live portals.

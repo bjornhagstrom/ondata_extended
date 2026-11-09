@@ -95,3 +95,10 @@ import type { ZodRawShape } from "zod";
 export function defineTool<S extends ZodRawShape>(spec: ToolSpec<S>): ToolSpec<any> {
   return spec as ToolSpec<any>;
 }
+
+import type { PromptSpec } from "@ondata-extended/profile-contract";
+
+/** A prompt with its argument types inferred from its shape. */
+export function definePrompt<S extends ZodRawShape>(spec: PromptSpec<S>): PromptSpec<any> {
+  return spec as PromptSpec<any>;
+}

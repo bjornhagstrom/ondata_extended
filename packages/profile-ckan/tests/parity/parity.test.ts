@@ -97,17 +97,21 @@ describe.runIf(ondataAvailable() && recordings.length > 0)("parity with ondata/c
     }
   });
 
-  it("tools/list: every tool we register is described exactly as ondata describes it", async () => {
-    vi.resetModules();
-    const theirs = await (await ondataClient()).listTools();
-    vi.resetModules();
-    const ours = await (await ourClient()).listTools();
-    expect(Object.keys(ours).length).toBeGreaterThan(0);
-    for (const [name, tool] of Object.entries(ours)) {
-      // name, title, description, input schema (as JSON Schema), annotations, output schema
-      expect({ name, tool }).toEqual({ name, tool: theirs[name] });
-    }
-  });
+  // What a client is told before it calls anything: names, titles, descriptions, argument
+  // schemas (as JSON Schema), annotations, MIME types. Every entry we register must equal
+  // ondata's, and since the port is complete, nothing of ondata's may be missing.
+  for (const list of ["listTools", "listPrompts", "listResourceTemplates"] as const) {
+    it(`${list}: the same entries as ondata, each described identically`, async () => {
+      vi.resetModules();
+      const theirs = await (await ondataClient())[list]();
+      vi.resetModules();
+      const ours = await (await ourClient())[list]();
+      expect(Object.keys(ours).sort()).toEqual(Object.keys(theirs).sort());
+      for (const [name, entry] of Object.entries(ours)) {
+        expect({ name, entry }).toEqual({ name, entry: theirs[name] });
+      }
+    });
+  }
 
   describe("our CKAN profile gives the same observation", () => {
     for (const rec of recordings) {

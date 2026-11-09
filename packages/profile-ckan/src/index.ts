@@ -17,6 +17,8 @@ import { QUALITY_TOOLS } from "./tools/quality.js";
 import { ANALYZE_TOOLS } from "./tools/analyze.js";
 import { SPARQL_TOOLS } from "./tools/sparql.js";
 import { PORTAL_DISCOVERY_TOOLS } from "./tools/portal-discovery.js";
+import { CKAN_RESOURCES } from "./resources/index.js";
+import { CKAN_PROMPTS } from "./prompts/index.js";
 
 export const PROFILE_ID = "ckan";
 export const TOOL_PREFIX = "ckan_";
@@ -38,6 +40,8 @@ export function createCkanProfile(): Profile {
     version: PROFILE_VERSION,
     toolPrefix: TOOL_PREFIX,
     tools: CKAN_TOOLS,
+    resources: CKAN_RESOURCES,
+    prompts: CKAN_PROMPTS,
     shrinkableKeys: SHRINKABLE_KEYS,
     telemetryFields: TELEMETRY_FIELDS,
     untrustedSourceLabel: UNTRUSTED_SOURCE,

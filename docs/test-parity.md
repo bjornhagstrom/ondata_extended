@@ -27,7 +27,7 @@ Coverage and test count may not fall below the ondata baseline for the code each
 another commit) and made to take its fetch path (the one its hosted Worker runs) by hiding `process.versions.node`
 during each call. Both servers then read upstream HTTP from the same recordings.
 
-- **Cases** (`cases.ts`): every tool in Markdown and JSON (18 tools; the two without `response_format` once), every
+- **Cases** (`cases.ts`): every tool in Markdown and JSON (20 tools; the two without `response_format` once), every
   resource template, every prompt, and ondata's smoke cases including the second call of a comparing case: 80.
   IDs point at old, stable records where possible.
 - **Recording** (`record.test.ts`, only with `CKAN_PARITY_RECORD=1`): ondata against the live portals, one case at a
@@ -79,11 +79,11 @@ during each call. Both servers then read upstream HTTP from the same recordings.
 
 164 ondata tests ported, all green, no expectation changed.
 
-### Not yet ported, and where they go
+### Not ported, and why
 
 | ondata tests | Count | Goes to |
 |---|---|---|
-| `integration/resources` 11, `unit/prompts` 5, `unit/resources-dataset-filters` 3, `unit/uri` 11, `integration/datastore-table-ui` 6 | 36 | CKAN profile, next round (resources, prompts, the DataStore table UI resource). Counted per file; the earlier running total (434) was 2 short |
+| `tests/integration/datastore-table-ui.test.ts` | 6 | Not ported: it tests the DataStore table UI resource, which ondata at 09e8cdc does not register (`src/resources/index.ts:19,31`: "disabled - awaiting use-case design"). It comes with that resource if ondata turns it on |
 
 ## Ported so far (CKAN profile)
 
@@ -131,6 +131,19 @@ https-only, allowlist exemption for constant upstreams only, fetch-style errors,
 texts: its DNS check and its `AbortController` timer) and 2 core client tests (`userAgent: { fixed }`,
 `fixedUpstream`). New parity cases: SPARQL over POST (Wikidata) and a rejected query, analysis on a
 second portal, three offline (not SELECT, http endpoint, MQA on another portal): 121 cases.
+
+### Round 5 (resources and prompts)
+
+| ondata file (09e8cdc) | Tests | Here | How the reach changed |
+|---|---|---|---|
+| `tests/unit/prompts.test.ts`, `uri.test.ts` | 5, 11 | same names | import paths |
+| `tests/integration/resources.test.ts` | 11 | `resources-integration.test.ts` | axios mock → fake `fetch`; the URL and parameters read from the request the portal receives |
+| `tests/unit/resources-dataset-filters.test.ts` | 3 | same name | the resources are specs found by name, not register functions; `makeCkanRequest` mocked as in ondata, now with the context first; the mock keeps the module's other exports |
+
+30 ondata tests ported in round 5, all green, no expectation changed, nothing skipped. Every ondata test file at
+09e8cdc is now ported or listed above with its reason. The parity check now also compares `prompts/list` and
+`resources/templates/list` with ondata's, and all three lists must have the same entries (the port is complete): all
+121 cases pass on all three passes, none is `todo`.
 
 ## Ported from ondata's italianparliament-mcp (commit `fd46810`)
 

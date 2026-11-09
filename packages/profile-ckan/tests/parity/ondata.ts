@@ -40,6 +40,9 @@ export interface McpCaller {
   getPrompt(name: string, args: Record<string, string>): Promise<Observed>;
   /** tools/list as a client sees it, by name. */
   listTools(): Promise<Record<string, unknown>>;
+  /** prompts/list and resources/templates/list, by name. */
+  listPrompts(): Promise<Record<string, unknown>>;
+  listResourceTemplates(): Promise<Record<string, unknown>>;
 }
 
 type AnyClient = {
@@ -47,6 +50,8 @@ type AnyClient = {
   readResource(req: unknown): Promise<{ contents: { text?: string; mimeType?: string; uri?: string }[] }>;
   getPrompt(req: unknown): Promise<{ messages: { role: string; content: { text?: string } }[] }>;
   listTools(): Promise<{ tools: { name: string }[] }>;
+  listPrompts(): Promise<{ prompts: { name: string }[] }>;
+  listResourceTemplates(): Promise<{ resourceTemplates: { name: string }[] }>;
 };
 
 /** One observation shape for both servers' clients. */
@@ -67,6 +72,14 @@ export function observe(client: AnyClient): McpCaller {
     async listTools() {
       const r = await client.listTools();
       return Object.fromEntries(r.tools.map((t) => [t.name, t]));
+    },
+    async listPrompts() {
+      const r = await client.listPrompts();
+      return Object.fromEntries(r.prompts.map((t) => [t.name, t]));
+    },
+    async listResourceTemplates() {
+      const r = await client.listResourceTemplates();
+      return Object.fromEntries(r.resourceTemplates.map((t) => [t.name, t]));
     }
   };
 }
@@ -103,7 +116,9 @@ export async function ondataClient(): Promise<McpCaller & { setDnsResolver(fn: u
     callTool: (name, args) => withOndataFetchPath(() => caller.callTool(name, args)),
     readResource: (uri) => withOndataFetchPath(() => caller.readResource(uri)),
     getPrompt: (name, args) => withOndataFetchPath(() => caller.getPrompt(name, args)),
-    listTools: () => caller.listTools()
+    listTools: () => caller.listTools(),
+    listPrompts: () => caller.listPrompts(),
+    listResourceTemplates: () => caller.listResourceTemplates()
   };
 }
 
