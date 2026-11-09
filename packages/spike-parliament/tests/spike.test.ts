@@ -168,3 +168,24 @@ describe("sparql tool on the core's shared SPARQL module", () => {
     expect(calls[0].query).not.toMatch(/LCASE\("x"\)/);
   });
 });
+
+describe("CLI parity through runRowsTool", () => {
+  it("applies schema defaults, drops unknown keys and resolves the empty text, like the MCP path", async () => {
+    const { runRowsTool } = await import("@ondata-extended/core");
+    handler = () => sparqlJson(["s"], []);
+    const engine = createEngine({ configPrefixes: ["SPIKE"], configSource: {}, cacheOrigin: "https://t.internal" });
+    const result = await runRowsTool(createParliamentSpikeProfile(), "deputies", { unknown: "x" }, engine);
+    expect(calls[0].query).toMatch(/LIMIT 100\nOFFSET 0$/);
+    expect(result.rows).toEqual([]);
+    expect(result.emptyText).toContain("NON dedurre né inventare il valore");
+  });
+
+  it("the same tool definition gives a CLI the rows of the recorded answer", async () => {
+    const { runRowsTool, formatTable } = await import("@ondata-extended/core");
+    const engine = createEngine({ configPrefixes: ["SPIKE"], configSource: {}, cacheOrigin: "https://t.internal" });
+    const result = await runRowsTool(createParliamentSpikeProfile(), "legislatures", {}, engine);
+    expect(result.rows[0]).toMatchObject({ uri: "http://dati.camera.it/ocd/legislatura.rdf/regno_01" });
+    const csv = formatTable(result.rows, { columns: result.columns, emptyText: "-", format: "csv" }, 1e6).text;
+    expect(csv.split("\n")[0]).toBe("uri,label,title,date");
+  });
+});

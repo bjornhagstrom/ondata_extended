@@ -105,3 +105,9 @@ with Andrea Borruso as the natural owner of the core, since it reduces the code 
 - **`.claude/` and `review/` stay out of the repository** (Björn's decision): listed in `.git/info/exclude`, so they
   live only in this working copy. `CLAUDE.md`, `AGENTS.md` and `docs/testing-application.md` point to them.
 - **Row-level tool results: yes** (Björn's decision), so a profile can serve both MCP and a CLI. Next step.
+
+## 2026-11-09: row-level tool results (C6), built
+
+`ToolSpec` has `handler` (a finished MCP result) or `rows` (data the host formats); exactly one. `RowsResult`,
+`Profile.emptyText`, and `runRowsTool` for CLIs. The spike's tools use `rows`; the SKOS tools keep `handler`
+(their output is a document). See `docs/spike-parliament.md` (C6).

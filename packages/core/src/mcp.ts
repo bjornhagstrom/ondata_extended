@@ -8,7 +8,8 @@
  */
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Profile, PromptResult, ToolResult } from "@ondata-extended/profile-contract";
+import { z } from "zod";
+import type { Profile, PromptResult, RowsResult, ToolResult } from "@ondata-extended/profile-contract";
 import type { Engine } from "./engine.js";
 import { SsrfGuardError } from "./net/guards.js";
 
@@ -31,6 +32,9 @@ export function validateProfiles(profiles: readonly Profile[]): void {
     if (profileIds.has(profile.id)) throw new Error(`Profile "${profile.id}" registered twice`);
     profileIds.add(profile.id);
     for (const tool of profile.tools) {
+      if (!tool.handler === !tool.rows) {
+        throw new Error(`Tool "${tool.name}" in profile "${profile.id}" must have exactly one of handler and rows`);
+      }
       if (toolNames.has(tool.name)) throw new Error(`Tool name "${tool.name}" is registered by more than one profile`);
       if (profile.toolPrefix && !tool.shared && !tool.name.startsWith(profile.toolPrefix)) {
         throw new Error(`Tool "${tool.name}" in profile "${profile.id}" does not start with "${profile.toolPrefix}"`);
@@ -47,6 +51,26 @@ export function validateProfiles(profiles: readonly Profile[]): void {
       }
     }
   }
+}
+
+/** Empty-result text when neither the tool nor the profile gives one. */
+export const DEFAULT_EMPTY_TEXT =
+  "No results. Do not infer or invent the missing value: rephrase the query, widen the filter, or check the identifiers.";
+
+/**
+ * Call a row-level tool outside MCP, e.g. from a CLI: validates the arguments with the tool's
+ * schema as the MCP SDK does (async parse, defaults applied, unknown keys dropped) and returns the
+ * rows unformatted, with `emptyText` resolved (tool, then profile, then core) as MCP would show it.
+ * The CLI picks the format. Errors are thrown as they are; a CLI that wants the model-facing hint
+ * calls `profile.describeError(error, toolName)` itself.
+ */
+export async function runRowsTool(profile: Profile, toolName: string, args: Record<string, unknown>, engine: Engine): Promise<RowsResult & { emptyText: string }> {
+  const tool = profile.tools.find((t) => t.name === toolName);
+  if (!tool) throw new Error(`Unknown tool "${toolName}" in profile "${profile.id}"`);
+  if (!tool.rows) throw new Error(`Tool "${toolName}" returns a document, not rows; call it through MCP`);
+  const parsed = await z.object(tool.inputSchema).parseAsync(args);
+  const result = await tool.rows(parsed, engine.contextFor(profile, {}));
+  return { ...result, emptyText: result.emptyText ?? profile.emptyText ?? DEFAULT_EMPTY_TEXT };
 }
 
 /** The text a caller sees for an error no profile described. Never echoes upstream bodies. */
@@ -73,7 +97,15 @@ export function registerProfiles(server: McpServer, profiles: readonly Profile[]
         },
         (async (args: Record<string, unknown>): Promise<ToolResult> => {
           try {
-            return await tool.handler(args, ctx);
+            if (tool.rows) {
+              const r = await tool.rows(args, ctx);
+              return ctx.output.table(r.rows, {
+                ...(r.columns ? { columns: r.columns } : {}),
+                ...(r.notice ? { notice: r.notice } : {}),
+                emptyText: r.emptyText ?? profile.emptyText ?? DEFAULT_EMPTY_TEXT
+              });
+            }
+            return await tool.handler!(args, ctx);
           } catch (error) {
             const base = genericErrorText(error);
             const hint = profile.describeError?.(error, tool.name) ?? null;

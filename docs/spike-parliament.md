@@ -7,7 +7,7 @@ row output, and 43 tool names without a prefix that are already a user contract.
 
 **What was built.** `packages/spike-parliament` (throwaway): four tools of the original (`legislatures`, `deputies`,
 `search`, `sparql`, commit `fd46810`, MIT, Andrea Borruso) as a profile on the core, with the original's queries,
-names and Italian model-facing texts. Ranking, birthplace parsing and 39 other tools are left out. 11 tests through
+names and Italian model-facing texts. Ranking, birthplace parsing and 39 other tools are left out. 14 tests through
 a real MCP client: Camera answers recorded live (three queries, 2026-11-09), Senato synthetic (Senato blocks an IP
 after a burst and the block does not decay). One live run against dati.camera.it went through the core's guards
 and host policy and returned the expected rows.
@@ -24,6 +24,7 @@ profiles (CKAN and SKOS are unaffected; 266 earlier tests unchanged and green).
 | C3 | Row output | Every tool returns `{rows, columns, hint, notice}`; the server formats JSONL with the truncation notice **after** the rows and an anti-confabulation text when empty (`src/server.ts:58-69`, `src/tools/types.ts`) | `ctx.output.table(rows, { columns, notice, emptyText, format })`: cut on whole rows, notice kept, a note when rows were dropped for size; `structuredContent = { columns, rows, total, truncated }`. Also `ctx.output.text(text, { trailer })` |
 | C4 | Examples | `describe()` appends "Examples:" (`src/server.ts:52-56`) | `ToolSpec.examples`; the core appends them |
 | C5 | Shared SPARQL helpers | `validateSelectQuery`, `injectLimit`, `sparqlStringLiteral`, `flattenBindings` | `packages/core/src/sparql.ts`, from the parliament versions (stricter than ckan-mcp-server's, which accepts `INSERT DATA {...} ; SELECT ...`), plus `sparqlSelect` through the engine's client |
+| C6 | A tool result a CLI can use | `Tool.execute(input)` returns `{rows, columns, notice}`; the CLI (`src/cli.ts`) and MCP (`src/server.ts`) format it differently | `ToolSpec.rows(args, ctx)` as the alternative to `handler` (exactly one is required), `RowsResult { rows, columns, notice, emptyText }`, `Profile.emptyText`, and `runRowsTool` in the core |
 
 ## What the spike showed is *not* needed (yet)
 
@@ -44,16 +45,17 @@ profiles (CKAN and SKOS are unaffected; 266 earlier tests unchanged and green).
 | Accept header | `application/json` | `application/sparql-results+json, application/json` | Wire difference; both endpoints answer JSON either way (Camera verified live) |
 | Output | text only | text + `structuredContent` | Additive |
 | Size caps, SSRF guards | none (fixed endpoints) | 32 MiB cap, timeouts, DNS pinning | Additive; harmless for fixed hosts |
-| CLI | `Tool.execute(input)` returns rows; CLI and MCP share it | `handler(args, ctx)` returns an MCP `ToolResult` | A CLI on the core must unwrap `content[0].text`. If ondata's CLI-first family is to share profiles, the contract needs a row-level result (`execute` returning rows, host formats). **Biggest open design question from the spike** |
+| CLI | `Tool.execute(input)` returns rows; CLI and MCP share it | **Resolved 2026-11-09 (C6):** a tool may define `rows(args, ctx)` instead of `handler`; the core formats rows for MCP, and `runRowsTool(profile, name, args, engine)` gives a CLI the validated rows to format itself. The spike's four tools now use it | Same shape as the original's `execute` |
 
 ## Effort
 
 Porting four tools was mechanical: the query builders moved unchanged, `cdQuery`/`snQuery` became
-`sparqlSelect(ctx.http, endpoint, query)`, and `{rows, columns}` became `ctx.output.table(...)`. The original's
+`sparqlSelect(ctx.http, endpoint, query)`, and `{rows, columns}` stayed `{rows, columns}` (a `rows` tool, C6) with
+the core formatting it. The original's
 throttle, retry and truncation code disappeared from the profile into host policies and the core.
 
 ## Recommendation
 
-Keep C1-C5. Before the CKAN profile (step 5), decide the CLI question (row-level result in the contract or not),
-because it changes `ToolSpec` for every profile. The spike package stays throwaway: it is not a parliament profile
+Keep C1-C6. C6 was decided by Björn on 2026-11-09 and is built; document-shaped tools (SKOS concepts, CKAN
+dataset pages) keep `handler`, list-shaped ones can use `rows`. The spike package stays throwaway: it is not a parliament profile
 and should not grow into one without a decision.

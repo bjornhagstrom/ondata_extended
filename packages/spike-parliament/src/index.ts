@@ -13,6 +13,8 @@
 
 import { z } from "zod";
 import type { EngineContext, Profile, Row, ToolSpec } from "@ondata-extended/profile-contract";
+// Row-level tools (`rows`): the host formats them, so the same definitions could serve the
+// original's CLI as its `Tool.execute` does (runRowsTool in the core).
 import { SparqlValidationError, flattenBindings, injectLimit, sparqlSelect, sparqlStringLiteral, validateSelectQuery } from "@ondata-extended/core";
 
 export const CAMERA_ENDPOINT = "https://dati.camera.it/sparql";
@@ -57,7 +59,7 @@ const legislatures: ToolSpec<Record<string, never>> = {
   examples: ["italianparliament legislatures list"],
   inputSchema: {},
   annotations: { title: "Legislature (Camera)", ...READ_ONLY },
-  async handler(_args, ctx) {
+  async rows(_args, ctx) {
     const results = await camera(ctx, `${OCD_PREFIXES}
 SELECT DISTINCT ?s ?label ?title ?date
 WHERE {
@@ -68,7 +70,7 @@ WHERE {
 }
 ORDER BY ?date`);
     const rows = flattenBindings(results).map(({ s, ...rest }) => ({ uri: s ?? "", ...rest }));
-    return ctx.output.table(rows, { columns: ["uri", "label", "title", "date"], emptyText: DEFAULT_EMPTY });
+    return { rows, columns: ["uri", "label", "title", "date"] };
   }
 };
 
@@ -88,7 +90,7 @@ const deputies: ToolSpec<typeof deputiesInput> = {
   examples: ["italianparliament deputies list --legislature 19 --limit 50", "italianparliament deputies list --legislature 19 --region sicilia"],
   inputSchema: deputiesInput,
   annotations: { title: "Deputati (Camera)", ...READ_ONLY },
-  async handler(args, ctx) {
+  async rows(args, ctx) {
     const filters = [
       args.legislature !== undefined
         ? `FILTER(?rif_leg = <http://dati.camera.it/ocd/legislatura.rdf/repubblica_${args.legislature}>)`
@@ -116,11 +118,11 @@ WHERE {
 LIMIT ${args.limit}
 OFFSET ${args.offset}`);
     const rows: Row[] = flattenBindings(results).map(({ s, rif_leg, ...rest }) => ({ uri: s ?? "", legislature_uri: rif_leg ?? "", ...rest }));
-    return ctx.output.table(rows, {
+    return {
+      rows,
       columns: ["uri", "label", "first_name", "last_name", "gender", "legislature_uri", "mandate_uri", "mandate_start", "mandate_end", "election_label"],
-      emptyText: DEFAULT_EMPTY,
       ...(rows.length >= args.limit ? { notice: truncationNotice(args.limit, args.offset, 1000) } : {})
-    });
+    };
   }
 };
 
@@ -141,7 +143,7 @@ const search: ToolSpec<typeof searchInput> = {
   examples: ['italianparliament search find --name "rossi"', 'italianparliament search find --name "boschi" --chamber camera'],
   inputSchema: searchInput,
   annotations: { title: "Ricerca di parlamentari per nome", ...READ_ONLY },
-  async handler(args, ctx) {
+  async rows(args, ctx) {
     const rows: Row[] = [];
     // Cut per chamber, as the original decides (src/tools/search.ts:166-184): the merged list can
     // hold up to twice `limit` rows without either query having been cut.
@@ -193,11 +195,11 @@ LIMIT ${args.limit}`);
         rows.push({ chamber: "senato", uri: b.s, label: `${b.fn} ${b.ln}`.trim(), first_name: b.fn, last_name: b.ln, gender: b.gen, legislature_uri: b.leg ? `http://dati.senato.it/legislatura/${b.leg}` : "" });
       }
     }
-    return ctx.output.table(rows, {
+    return {
+      rows,
       columns: ["chamber", "uri", "label", "first_name", "last_name", "gender", "legislature_uri"],
-      emptyText: DEFAULT_EMPTY,
       ...(truncated ? { notice: truncationNotice(args.limit, 0, 500) } : {})
-    });
+    };
   }
 };
 
@@ -217,15 +219,15 @@ const sparql: ToolSpec<typeof sparqlInput> = {
   examples: ['italianparliament sparql query --endpoint camera --query "PREFIX ocd: <http://dati.camera.it/ocd/> SELECT (COUNT(?s) AS ?n) WHERE { ?s a ocd:deputato }"'],
   inputSchema: sparqlInput,
   annotations: { title: "Query SPARQL libera", ...READ_ONLY },
-  async handler(args, ctx) {
+  async rows(args, ctx) {
     validateSelectQuery(args.query);
     const { query, injected } = injectLimit(args.query, args.limit);
     const rows = flattenBindings(await (args.endpoint === "camera" ? camera : senato)(ctx, query));
-    return ctx.output.table(rows, {
-      emptyText: DEFAULT_EMPTY,
+    return {
+      rows,
       // Only when the limit was ours: a query with its own LIMIT was not cut by `limit`.
       ...(injected && rows.length >= args.limit ? { notice: truncationNotice(args.limit, 0, 1000) } : {})
-    });
+    };
   }
 };
 
@@ -246,6 +248,8 @@ export function createParliamentSpikeProfile(): Profile {
     shrinkableKeys: ["rows"],
     telemetryFields: ["name", "chamber", "legislature", "endpoint", "limit", "offset"],
     untrustedSourceLabel: "the parliament's open data service",
+    // The original's text for an empty result (src/server.ts DEFAULT_EMPTY), applied by the host.
+    emptyText: DEFAULT_EMPTY,
     honestUserAgent: "italianparliament-mcp-spike/0.0.0",
     describeError(error) {
       if (error instanceof SparqlValidationError) return "→ Solo SELECT: riscrivi la query senza operazioni di scrittura.";

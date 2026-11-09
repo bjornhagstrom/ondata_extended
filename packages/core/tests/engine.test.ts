@@ -249,3 +249,67 @@ describe("noteTelemetry", () => {
     expect(takeTelemetry(b)).toEqual({ x: 9 });
   });
 });
+
+describe("row-level tools (rows instead of handler)", () => {
+  const rowsProfile = (over: Partial<Profile> = {}): Profile => ({
+    ...testProfile({ prompts: [] }),
+    id: "rows",
+    toolPrefix: "rows_",
+    emptyText: "Profile: nothing here.",
+    tools: [
+      {
+        name: "rows_list",
+        description: "List",
+        inputSchema: { n: z.number().int().min(0).max(5) },
+        rows: async (args) => ({
+          rows: Array.from({ length: args.n }, (_, i) => ({ id: String(i), extra: "x" })),
+          columns: ["id"],
+          ...(args.n === 5 ? { notice: "[cut at 5]" } : {})
+        })
+      },
+      {
+        name: "rows_own_empty",
+        description: "Empty with its own text",
+        inputSchema: {},
+        rows: async () => ({ rows: [], emptyText: "Tool: nothing here." })
+      }
+    ],
+    ...over
+  });
+
+  it("refuses a tool with both or neither of handler and rows", () => {
+    const both = rowsProfile();
+    both.tools = [{ ...both.tools[0], handler: async () => ({ content: [] }) }];
+    expect(() => validateProfiles([both])).toThrow("exactly one of handler and rows");
+    const neither = rowsProfile();
+    neither.tools = [{ name: "rows_x", description: "x", inputSchema: {} }];
+    expect(() => validateProfiles([neither])).toThrow("exactly one of handler and rows");
+  });
+
+  it("is formatted by the core for MCP: chosen columns, notice after rows, structured rows", async () => {
+    const { client } = await connect([rowsProfile()]);
+    const r = await client.callTool({ name: "rows_list", arguments: { n: 5 } });
+    expect((r.content as { text: string }[])[0].text).toBe('{"id":"0"}\n{"id":"1"}\n{"id":"2"}\n{"id":"3"}\n{"id":"4"}\n[cut at 5]');
+    expect(r.structuredContent).toMatchObject({ columns: ["id"], total: 5, truncated: false });
+  });
+
+  it("uses the tool's empty text, else the profile's, else the core's", async () => {
+    const { client } = await connect([rowsProfile()]);
+    const text = async (name: string, args: Record<string, unknown>) =>
+      ((await client.callTool({ name, arguments: args })).content as { text: string }[])[0].text;
+    expect(await text("rows_own_empty", {})).toBe("Tool: nothing here.");
+    expect(await text("rows_list", { n: 0 })).toBe("Profile: nothing here.");
+    const { client: bare } = await connect([rowsProfile({ emptyText: undefined })]);
+    expect(((await bare.callTool({ name: "rows_list", arguments: { n: 0 } })).content as { text: string }[])[0].text).toContain("Do not infer or invent");
+  });
+
+  it("runRowsTool gives a CLI the rows unformatted, after validating the arguments", async () => {
+    const { runRowsTool, formatTable } = await import("../src/index.js");
+    const result = await runRowsTool(rowsProfile(), "rows_list", { n: 2 }, engine());
+    expect(result.rows).toEqual([{ id: "0", extra: "x" }, { id: "1", extra: "x" }]);
+    expect(formatTable(result.rows, { columns: result.columns, emptyText: "-", format: "csv" }, 1000).text).toBe("id\n0\n1");
+    await expect(runRowsTool(rowsProfile(), "rows_list", { n: 99 }, engine())).rejects.toThrow();
+    await expect(runRowsTool(rowsProfile(), "rows_missing", {}, engine())).rejects.toThrow('Unknown tool "rows_missing"');
+    await expect(runRowsTool(testProfile(), "demo_echo", { q: "x" }, engine())).rejects.toThrow("returns a document, not rows");
+  });
+});

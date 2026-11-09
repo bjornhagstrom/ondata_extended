@@ -58,11 +58,13 @@ Coverage and test count may not fall below the ondata baseline for the code each
 | File | Tests | Covers |
 |---|---|---|
 | `packages/core/tests/client.test.ts` | 33 | the HTTP client against a live local server: streaming size cap, declared-size cap, gzip bomb, timeout while the body stalls, cache hit/miss, rate tokens, Anubis retry, error bodies, edge 52x, redirect hop guards (metadata, private exemption, DNS, max hops, https-only), per-request private exemption |
-| `packages/core/tests/engine.test.ts` | 20 | profile validation and registration through a real MCP client, error hints, telemetry per server instance, config prefixes, instance registry, Workers host |
-| `packages/profile-skos/tests/tematres-client.test.ts` | 15 |
+| `packages/core/tests/engine.test.ts` | 24 | profile validation and registration through a real MCP client, error hints, telemetry per server instance, config prefixes, instance registry, Workers host |
+| `packages/profile-skos/tests/tematres-client.test.ts` | 15 | TemaTres envelope against recorded answers (fixtures from begrepp.hagstrom.nu, 2026-11-09) |
+| `packages/profile-skos/tests/profile.test.ts` | 30 | the eight vocab_ tools end to end through MCP with recorded and synthetic TemaTres answers: order, labels, notes, mappings, private notes, hostile text, URI ownership and patterns, error hints |
+| `packages/host-vocab/tests/host.test.ts` | 5 | language files, generated landing page (en/sv) and /health, Worker routes |
 | `packages/core/tests/host-policy.test.ts` | 21 | per-host retry (what is retried and what never is: refused redirect, oversized body, redirect loop, Anubis single honest request, bounded attempts), shared throttle, row output and its two channels |
 | `packages/core/tests/sparql.test.ts` | 2 of 12 | `injectLimit`, `flattenBindings` (the other 10 are ported, see above) |
-| `packages/spike-parliament/tests/spike.test.ts` | 12 | the contract spike through MCP: unprefixed names, examples, recorded Camera answers, per-chamber truncation, Senato throttle, Camera retry, no retry on 403, SPARQL validation and escaping | TemaTres envelope against recorded answers (fixtures from begrepp.hagstrom.nu, 2026-11-09) |
+| `packages/spike-parliament/tests/spike.test.ts` | 14 | the contract spike through MCP: unprefixed names, examples, recorded Camera answers, per-chamber truncation, Senato throttle, Camera retry, no retry on 403, SPARQL validation and escaping |
 
 ## Deviation list (changed expectations and changed behaviour)
 

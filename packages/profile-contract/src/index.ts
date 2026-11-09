@@ -217,7 +217,25 @@ export interface ToolSpec<Shape extends ZodRawShape = ZodRawShape> {
   annotations?: ToolAnnotations;
   /** A small tool the core offers to several profiles (e.g. a SPARQL query); exempt from the prefix. */
   shared?: boolean;
-  handler(args: ToolArgs<Shape>, ctx: EngineContext): Promise<ToolResult>;
+  /**
+   * Exactly one of `handler` and `rows`.
+   * `handler` returns a finished MCP result (Markdown, JSON): for tools whose output is a document.
+   * `rows` returns data; the host formats it (MCP: `ctx.output.table`; a CLI: CSV/JSONL of its
+   * choice). Use it for list-shaped tools, so one tool definition serves MCP and a CLI alike.
+   */
+  handler?(args: ToolArgs<Shape>, ctx: EngineContext): Promise<ToolResult>;
+  rows?(args: ToolArgs<Shape>, ctx: EngineContext): Promise<RowsResult>;
+}
+
+/** Data from a row-level tool. Formatting (and the empty-result text) is the host's business. */
+export interface RowsResult {
+  rows: Row[];
+  /** Which columns, in which order; default: keys of the first row. */
+  columns?: string[];
+  /** Shown after non-empty rows (e.g. "cut at limit N, page with offset M"). */
+  notice?: string;
+  /** Shown instead of rows when there are none; overrides the profile's `emptyText`. */
+  emptyText?: string;
 }
 
 export interface PromptSpec<Shape extends ZodRawShape = ZodRawShape> {
@@ -279,6 +297,8 @@ export interface Profile {
   telemetryFields: string[];
   /** Names the source in the untrusted-content notice ("the vocabulary service"). */
   untrustedSourceLabel: string;
+  /** Default text for a row-level tool with no rows: tells the model not to invent the missing value. */
+  emptyText?: string;
   /** The honest user agent for this profile's requests ("Vocab-MCP-Server/0.1"). */
   honestUserAgent: string;
   /** A hint for the model about an error from this profile's tools, or null for the generic text. */
