@@ -71,6 +71,13 @@ export const COVERAGE_CASES: ParityCase[] = [
   ...both("datastore-search-missing", "ckan_datastore_search", { server_url: MILAN, resource_id: "00000000-0000-0000-0000-000000000000", limit: 1 }),
   ...both("group-show-missing", "ckan_group_show", { server_url: MILAN, id: "no-such-group-parity" }),
   ...both("list-resources-italy", "ckan_list_resources", { server_url: ITALY, id: ITALY_DATASET }),
+  // Added in CKAN round 4 (2026-11-09).
+  ...both("sparql-post", "sparql_query", { endpoint_url: "https://query.wikidata.org/sparql", query: "SELECT ?item WHERE { ?item wdt:P31 wd:Q146 }", limit: 2 }),
+  ...both("sparql-bad-query", "sparql_query", { endpoint_url: "https://lod.dati.gov.it/sparql", query: "SELECT ?s WHERE { ?s ?p }", limit: 2 }),
+  ...both("analyze-italy", "ckan_analyze_datasets", { server_url: ITALY, q: "aria", rows: 2 }),
+  { id: "offline-sparql-not-select", kind: "tool", name: "sparql_query", args: { endpoint_url: "https://lod.dati.gov.it/sparql", query: "ASK { ?s ?p ?o }" } },
+  { id: "offline-sparql-http", kind: "tool", name: "sparql_query", args: { endpoint_url: "http://lod.dati.gov.it/sparql", query: "SELECT ?s WHERE { ?s ?p ?o }" } },
+  ...both("offline-mqa-other-portal", "ckan_get_mqa_quality", { server_url: MILAN, dataset_id: MILAN_DATASET }),
   // No network: argument validation and the guards, where the SDK versions (1.27.1 there,
   // 1.32.2 here) or the core's guards could word things differently.
   { id: "offline-unknown-arg", kind: "tool", name: "ckan_status_show", args: { server_url: MILAN, bogus: 1 } },

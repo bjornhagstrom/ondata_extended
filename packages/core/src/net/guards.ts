@@ -71,7 +71,7 @@ const BLOCKED_HOSTNAMES = new Set(["localhost", "ip6-localhost", "ip6-loopback"]
  * the domain allowlist. Hostnames that resolve to internal IPs
  * are blocked later, at connection time, by the DNS guards.
  */
-export function validateUrl(url: string, policy: NetPolicy, opts: { allowPrivateHosts?: boolean; allowlistHostname?: string } = {}): void {
+export function validateUrl(url: string, policy: NetPolicy, opts: { allowPrivateHosts?: boolean; allowlistHostname?: string; skipAllowlist?: boolean } = {}): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -107,7 +107,7 @@ export function validateUrl(url: string, policy: NetPolicy, opts: { allowPrivate
   // A profile that rewrites the caller's host to a known API host (a registry entry) has the
   // caller's host checked against the allowlist instead; every other guard sees the real URL.
   const listed = (opts.allowlistHostname ?? hostname).toLowerCase();
-  if (policy.allowedDomains.length > 0 && !policy.allowedDomains.includes(listed)) {
+  if (!opts.skipAllowlist && policy.allowedDomains.length > 0 && !policy.allowedDomains.includes(listed)) {
     throw new SsrfGuardError(`Domain "${listed}" is not in the allowed list (${policy.names.allowedDomains}).`);
   }
 }

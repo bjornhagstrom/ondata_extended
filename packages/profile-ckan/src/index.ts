@@ -13,6 +13,10 @@ import { ORGANIZATION_TOOLS } from "./tools/organization.js";
 import { GROUP_TOOLS } from "./tools/group.js";
 import { PACKAGE_TOOLS } from "./tools/package.js";
 import { DATASTORE_TOOLS } from "./tools/datastore.js";
+import { QUALITY_TOOLS } from "./tools/quality.js";
+import { ANALYZE_TOOLS } from "./tools/analyze.js";
+import { SPARQL_TOOLS } from "./tools/sparql.js";
+import { PORTAL_DISCOVERY_TOOLS } from "./tools/portal-discovery.js";
 
 export const PROFILE_ID = "ckan";
 export const TOOL_PREFIX = "ckan_";
@@ -26,7 +30,7 @@ export const TELEMETRY_FIELDS = [
   "country", "language", "has_datastore", "min_datasets", "page", "page_size", "offset", "distinct", "filters", "fields"
 ];
 
-export const CKAN_TOOLS: ToolSpec<any>[] = [...PACKAGE_TOOLS, ...ORGANIZATION_TOOLS, ...DATASTORE_TOOLS, ...STATUS_TOOLS, ...TAG_TOOLS, ...GROUP_TOOLS];
+export const CKAN_TOOLS: ToolSpec<any>[] = [...PACKAGE_TOOLS, ...ORGANIZATION_TOOLS, ...DATASTORE_TOOLS, ...STATUS_TOOLS, ...TAG_TOOLS, ...GROUP_TOOLS, ...QUALITY_TOOLS, ...ANALYZE_TOOLS, ...SPARQL_TOOLS, ...PORTAL_DISCOVERY_TOOLS];
 
 export function createCkanProfile(): Profile {
   return {

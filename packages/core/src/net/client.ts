@@ -253,7 +253,8 @@ export class HttpClient {
     const s = this.settings;
     validateUrl(url, s.policy, {
       allowPrivateHosts: opts.allowPrivateHosts === true,
-      ...(opts.allowlistedAs ? { allowlistHostname: new URL(opts.allowlistedAs).hostname } : {})
+      ...(opts.allowlistedAs ? { allowlistHostname: new URL(opts.allowlistedAs).hostname } : {}),
+      ...(opts.fixedUpstream ? { skipAllowlist: true } : {})
     });
 
     const method = (init.method ?? "GET").toUpperCase();
@@ -302,7 +303,8 @@ export class HttpClient {
       }
     };
 
-    const retryIf = opts.retryHonestIf === false ? null : (opts.retryHonestIf ?? isAnubisChallenge);
+    const fixed = typeof opts.userAgent === "object";
+    const retryIf = opts.retryHonestIf === false || fixed ? null : (opts.retryHonestIf ?? isAnubisChallenge);
     let result = await attempt(opts.userAgent === "honest", maxAttempts);
     if (retryIf && opts.userAgent !== "honest" && isRetryCandidate(result) && retryIf(result.text!)) {
       // One honest request, not a second retry loop: `attempts` counts the whole call.
@@ -352,7 +354,8 @@ export class HttpClient {
     const timeoutError = () => new TransportError(`Request timeout connecting to ${url}`, url, true, "timeout");
     const headers = new Headers(init.headers);
     if (!headers.has("Accept")) headers.set("Accept", "application/json, text/plain, */*");
-    headers.set("User-Agent", honest ? s.userAgents.honest : s.userAgents.browser);
+    const fixedAgent = typeof opts.userAgent === "object" ? opts.userAgent.fixed : null;
+    headers.set("User-Agent", fixedAgent ?? (honest ? s.userAgents.honest : s.userAgents.browser));
     try {
       let response: Response;
       let finalUrl: string;

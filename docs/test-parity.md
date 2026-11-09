@@ -83,8 +83,7 @@ during each call. Both servers then read upstream HTTP from the same recordings.
 
 | ondata tests | Count | Goes to |
 |---|---|---|
-| `sanitize-inline.test.ts` `ckan_analyze_datasets` block (45-71) | 1 | CKAN profile, with that tool |
-| everything else (tools, resources, prompts, integration) | 109 | CKAN profile, next rounds (434 before round 2; round 2 ported 110, round 3 215) |
+| `integration/resources` 11, `unit/prompts` 5, `unit/resources-dataset-filters` 3, `unit/uri` 11, `integration/datastore-table-ui` 6 | 36 | CKAN profile, next round (resources, prompts, the DataStore table UI resource). Counted per file; the earlier running total (434) was 2 short |
 
 ## Ported so far (CKAN profile)
 
@@ -115,6 +114,23 @@ during each call. Both servers then read upstream HTTP from the same recordings.
 cases: an OR query (the Solr parser probe, 6 requests), paging, DataStore filters/fields/sort, columns only, an SQL
 error, a missing resource, a missing group, resources of a second portal, each in both formats: 111 cases in all, each on three passes. A new check compares
 `tools/list` (name, title, description, input schema, annotations) for every tool the profile registers with ondata's.
+
+### Round 4 (quality, analysis, SPARQL, portal discovery)
+
+| ondata file (09e8cdc) | Tests | Here | How the reach changed |
+|---|---|---|---|
+| `tests/integration/quality.test.ts` | 29 | `quality-integration.test.ts` | `package_show` (axios there) and the MQA calls (fetch) both reach the fake `fetch` through the core: CKAN API calls answered from a queue the former axios mocks fill, the rest by the MQA mock the tests configure and assert as before; mock answers are real `Response` objects; `getMqaQuality` takes the context first |
+| `tests/integration/analyze.test.ts` | 15 | `analyze-integration.test.ts` | axios mocks → fake `fetch`; the formatter called through an untyped alias (partial datasets) |
+| `tests/integration/sparql.test.ts` | 27 | `sparql-integration.test.ts` | real `Response` objects; request headers read with `fetchedHeaders` (the core passes a `Headers` object); method and body still asserted with `toHaveBeenCalledWith` |
+| `tests/integration/portal-discovery.test.ts` | 4 | `portal-discovery.test.ts` | ondata's module cache is the engine's: calls that must share it use one client; DNS stubbed |
+| `tests/unit/sanitize-inline.test.ts` 45-71 | 1 | `sanitize-inline-ckan.test.ts` | import path |
+
+76 ondata tests ported in round 4, all green, no expectation changed, nothing skipped. New tests:
+`packages/profile-ckan/tests/fetch.test.ts` (10: identity, Accept, no rate token, no honest retry, three redirects,
+https-only, allowlist exemption for constant upstreams only, fetch-style errors, and `sparql_query`'s own failure
+texts: its DNS check and its `AbortController` timer) and 2 core client tests (`userAgent: { fixed }`,
+`fixedUpstream`). New parity cases: SPARQL over POST (Wikidata) and a rejected query, analysis on a
+second portal, three offline (not SELECT, http endpoint, MQA on another portal): 121 cases.
 
 ## Ported from ondata's italianparliament-mcp (commit `fd46810`)
 
@@ -159,4 +175,5 @@ this core, which had dropped that first-hop check.
 | D8 | Argument validation errors (unknown key, invalid URL, out of range) read `Invalid arguments for tool X: <message> at <path>`, one line per issue, instead of the Zod issues as a JSON array. | SDK 1.32.2 here, 1.27.1 in ondata: the SDK writes this text. | Shorter, same facts. | None. ondata gets the same text when it upgrades the SDK. |
 | D9 | The CKAN request headers on Node are those of ondata's fetch path (its Worker): `Accept`, `Accept-Encoding: identity`, the browser `User-Agent`. ondata's Node path (axios) also sent `Accept-Language`, `Accept-Encoding: gzip, deflate, br`, `Connection: keep-alive` and the `Sec-CH-UA*` hints, and set `proxy: false` (here the pinning dispatcher bypasses environment proxies). | One request path for Node and Workers. | None seen: the parity check replays ondata's Node path and it gives the same observation in every recorded case. A firewall that demands the client hints would refuse the Worker today too. | None. If a portal needs the hints, add them to the profile's request headers. |
 | D10 | A gzip body without `Content-Encoding` (or with one that names no coding the runtime undoes, e.g. `identity`) is unpacked on every runtime, by the core client (ondata did it on Node, not on Workers). Past the decompressed cap it is refused as too large; ondata kept the packed bytes, which then failed as `success=false`. | One behaviour everywhere; a clearer error. | Workers users get these portals' answers; a decompression bomb reads `Response too large`. | None. |
+| D11 | ondata's direct calls (MQA, SPARQL, the portal registry) now have the core's size cap (32 MiB) and its first-hop DNS check, and SPARQL's 15 s timeout applies to each request instead of to the POST and its GET fallback together. | One client with the same guards for every request. | A larger answer is refused as too large (the registry is about 23 MB today). A slow POST and a slow GET can take up to 30 s together. Failure texts are ondata's per call (an unknown host: `fetch failed` for MQA and the registry, `Cannot resolve ...` for SPARQL; a timeout: `AbortSignal.timeout`'s text for MQA and the registry, `This operation was aborted` for SPARQL). | None. |
 

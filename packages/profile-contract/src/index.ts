@@ -45,8 +45,12 @@ export interface FetchOptions {
   maxHops?: number;
   /** Refuse redirects to non-HTTPS URLs. */
   httpsOnly?: boolean;
-  /** Identity sent upstream. "browser" passes Chrome-only firewalls; "honest" names the server. Default "browser". */
-  userAgent?: "browser" | "honest";
+  /**
+   * Identity sent upstream. "browser" passes Chrome-only firewalls; "honest" names the server;
+   * `{ fixed }` sends exactly that string, with no honest retry (an upstream that expects one
+   * particular client name). Default "browser".
+   */
+  userAgent?: "browser" | "honest" | { fixed: string };
   /**
    * Overrides the host policy's retry for this request (e.g. `{ attempts: 1 }` for a call that
    * must not be repeated).
@@ -74,6 +78,12 @@ export interface FetchOptions {
    * `validateUrl`. All other guards still see the real URL.
    */
   allowlistedAs?: string;
+  /**
+   * The URL is the profile's own constant upstream (a registry, a quality service), not a URL
+   * from the caller or from upstream data: the domain allowlist, which restricts where callers
+   * may send requests, does not apply to its first hop. Redirects and the literal guards apply.
+   */
+  fixedUpstream?: boolean;
 }
 
 /**

@@ -247,6 +247,13 @@ describe("HttpClient against a live server", () => {
     expect(res.text).toContain("anubis_challenge");
   });
 
+  it("sends a fixed user agent exactly, and does not retry it with the honest one", async () => {
+    seenUserAgents.length = 0;
+    const res = await new HttpClient(settings()).request(`${base}/anubis`, { headers: { "User-Agent": "ignored" } }, { ...PRIVATE, userAgent: { fixed: "Fixed/1.0" } });
+    expect(res.text).toContain("anubis_challenge");
+    expect(seenUserAgents).toEqual(["Fixed/1.0"]);
+  });
+
   it("json() refuses a body that is not JSON", async () => {
     await expect(new HttpClient(settings()).json(`${base}/not-json`, {}, PRIVATE)).rejects.toThrow("not JSON");
   });
@@ -299,6 +306,17 @@ describe("HttpClient redirects (stubbed fetch)", () => {
     vi.stubGlobal("fetch", vi.fn(async () => redirectTo("https://elsewhere.example/")));
     await expect(new HttpClient(listed).request("https://api.example/x", {}, { allowlistedAs: "https://caller.example/" }))
       .rejects.toThrow('Domain "elsewhere.example" is not in the allowed list');
+  });
+
+  it("fixedUpstream skips the allowlist on the first hop only and keeps the literal guards", async () => {
+    __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
+    const listed = settings({ policy: policy({ allowedDomains: ["caller.example"], privateHosts: [] }) });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+    await expect(new HttpClient(listed).request("https://registry.example/x", {}, { fixedUpstream: true })).resolves.toMatchObject({ status: 200 });
+    vi.stubGlobal("fetch", vi.fn(async () => redirectTo("https://elsewhere.example/")));
+    await expect(new HttpClient(listed).request("https://registry.example/x", {}, { fixedUpstream: true }))
+      .rejects.toThrow('Domain "elsewhere.example" is not in the allowed list');
+    await expect(new HttpClient(listed).request("http://169.254.169.254/x", {}, { fixedUpstream: true })).rejects.toThrow("private/internal");
   });
 
   it("allowlistedAs does not lift the literal guards on the real URL", async () => {

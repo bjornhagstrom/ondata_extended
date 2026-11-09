@@ -50,7 +50,16 @@ function requestHeaders(init?: RequestInit): Record<string, string> {
     const v = h.get(name);
     if (v !== null) out[name] = v;
   }
+  // A request without Accept goes out as `Accept: */*` (Fetch standard, "fetch" step 12), so
+  // the two are the same request on the wire.
+  out.accept ??= "*/*";
   return out;
+}
+
+/** Sorted, with the Accept a request without one goes out with (recordings made before that rule). */
+function canonicalHeaders(h: Record<string, string>): string {
+  const all: Record<string, string> = { accept: "*/*", ...h };
+  return JSON.stringify(Object.keys(all).sort().map((k) => [k, all[k]]));
 }
 
 /** Wrap the real fetch; every exchange is appended to `log`. */
@@ -90,7 +99,7 @@ export function replayingFetch(exchanges: RecordedExchange[], misses: string[], 
     }
     const e = list[n];
     const sent = requestHeaders(init);
-    if (JSON.stringify(sent) !== JSON.stringify(e.requestHeaders)) {
+    if (canonicalHeaders(sent) !== canonicalHeaders(e.requestHeaders)) {
       misses.push(`HEADERS DIFFER: ${key}: sent ${JSON.stringify(sent)}, recorded ${JSON.stringify(e.requestHeaders)}`);
     }
     const body = e.status === 204 || e.status === 304 ? null

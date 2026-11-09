@@ -1,0 +1,296 @@
+/**
+ * CKAN Analyze Datasets tool
+ *
+ * Ported from ondata/ckan-mcp-server src/tools/analyze.ts at 09e8cdc (MIT, see NOTICE.md).
+ */
+
+import { z } from "zod";
+import { formatError, sanitizeInline } from "@ondata-extended/core";
+import { ResponseFormat, ResponseFormatSchema, defineTool, type CkanPackage, type CkanField } from "../types.js";
+import { makeCkanRequest, formatCkanError } from "../utils/http.js";
+import { addDemoFooter } from "../utils/formatting.js";
+
+interface CkanFieldWithInfo extends CkanField {
+  info?: {
+    label?: string;
+    notes?: string;
+    type_override?: string;
+  };
+}
+
+interface DatastoreSchemaResult {
+  fields: CkanFieldWithInfo[];
+  total: number;
+}
+
+interface PackageSearchResult {
+  count: number;
+  results: CkanPackage[];
+}
+
+interface AnalyzedResource {
+  resource: { id: string; name?: string; format?: string };
+  schema: DatastoreSchemaResult | null;
+  error?: string;
+}
+
+interface AnalyzedDataset {
+  dataset: CkanPackage;
+  datastoreResources: AnalyzedResource[];
+  nonDatastoreResources: Array<{ name?: string; format?: string }>;
+}
+
+export function formatAnalyzeDatasetsMarkdown(
+  serverUrl: string,
+  query: string,
+  total: number,
+  datasets: AnalyzedDataset[]
+): string {
+  let md = `# Dataset Analysis\n\n`;
+  md += `**Server**: ${serverUrl}\n`;
+  md += `**Query**: ${query}\n`;
+  md += `**Total datasets found**: ${total}\n`;
+  md += `**Datasets analyzed**: ${datasets.length}\n\n`;
+
+  for (const { dataset, datastoreResources, nonDatastoreResources } of datasets) {
+    md += `---\n\n`;
+    md += `## ${sanitizeInline(dataset.title || dataset.name)}\n\n`;
+    md += `- **ID**: \`${sanitizeInline(dataset.id)}\`\n`;
+    md += `- **Name**: \`${sanitizeInline(dataset.name)}\`\n`;
+    if (dataset.organization) {
+      md += `- **Organization**: ${sanitizeInline(dataset.organization.title || dataset.organization.name)}\n`;
+    }
+
+    if (datastoreResources.length > 0) {
+      md += `\n### DataStore Resources\n\n`;
+      for (const { resource, schema, error } of datastoreResources) {
+        md += `#### ${sanitizeInline(resource.name || resource.id)}\n\n`;
+        md += `- **Resource ID**: \`${sanitizeInline(resource.id)}\`\n`;
+        if (resource.format) md += `- **Format**: ${sanitizeInline(resource.format)}\n`;
+        if (error) {
+          md += `- **Error**: ${error}\n`;
+        } else if (schema) {
+          md += `- **Total Records**: ${schema.total}\n`;
+          const fields = schema.fields.filter(f => f.id !== '_id');
+          if (fields.length > 0) {
+            md += `\n**Fields** (${fields.length}):\n\n`;
+            for (const f of fields) {
+              let line = `- \`${sanitizeInline(f.id)}\` (${sanitizeInline(f.type)})`;
+              if (f.info?.label) line += ` — ${sanitizeInline(f.info.label)}`;
+              if (f.info?.notes) line += `: ${sanitizeInline(f.info.notes)}`;
+              md += line + '\n';
+            }
+          }
+        }
+        md += '\n';
+      }
+    }
+
+    if (nonDatastoreResources.length > 0) {
+      md += `### Other Resources (not queryable)\n\n`;
+      for (const r of nonDatastoreResources) {
+        md += `- ${sanitizeInline(r.name || '(unnamed)')}${r.format ? ` (${sanitizeInline(r.format)})` : ''}\n`;
+      }
+      md += '\n';
+    }
+
+    if (datastoreResources.length === 0 && nonDatastoreResources.length === 0) {
+      md += `_No resources available._\n\n`;
+    }
+  }
+
+  return md;
+}
+
+export const analyzeDatasets = defineTool({
+  name: "ckan_analyze_datasets",
+  title: "Analyze CKAN Datasets and DataStore Schema",
+  description: `Search datasets and inspect the DataStore schema of queryable resources.
+
+For each dataset found, lists all resources. For DataStore-enabled resources, fetches the full
+field schema (name, type, and label/notes when available) plus total record count — all in one call.
+
+Use this before ckan_datastore_search to understand what fields are available and what data to expect.
+
+Args:
+  - server_url (string): Base URL of CKAN server
+  - q (string): Solr search query (e.g. "incidenti", "title:ambiente")
+  - rows (number): Max datasets to analyze (default 5, max 20)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  For each dataset: title, ID, organization, and per DataStore resource: field schema with
+  label/notes (when available from DataStore Dictionary) and record count.
+
+Typical workflow: ckan_analyze_datasets → ckan_datastore_search (with known field names)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.comune.messina.it)"),
+    q: z.string().min(1).describe("Solr search query (e.g. 'incidenti', 'title:ambiente')"),
+    rows: z.number().int().min(1).max(20).optional().default(5).describe("Max datasets to analyze (default 5, max 20)"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
+  },
+  async handler(params, ctx) {
+    try {
+      const searchResult = await makeCkanRequest<PackageSearchResult>(
+        ctx,
+        params.server_url,
+        'package_search',
+        { q: params.q, rows: params.rows }
+      );
+
+      const datasets = searchResult.results || [];
+
+      const analyzed: AnalyzedDataset[] = await Promise.all(datasets.map(async (dataset) => {
+        const resources = dataset.resources || [];
+        const datastoreResources: AnalyzedResource[] = [];
+        const nonDatastoreResources: Array<{ name?: string; format?: string }> = [];
+
+        for (const resource of resources) {
+          if (resource.datastore_active === true) {
+            try {
+              const schema = await makeCkanRequest<DatastoreSchemaResult>(
+                ctx,
+                params.server_url,
+                'datastore_search',
+                { resource_id: resource.id, limit: 0 }
+              );
+              datastoreResources.push({
+                resource: { id: resource.id, name: resource.name, format: resource.format },
+                schema
+              });
+            } catch (err) {
+              datastoreResources.push({
+                resource: { id: resource.id, name: resource.name, format: resource.format },
+                schema: null,
+                error: err instanceof Error ? err.message : String(err)
+              });
+            }
+          } else {
+            nonDatastoreResources.push({ name: resource.name, format: resource.format });
+          }
+        }
+
+        return { dataset, datastoreResources, nonDatastoreResources };
+      }));
+
+      if (params.response_format === ResponseFormat.JSON) {
+        return {
+          content: [{ type: "text" as const, text: ctx.output.truncateJson({ total: searchResult.count, datasets: analyzed }) }]
+        };
+      }
+
+      const markdown = formatAnalyzeDatasetsMarkdown(
+        params.server_url,
+        params.q,
+        searchResult.count,
+        analyzed
+      );
+      return {
+        content: [{ type: "text" as const, text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: formatError(formatCkanError(error, "ckan_analyze_datasets"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+export function formatCatalogStatsMarkdown(
+  serverUrl: string,
+  total: number,
+  facets: Record<string, Record<string, number>>
+): string {
+  const LABELS: Record<string, string> = {
+    groups: "Categories",
+    res_format: "Formats",
+    organization: "Organizations"
+  };
+
+  let md = `# CKAN Portal Statistics\n\n`;
+  md += `**Server**: ${serverUrl}\n`;
+  md += `**Total datasets**: ${total}\n`;
+
+  for (const [field, label] of Object.entries(LABELS)) {
+    const values = facets[field];
+    if (!values || Object.keys(values).length === 0) continue;
+    const sorted = Object.entries(values).sort((a, b) => b[1] - a[1]);
+    md += `\n## ${label}\n\n`;
+    for (const [name, count] of sorted) {
+      md += `- **${sanitizeInline(name)}**: ${count}\n`;
+    }
+  }
+
+  return md;
+}
+
+export const catalogStats = defineTool({
+  name: "ckan_catalog_stats",
+  title: "Get CKAN Portal Statistics",
+  description: `Get a statistical overview of a CKAN portal: total dataset count and breakdown by category, format, and organization.
+
+Single CKAN call (package_search with rows=0 and facets). No query needed.
+
+Args:
+  - server_url (string): Base URL of the CKAN server
+  - facet_limit (number): Max entries per facet section (default 20)
+  - response_format ('markdown' | 'json'): Output format
+
+Returns:
+  Total dataset count, categories ranked by count, file formats ranked by count, organizations ranked by count.
+
+Typical workflow: ckan_catalog_stats (understand the portal) → ckan_package_search (query specific data)`,
+  inputSchema: {
+    server_url: z.string().url().describe("Base URL of the CKAN server (e.g., https://dati.comune.messina.it)"),
+    facet_limit: z.number().int().min(1).max(100).optional().default(20).describe("Max entries per facet section (default 20)"),
+    response_format: ResponseFormatSchema
+  },
+  strictInput: true,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false
+  },
+  async handler(params, ctx) {
+    try {
+      const result = await makeCkanRequest<{ count: number; facets: Record<string, Record<string, number>> }>(
+        ctx,
+        params.server_url,
+        'package_search',
+        {
+          q: '*:*',
+          rows: 0,
+          'facet.field': JSON.stringify(['groups', 'res_format', 'organization']),
+          'facet.limit': params.facet_limit
+        }
+      );
+
+      if (params.response_format === ResponseFormat.JSON) {
+        return {
+          content: [{ type: "text" as const, text: ctx.output.truncateJson({ total: result.count, facets: result.facets }) }]
+        };
+      }
+
+      const markdown = formatCatalogStatsMarkdown(params.server_url, result.count, result.facets);
+      return {
+        content: [{ type: "text" as const, text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text" as const, text: formatError(formatCkanError(error, "ckan_catalog_stats"), params.response_format === ResponseFormat.JSON) }],
+        isError: true
+      };
+    }
+  }
+});
+
+export const ANALYZE_TOOLS = [analyzeDatasets, catalogStats];

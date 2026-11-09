@@ -104,6 +104,12 @@ with Andrea Borruso as the natural owner of the core, since it reduces the code 
   its tool choices would be new work, measures our tool descriptions (not TemaTres), and costs per run. Not now.
 - **`.claude/` and `review/` stay out of the repository** (Björn's decision): listed in `.git/info/exclude`, so they
   live only in this working copy. `CLAUDE.md`, `AGENTS.md` and `docs/testing-application.md` point to them.
+- **Upstream candidate (backlog, Björn 2026-11-09): ondata's typecheck.** At 09e8cdc `tsc --noEmit` runs out of
+  memory (also with `--max-old-space-size=8192`), so the code is never typechecked; its build (esbuild) does not
+  check types. Porting found type errors that `strict` would report (optional fields read as required, fields the
+  CKAN interfaces lack). Cause of the memory use not yet established (suspected: zod/SDK type instantiation in
+  `registerTool`). A possible small PR: make `tsc` complete, fix what it then reports. Nothing goes upstream
+  without Björn's ok.
 - **Row-level tool results: yes** (Björn's decision), so a profile can serve both MCP and a CLI. Next step.
 
 ## 2026-11-09: row-level tool results (C6), built
@@ -156,5 +162,23 @@ files; with round 2 that is 14 of ondata's 18 tools. What changed in the port, b
 - **Module-level state stays module-level** where ondata had it (the per-portal Solr parser probe, the "no schema"
   cache): it is a cache across requests, not request state, and per isolate on Workers as in ondata.
 - **Types**: the CKAN interfaces gain the optional fields the tools read (`owner_org`, `groups`, `extras`, ...), and
-  the core's `formatDate` accepts `undefined`. Types only: ondata's own `tsc` run does not complete here (it crashes),
+  the core's `formatDate` accepts `undefined`. Types only: ondata's own `tsc` runs out of memory before it reports anything (see the backlog),
   and its build (esbuild) does not typecheck, so its code had never been checked under `strict`.
+
+## 2026-11-09: CKAN profile, round 4 (quality, analysis, SPARQL, portal discovery)
+
+All 18 of ondata's tools are ported. ondata's direct `safeFetch` calls (MQA on data.europa.eu, SPARQL endpoints,
+the datashades.info registry) go through `fetchAsResponse` (`packages/profile-ckan/src/utils/fetch.ts`): the core's
+request with what ondata's call had (its identity, its timeout, at most three redirects, no rate token, no honest
+retry), returned as a `Response` so the ported code reads it unchanged, with fetch-style errors. Contract additions,
+each the smallest that worked:
+
+- `FetchOptions.userAgent: { fixed }`: send exactly this identity (ondata's SPARQL calls name themselves
+  `Mozilla/5.0 (compatible; CKAN-MCP-Server/1.0)`), with no honest retry.
+- `FetchOptions.fixedUpstream`: the URL is the profile's own constant upstream, so the domain allowlist (which limits
+  where callers may send requests) does not apply to its first hop, as ondata never checked it there. Redirects and
+  the literal guards still apply. Without it, `CKAN_ALLOWED_DOMAINS` would have switched off MQA and portal
+  discovery.
+
+The parity harness treats a request without `Accept` as `Accept: */*`, which is what `fetch` sends (Fetch
+standard), since the core always sets one. `sparql_query` keeps ondata's unprefixed name (`shared`).
