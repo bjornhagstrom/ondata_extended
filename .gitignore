@@ -7,3 +7,7 @@ coverage/
 .wrangler/
 *.log
 .DS_Store
+
+# Parity recording of the datashades.info portal registry (23 MB, third-party data incl. personal
+# contact details): kept local, re-recorded on demand (docs/test-parity.md).
+packages/profile-ckan/tests/parity/recorded/find-portals*.json.gz

@@ -20,6 +20,39 @@ changed tests. Three principles:
 
 Coverage and test count may not fall below the ondata baseline for the code each test file covers.
 
+## Principle 3: the black-box parity check (built 2026-11-09)
+
+`packages/profile-ckan/tests/parity/`. ondata/ckan-mcp-server at `09e8cdc` is loaded in-process from a local clone
+(`ONDATA_REPO`, default `../ondata-ckan-mcp-server/repo`; the tests skip when it is absent and **fail** when it is on
+another commit) and made to take its fetch path (the one its hosted Worker runs) by hiding `process.versions.node`
+during each call. Both servers then read upstream HTTP from the same recordings.
+
+- **Cases** (`cases.ts`): every tool in Markdown and JSON (18 tools; the two without `response_format` once), every
+  resource template, every prompt, and ondata's smoke cases including the second call of a comparing case: 80.
+  IDs point at old, stable records where possible.
+- **Recording** (`record.test.ts`, only with `CKAN_PARITY_RECORD=1`): ondata against the live portals, one case at a
+  time with a pause, fresh modules per case; saves every exchange (request key and identity/encoding headers,
+  response) and ondata's observation, gzipped. Recorded 2026-11-09: 133 requests to 9 hosts.
+- **Replay** (`parity.test.ts`): (1) ondata replayed must reproduce its recorded observation exactly (harness
+  determinism: 80/80, also in shuffled orders); (2) our profile replayed must give the same observation for every
+  case it registers; the rest are `todo`. An observation is the text, the error flag and `structuredContent` (tools),
+  MIME types (resources) or roles (prompts). Both sides must send exactly the recorded requests: same keys, same
+  number of times, same User-Agent, Accept, Accept-Encoding and Content-Type; a recorded request not made is also a
+  difference. `Date` is frozen at the recording time.
+- **Why fresh modules per case:** ondata keeps per-portal state at module level (the Solr parser probe,
+  `src/tools/package.ts:21`, not exported; the scheming negative cache); without a reset a case's requests depend on
+  the cases before it (found: three cases failed in a shuffled order).
+- **Not in git:** the `find-portals` recordings hold datashades.info's whole portal registry (23 MB raw, third-party
+  data whose licence is not stated, with contact details of portal operators). They stay local
+  (`.gitignore`); re-record with `CKAN_PARITY_RECORD=1 CKAN_PARITY_ONLY=find-portals`. The other recordings
+  (about 1.3 MB) are public open-data API answers; they include institutional contact addresses of dataset
+  maintainers, as the portals publish them.
+- **Known limits.** The reference is ondata's fetch path. Its Node path (axios, what the npm package runs) can differ
+  in request details (e.g. how list parameters are serialized) and in error texts; no check covers it yet (to be
+  built with the profile's request layer). Hiding `process.versions.node` also turns off ondata's stderr audit log
+  during the call (no effect on tool output). The recorder buffers bodies and passes on only `content-type` and
+  `location`, so ondata's declared-size cap and its compressed-body decoding do not run in the recordings.
+
 ## Ported so far (core)
 
 | ondata file (09e8cdc) | Section | Tests | Here | How the reach changed |

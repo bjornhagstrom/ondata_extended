@@ -111,3 +111,11 @@ with Andrea Borruso as the natural owner of the core, since it reduces the code 
 `ToolSpec` has `handler` (a finished MCP result) or `rows` (data the host formats); exactly one. `RowsResult`,
 `Profile.emptyText`, and `runRowsTool` for CLIs. The spike's tools use `rows`; the SKOS tools keep `handler`
 (their output is a document). See `docs/spike-parliament.md` (C6).
+
+## 2026-11-09: CKAN profile, round 1 (parity harness)
+
+Björn: CKAN before the parliament set; work in reviewed rounds, a commit after each. Round 1 is the black-box parity
+harness and the recordings (`docs/test-parity.md`, principle 3). Port approach for the next rounds: the profile
+keeps ondata's file layout and code, and threads the engine context through instead of a module-global HTTP client
+(no hidden per-request state in Workers); a profile-level `makeCkanRequest(ctx, ...)` rebuilds ondata's CKAN
+errors and texts on top of `ctx.http`.
