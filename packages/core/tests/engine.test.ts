@@ -194,6 +194,26 @@ describe("createWorkerHandler", () => {
       extraHeaders: { "X-Test": "1" }
     });
   };
+  it("takes extra headers from the deployment's env when given a function", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const h = createWorkerHandler<{ NOTICE?: string }>({
+      buildServer: () => {
+        const s = createMcpServer({ name: "w", version: "0" });
+        registerProfiles(s, [testProfile()], engine());
+        return s;
+      },
+      health: () => ({ status: "ok" }),
+      extraHeaders: (env) => ({ "X-Notice": env.NOTICE ?? "default" })
+    });
+    const req = () => new Request("https://w.example/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })
+    });
+    expect((await h.fetch(req(), { NOTICE: "ours" })).headers.get("X-Notice")).toBe("ours");
+    expect((await h.fetch(req(), {})).headers.get("X-Notice")).toBe("default");
+  });
+
   const call = (body: unknown) => new Request("https://w.example/mcp", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },

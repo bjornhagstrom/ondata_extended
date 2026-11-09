@@ -189,7 +189,7 @@ Typical workflow: ckan_find_portals (discover portal URL) → ckan_status_show (
       // limit bounds the number of entries, not their size: titles and URLs come from
       // datashades.info and have no length bound (#39).
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }],
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }],
         structuredContent: cappedStructured({ portals: results.map(p => ({
           url: p.Href,
           title: p.SiteInfo.site_title,

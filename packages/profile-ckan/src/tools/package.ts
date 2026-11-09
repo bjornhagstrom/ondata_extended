@@ -1230,7 +1230,7 @@ ${hvdNote}`;
         }
       }
 
-      const text = ctx.output.truncateText(addDemoFooter(markdown));
+      const text = ctx.output.truncateText(addDemoFooter(ctx, markdown));
       recordSearchResults(ctx, result.count ?? 0, effectiveStart, result.results ?? [], text);
       return {
         content: [{ type: "text", text }]
@@ -1461,7 +1461,7 @@ Typical workflow: ckan_find_relevant_datasets → ckan_package_show (inspect top
         });
       }
 
-      const text = ctx.output.truncateText(addDemoFooter(markdown));
+      const text = ctx.output.truncateText(addDemoFooter(ctx, markdown));
       recordSearchResults(ctx, payload.total_results, 0, top, text);
       return {
         content: [{ type: "text", text }]
@@ -1560,7 +1560,7 @@ Typical workflow: ckan_package_show → pick a resource with datastore_active=tr
       const markdownFields = schema ? renderSchemaFields(result, schema, shownFieldNames(result, ResponseFormat.MARKDOWN)) : [];
       const markdown = formatPackageShowMarkdown(result, params.server_url, markdownFields);
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
@@ -1745,7 +1745,7 @@ dataset's own resource URLs); set check_source_portal=true to enable it.`,
       }
 
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {

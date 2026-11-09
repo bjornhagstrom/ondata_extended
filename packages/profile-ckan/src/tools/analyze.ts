@@ -193,7 +193,7 @@ Typical workflow: ckan_analyze_datasets → ckan_datastore_search (with known fi
         analyzed
       );
       return {
-        content: [{ type: "text" as const, text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text" as const, text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
@@ -282,7 +282,7 @@ Typical workflow: ckan_catalog_stats (understand the portal) → ckan_package_se
 
       const markdown = formatCatalogStatsMarkdown(params.server_url, result.count, result.facets);
       return {
-        content: [{ type: "text" as const, text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text" as const, text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {

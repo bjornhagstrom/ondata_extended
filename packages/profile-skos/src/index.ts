@@ -12,7 +12,7 @@ import { UnknownVocabularyError } from "./vocabularies.js";
 
 export const PROFILE_ID = "skos";
 export const TOOL_PREFIX = "vocab_";
-export const PROFILE_VERSION = "0.0.0";
+export const PROFILE_VERSION = "0.1.0";
 
 export * from "./model.js";
 export { KNOWN_VOCABULARIES, createResolver } from "./vocabularies.js";

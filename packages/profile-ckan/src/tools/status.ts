@@ -74,7 +74,7 @@ Typical workflow: ckan_status_show (verify server is up) → ckan_package_search
       // payload from — cap it on its own. status_show is echoed straight from the portal,
       // so its field lengths are upstream-controlled and not bounded by anything (#39).
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }],
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }],
         structuredContent: cappedStructured(result, ctx.limits.characterLimit, SHRINKABLE_KEYS) as Record<string, unknown>
       };
     } catch (error) {

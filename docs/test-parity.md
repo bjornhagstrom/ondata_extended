@@ -145,6 +145,20 @@ second portal, three offline (not SELECT, http endpoint, MQA on another portal):
 `resources/templates/list` with ondata's, and all three lists must have the same entries (the port is complete): all
 121 cases pass on all three passes, none is `todo`.
 
+### The CKAN deployment
+
+| ondata (09e8cdc) | Here | How |
+|---|---|---|
+| `src/worker.ts` behaviour | `packages/host-ckan/tests/worker-parity.test.ts` (11) | ondata's Worker loaded from the clone and ours given the same requests (the version field checked as D13) (`/`, `/health`, `/mcp` GET/OPTIONS/initialize/broken JSON, a 404, four tool calls refused before the network): status, headers and body equal; for tool calls also the log line and the Analytics data point, duration aside |
+| `tests/smoke/cases.json`, `scripts/smoke.mjs` | `packages/host-ckan/tests/smoke/cases.json`, `scripts/smoke-ckan.mjs` | cases copied unchanged; the script runs our binary. 18/18 live on 2026-11-09 |
+
+`packages/host-ckan/tests/host.test.ts` (5, new) covers routes, health counts and ondata's log fields without the
+clone; `binary.test.ts` (3, new) builds the binary as the package script does and runs it: ondata's status lines
+over stdio and HTTP, 20 tools, `CKAN_ALLOWED_DOMAINS` applied, and the refusal to start HTTP without an allowlist.
+`packages/core/tests/engine.test.ts` +1: Worker headers from the deployment's env. Service notices: `host.test.ts`
++3 (headers from `CKAN_SERVICE_*`, ondata's by default, the test deployment's `wrangler.toml`) and
+`packages/profile-ckan/tests/demo-footer.test.ts` (3: the Workers footer, ondata's text by default).
+
 ## Ported from ondata's italianparliament-mcp (commit `fd46810`)
 
 | Original | Tests | Here | Change |
@@ -189,4 +203,6 @@ this core, which had dropped that first-hop check.
 | D9 | The CKAN request headers on Node are those of ondata's fetch path (its Worker): `Accept`, `Accept-Encoding: identity`, the browser `User-Agent`. ondata's Node path (axios) also sent `Accept-Language`, `Accept-Encoding: gzip, deflate, br`, `Connection: keep-alive` and the `Sec-CH-UA*` hints, and set `proxy: false` (here the pinning dispatcher bypasses environment proxies). | One request path for Node and Workers. | None seen: the parity check replays ondata's Node path and it gives the same observation in every recorded case. A firewall that demands the client hints would refuse the Worker today too. | None. If a portal needs the hints, add them to the profile's request headers. |
 | D10 | A gzip body without `Content-Encoding` (or with one that names no coding the runtime undoes, e.g. `identity`) is unpacked on every runtime, by the core client (ondata did it on Node, not on Workers). Past the decompressed cap it is refused as too large; ondata kept the packed bytes, which then failed as `success=false`. | One behaviour everywhere; a clearer error. | Workers users get these portals' answers; a decompression bomb reads `Response too large`. | None. |
 | D11 | ondata's direct calls (MQA, SPARQL, the portal registry) now have the core's size cap (32 MiB) and its first-hop DNS check, and SPARQL's 15 s timeout applies to each request instead of to the POST and its GET fallback together. | One client with the same guards for every request. | A larger answer is refused as too large (the registry is about 23 MB today). A slow POST and a slow GET can take up to 30 s together. Failure texts are ondata's per call (an unknown host: `fetch failed` for MQA and the registry, `Cannot resolve ...` for SPARQL; a timeout: `AbortSignal.timeout`'s text for MQA and the registry, `This operation was aborted` for SPARQL). | None. |
+| D12 | The Worker log line's `cache_hit` comes from this call's requests. ondata read a module-level "last request" value, so a tool call that made no CKAN request could log the previous call's value. | Telemetry per server instance (no state shared between concurrent requests in an isolate). | `cache_hit` is absent when the call made no request, and never another call's. | None. |
+| D13 | `initialize` (serverInfo) and `/health` report our version (`0.1.0`) instead of ondata's `0.4.138`; the Workers service notices (two headers, the Markdown footer) are the deployment's settings, ondata's texts by default. | A release of ours is not ondata's release; a test deployment must not claim to be ondata's demo instance. | A client that reads the version sees ours. ondata deploying this code keeps its notices without changes. | None. |
 

@@ -1,6 +1,6 @@
 {
   "name": "ondata-extended",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Modular MCP server platform: a backend-agnostic core with pluggable profiles (SKOS vocabularies, CKAN). Derived from ondata/ckan-mcp-server.",
   "license": "MIT",
@@ -16,8 +16,11 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check": "npm run typecheck && npm run check:boundaries && npm run check:worker-bundle && npm test",
     "check:worker-bundle": "node scripts/check-worker-bundle.mjs",
-    "build": "npm run build -w @ondata-extended/host-vocab && npm run build:worker -w @ondata-extended/host-vocab",
-    "smoke:vocab": "npm run build && node scripts/smoke-vocab.mjs"
+    "build": "npm run build -w @ondata-extended/host-vocab && npm run build:worker -w @ondata-extended/host-vocab && npm run build -w @ondata-extended/host-ckan && npm run build:worker -w @ondata-extended/host-ckan",
+    "smoke:vocab": "npm run build && node scripts/smoke-vocab.mjs",
+    "smoke:ckan": "npm run build -w @ondata-extended/host-ckan && node scripts/smoke-ckan.mjs",
+    "deploy:ckan": "npm run build:worker -w @ondata-extended/host-ckan && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-ckan/wrangler.toml",
+    "deploy:vocab": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -28,6 +31,7 @@
     "@vitest/coverage-v8": "^4.1.12",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.159.0"
   }
 }

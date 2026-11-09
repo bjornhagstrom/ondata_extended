@@ -174,7 +174,7 @@ Typical workflow: ckan_tag_list → ckan_package_search with fq="tags:tag_name" 
       }
 
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {

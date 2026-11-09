@@ -29,8 +29,8 @@ export interface WorkerHostOptions<Env> {
   /** Writes one data point per logged call; receives the finished entry. */
   analytics?(env: Env): AnalyticsEngineDataset | undefined;
   dataPoint?(entry: Record<string, unknown>): { blobs?: string[]; doubles?: number[]; indexes?: string[] };
-  /** Added to every /mcp response (service notices). */
-  extraHeaders?: Record<string, string>;
+  /** Added to every /mcp response (service notices); a function when they depend on the deployment's env. */
+  extraHeaders?: Record<string, string> | ((env: Env) => Record<string, string>);
 }
 
 const CORS = { "Access-Control-Allow-Origin": "*" };
@@ -121,7 +121,8 @@ export function createWorkerHandler<Env>(options: WorkerHostOptions<Env>) {
 
           const headers = new Headers(response.headers);
           headers.set("Access-Control-Allow-Origin", "*");
-          for (const [k, v] of Object.entries(options.extraHeaders ?? {})) headers.set(k, v);
+          const extra = typeof options.extraHeaders === "function" ? options.extraHeaders(env) : options.extraHeaders;
+          for (const [k, v] of Object.entries(extra ?? {})) headers.set(k, v);
           return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
         } catch (error) {
           // Full detail server-side; a generic message to the caller so internal exception

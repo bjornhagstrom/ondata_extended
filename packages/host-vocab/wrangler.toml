@@ -1,11 +1,14 @@
-# Local development only (`npx wrangler dev`). Deployment is not decided (docs/DECISIONS.md).
-name = "vocab-mcp-server"
+# The vocabulary Worker of ondata-extended, a test deployment (docs/DECISIONS.md, 2026-11-09).
+# Deploy: npm run deploy:vocab (needs `npx wrangler login` once; the script builds dist/worker.js first).
+name = "ondata-extended-vocab"
 main = "dist/worker.js"
 compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
+# No usage telemetry to Cloudflare from wrangler (nothing leaves the machine unasked).
+send_metrics = false
 
-[build]
-command = "npm run build:worker"
+[observability]
+enabled = true
 
 [vars]
 VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"

@@ -257,7 +257,7 @@ Typical workflow: ckan_package_search → ckan_package_show (find resource_id wi
 
       const markdown = formatDatastoreSearchMarkdown(result, params.server_url, params.resource_id, params.offset, params.limit);
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
@@ -318,7 +318,7 @@ Security note: SQL queries are forwarded directly to the CKAN DataStore API. The
 
       const markdown = formatDatastoreSqlMarkdown(result, params.server_url, sql);
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {

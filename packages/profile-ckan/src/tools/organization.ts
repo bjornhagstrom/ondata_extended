@@ -232,7 +232,7 @@ Typical workflow: ckan_organization_list → ckan_organization_show (inspect one
           }
 
           return {
-            content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+            content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
           };
         }
         throw error;
@@ -264,7 +264,7 @@ Typical workflow: ckan_organization_list → ckan_organization_show (inspect one
       }
 
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
@@ -328,7 +328,7 @@ Typical workflow: ckan_organization_show → ckan_package_show (inspect a datase
 
       const markdown = formatOrganizationShowMarkdown(result, params.server_url);
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
@@ -437,7 +437,7 @@ Typical workflow: ckan_organization_search → ckan_organization_show (get detai
       }
 
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {

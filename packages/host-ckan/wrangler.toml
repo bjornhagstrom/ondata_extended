@@ -1,0 +1,21 @@
+# The CKAN Worker of ondata-extended, a test deployment (docs/DECISIONS.md, 2026-11-09).
+# Deploy: npm run deploy:ckan (needs `npx wrangler login` once; the script builds dist/worker.js first). Analytics binding and dataset
+# as in ondata/ckan-mcp-server's wrangler.toml.
+name = "ondata-extended-ckan"
+main = "dist/worker.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+# No usage telemetry to Cloudflare from wrangler (nothing leaves the machine unasked).
+send_metrics = false
+
+[observability]
+enabled = true
+
+[vars]
+CKAN_SERVICE_NOTICE = "Test instance of ondata-extended, not ondata's service; may change or stop without notice"
+CKAN_SERVICE_RECOMMENDATION = "https://github.com/ondata/ckan-mcp-server#installation"
+CKAN_DEMO_NOTICE = "Test instance of ondata-extended, not ondata's service; it may change or stop without notice. For a stable server: https://github.com/ondata/ckan-mcp-server#installation"
+
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "ckan_tool_calls"

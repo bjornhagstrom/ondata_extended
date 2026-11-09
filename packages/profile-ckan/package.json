@@ -1,14 +1,14 @@
 {
   "name": "@ondata-extended/profile-ckan",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "CKAN profile: behaves like ondata/ckan-mcp-server (09e8cdc) on the core. Work in progress.",
   "license": "MIT",
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@ondata-extended/core": "0.0.0",
-    "@ondata-extended/profile-contract": "0.0.0",
+    "@ondata-extended/core": "0.1.0",
+    "@ondata-extended/profile-contract": "0.1.0",
     "zod": "^3.25.76"
   }
 }

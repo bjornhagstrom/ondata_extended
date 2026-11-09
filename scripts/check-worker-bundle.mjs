@@ -14,7 +14,8 @@ const ROOT = join(fileURLToPath(import.meta.url), "..", "..");
 // The probe (core + profile alone) and every real Worker entry of a deployment package.
 const ENTRIES = [
   "scripts/fixtures/worker-bundle-entry.ts",
-  "packages/host-vocab/src/worker.ts"
+  "packages/host-vocab/src/worker.ts",
+  "packages/host-ckan/src/worker.ts"
 ];
 const out = mkdtempSync(join(tmpdir(), "worker-bundle-"));
 try {

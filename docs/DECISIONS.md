@@ -194,3 +194,35 @@ ondata's server registers at 09e8cdc (20 tools, 7 resource templates, 6 prompts)
 same lists. Not ported: the DataStore table UI resource, which ondata does not register. Still to do before the
 profile can replace ondata's server: the CKAN hosts (stdio/HTTP bin `ckan-mcp-server`, `/`, `/health`, `/mcp`, the
 Worker with ondata's telemetry fields, `CKAN_*` env names), and the smoke run against the live portals.
+
+## 2026-11-09: CKAN deployment (`packages/host-ckan`)
+
+The CKAN profile deployed as ondata's server: the `ckan-mcp-server` binary (stdio; `TRANSPORT=http` for Streamable
+HTTP on `/mcp`, with ondata's `CKAN_HTTP_*` settings and status lines) and the Cloudflare Worker (`/`, `/health`,
+`/mcp`, CORS, ondata's log line and Analytics Engine data point per tool call, its response headers). Every
+`CKAN_*` name ondata reads is read by the core under the CKAN prefix. Checks: the Worker answers exactly as ondata's
+for the same requests, including the log line and the data point (`packages/host-ckan/tests/worker-parity.test.ts`);
+ondata's smoke cases (copied unchanged) pass live against our binary, 18/18 (`npm run smoke:ckan`, 2026-11-09).
+
+Björn's decisions (2026-11-09):
+
+- **Version: Claude chooses.** One semver for the whole platform, starting at `0.1.0` (all packages, the profiles,
+  `initialize` and `/health`). The deployment reproduces ondata/ckan-mcp-server 0.4.138 (README,
+  `packages/host-ckan/src/server.ts`); the version field says ours (D13).
+- **Landing page `/` stays English**, so ondata's people can read it: ondata's page, unchanged.
+- **Deploy, to test fully.** Choice: Cloudflare Workers, as ondata, so what is tested is what would replace ondata's
+  service: `ondata-extended-ckan` and `ondata-extended-vocab` on the account's `workers.dev` subdomain
+  (`npm run deploy:ckan`, `npm run deploy:vocab`; `npx wrangler login` once, by Björn). wrangler sends no usage
+  telemetry (`send_metrics = false`). The service notices are the deployment's settings
+  (`CKAN_SERVICE_NOTICE`, `CKAN_SERVICE_RECOMMENDATION`, `CKAN_DEMO_NOTICE`), ondata's texts by default; ours say
+  "Test instance of ondata-extended, not ondata's service" and point to ondata's installation guide for a stable
+  server. Checked before deploying: `wrangler deploy --dry-run` for both, and the CKAN Worker in Cloudflare's runtime
+  locally (`wrangler dev --local`) against a live portal.
+- **No domain allowlist on the CKAN test Worker** (Claude's choice, flagged in review): like ondata's public Worker,
+  it accepts any public CKAN portal a caller names, so it can be tested against any portal and against what
+  `ckan_find_portals` returns. The SSRF guards apply to every request; the URL is not announced. If it is abused,
+  set `CKAN_ALLOWED_DOMAINS` in `packages/host-ckan/wrangler.toml` and redeploy. The vocabulary Worker keeps its
+  allowlist (`begrepp.hagstrom.nu`).
+- **The landing page carries no test-instance notice** (Björn's decision: ondata's page unchanged). The notices are
+  in the `/mcp` headers and the Markdown footer.
+

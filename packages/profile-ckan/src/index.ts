@@ -22,7 +22,7 @@ import { CKAN_PROMPTS } from "./prompts/index.js";
 
 export const PROFILE_ID = "ckan";
 export const TOOL_PREFIX = "ckan_";
-export const PROFILE_VERSION = "0.0.0";
+export const PROFILE_VERSION = "0.1.0";
 
 export { makeCkanRequest, formatCkanError, extractCkanErrorMessage, CkanApiError, CkanTransportError, getTtlForAction } from "./utils/http.js";
 

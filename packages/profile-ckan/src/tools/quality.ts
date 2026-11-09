@@ -955,7 +955,7 @@ export const getMqaQualityTool = defineTool({
       const format = response_format || ResponseFormat.MARKDOWN;
       const output = format === ResponseFormat.JSON
         ? ctx.output.truncateJson(qualityData)
-        : ctx.output.truncateText(addDemoFooter(formatQualityMarkdown(qualityData, dataset_id)));
+        : ctx.output.truncateText(addDemoFooter(ctx, formatQualityMarkdown(qualityData, dataset_id)));
 
       return {
         content: [{
@@ -1017,7 +1017,7 @@ export const getMqaQualityDetailsTool = defineTool({
       const format = response_format || ResponseFormat.MARKDOWN;
       const output = format === ResponseFormat.JSON
         ? ctx.output.truncateJson(details)
-        : ctx.output.truncateText(addDemoFooter(formatQualityDetailsMarkdown(details, dataset_id)));
+        : ctx.output.truncateText(addDemoFooter(ctx, formatQualityDetailsMarkdown(details, dataset_id)));
 
       return {
         content: [{

@@ -231,7 +231,7 @@ Typical workflow: ckan_group_list → ckan_group_show (inspect one) → ckan_pac
       }
 
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
@@ -289,7 +289,7 @@ Typical workflow: ckan_group_show → ckan_package_show (inspect a dataset) → 
 
       const markdown = formatGroupShowMarkdown(result, params.server_url);
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
@@ -382,7 +382,7 @@ Typical workflow: ckan_group_search → ckan_group_show (get details) → ckan_p
       }
 
       return {
-        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(markdown)) }]
+        content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }]
       };
     } catch (error) {
       return {
