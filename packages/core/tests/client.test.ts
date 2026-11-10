@@ -348,6 +348,26 @@ describe("HttpClient redirects (stubbed fetch)", () => {
     await expect(new HttpClient(settings()).request("https://public.example/x")).rejects.toThrow("private/internal");
   });
 
+  it("drops credentials on a redirect to another origin, and keeps them on the same origin", async () => {
+    __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
+    const seen: { url: string; auth: string | null; cookie: string | null; accept: string | null }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      const h = new Headers(init.headers);
+      seen.push({ url, auth: h.get("authorization"), cookie: h.get("cookie"), accept: h.get("accept") });
+      if (url === "https://api.example/a") return redirectTo("https://api.example/b");
+      if (url === "https://api.example/b") return redirectTo("https://other.example/c");
+      return new Response("ok", { status: 200 });
+    }));
+    const headers = { Authorization: "Bearer s3cret", Cookie: "k=v", Accept: "application/json" };
+    const res = await new HttpClient(settings()).request("https://api.example/a", { headers });
+    expect(res.status).toBe(200);
+    expect(seen).toEqual([
+      { url: "https://api.example/a", auth: "Bearer s3cret", cookie: "k=v", accept: "application/json" },
+      { url: "https://api.example/b", auth: "Bearer s3cret", cookie: "k=v", accept: "application/json" },
+      { url: "https://other.example/c", auth: null, cookie: null, accept: "application/json" }
+    ]);
+  });
+
   it("stops after maxHops", async () => {
     __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
     vi.stubGlobal("fetch", vi.fn(async () => redirectTo("https://public.example/again")));

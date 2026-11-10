@@ -1,0 +1,16 @@
+{
+  "name": "@ondata-extended/profile-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example profile for the guide docs/writing-a-profile.md: the Italian Senate's Akoma Ntoso bulk data on GitHub, two tools.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ondata-extended/core": "0.1.0",
+    "@ondata-extended/profile-contract": "0.1.0",
+    "zod": "^3.25.76"
+  }
+}

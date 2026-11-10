@@ -1,0 +1,10 @@
+# The example profile's Worker (docs/writing-a-profile.md). Not deployed; deploying needs Björn's ok.
+# A token raises GitHub's limit of 60 requests an hour per IP: `wrangler secret put AKN_GITHUB_TOKEN`.
+name = "ondata-extended-akn-example"
+main = "dist/worker.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+send_metrics = false
+
+[vars]
+AKN_ALLOWED_DOMAINS = "api.github.com,raw.githubusercontent.com"

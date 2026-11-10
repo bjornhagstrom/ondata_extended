@@ -1,9 +1,10 @@
-// Bundle probe: the smallest Worker built from the core and every profile (SKOS, CKAN, parliament). Built by
+// Bundle probe: the smallest Worker built from the core and every profile (SKOS, CKAN, parliament, example). Built by
 // scripts/check-worker-bundle.mjs with esbuild's browser platform, as ondata's build:worker.
 import { createEngine, createMcpServer, createWorkerHandler, registerProfiles, pickTelemetryFields } from "@ondata-extended/core";
 import { createSkosProfile } from "@ondata-extended/profile-skos";
 import { createParliamentProfile } from "@ondata-extended/profile-parliament";
 import { createCkanProfile } from "@ondata-extended/profile-ckan";
+import { createExampleProfile } from "@ondata-extended/profile-example";
 
 type Env = Record<string, string | undefined>;
 const profile = createSkosProfile();
@@ -14,7 +15,7 @@ export default createWorkerHandler<Env>({
   buildServer(env) {
     engine ??= createEngine({ configPrefixes: ["APP"], configSource: env, cacheOrigin: "https://probe-cache.internal" });
     const server = createMcpServer({ name: "probe", version: "0.0.0" });
-    registerProfiles(server, [profile, createParliamentProfile(), createCkanProfile()], engine);
+    registerProfiles(server, [profile, createParliamentProfile(), createCkanProfile(), createExampleProfile()], engine);
     return server;
   },
   health: () => ({ status: "ok" }),

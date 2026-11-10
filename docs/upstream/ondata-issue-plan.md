@@ -25,7 +25,7 @@ Mention italianparliament-mcp inside it and offer to open a pointer issue there 
 
 ## Preconditions before posting (Björn decides each)
 
-1. **The repository must be readable by him.** The draft cites tests, a parity harness and a deployment. CONTRIBUTING
+1. **The repository must be readable by him (decided 2026-11-10: published publicly).** The draft cites tests, a parity harness and a deployment. CONTRIBUTING
    says to claim only what a reviewer can verify. Options: publish `ondata_extended` (public GitHub repo, MIT, with
    NOTICE.md crediting ondata), or give him read access to a private repo. Without one of these the issue must drop
    every "you can run" claim. Check before publishing: no secrets, `review/` and `.claude/` stay excluded, licences
@@ -37,32 +37,37 @@ Mention italianparliament-mcp inside it and offer to open a pointer issue there 
 4. **Numbers refreshed on the day**: test counts, parity case counts, ondata's current version (0.4.139 when drafted),
    live comparison rerun (`node scripts/compare-live-ckan.mjs`), smoke against the deployment
    (`SMOKE_URL=... node scripts/smoke-ckan.mjs`).
-5. **Decide what we offer** (the issue says it plainly): co-maintenance of the core, for how long, and what happens if
-   either side stops (MIT, forkable, a port list for security fixes). The draft offers co-maintenance; Björn confirms
-   or removes it.
+5. **What we offer** (decided 2026-11-10): Björn does the work until ondata's services run stably on the core
+   (remaining tools, side-by-side run, security fixes, reviews, documentation) and documents maintenance after that;
+   no indefinite co-maintenance promise. The draft says so in "What it costs you".
+
+This plan is internal and is not posted; only the draft's text (without its HTML comment) goes into the issue.
 
 ## Structure of the issue (as drafted)
 
 1. Summary and the question asked (yes/no and which path).
 2. Who is asking, and disclosure.
 3. What exists: core, contract, three profiles, three hosts (two deployed as test instances: CKAN and vocabulary).
-4. What it gives ondata and the maintainer (the main section).
-5. What it costs the maintainer (as plainly as section 4).
-6. Architecture sketch: layers, a tool call's path, the contract in brief.
-7. Principles we build by.
-8. Evidence that CKAN behaves the same (parity, smoke, Worker parity, live comparison, the deviation list).
-9. Parliament: what a port looks like, what moved into the core, what differs.
-10. Paths (A/B/C), with a suggested first small step.
-11. What we do not propose.
-12. Open questions for him.
+4. What it gives ondata and the maintainer (the main section), including room for his future servers.
+5. What it costs the maintainer (as plainly as section 4), including the limited maintenance offer.
+6. How finished this is: status per part, what is left.
+7. Architecture sketch: layers, a tool call's path, the contract in brief.
+8. Principles we build by.
+9. Evidence that CKAN behaves the same (parity, smoke, Worker parity, live comparison, the deviation list).
+10. Parliament: what a port looks like, what moved into the core, what differs.
+11. Running side by side: the switch-over in four steps, with rollback.
+12. Paths: A (ondata adopts, new repo, side by side; our preference), B (small steps in ckan-mcp-server), C (nothing).
+13. What we do not propose.
+14. Open questions for him.
 
 ## After posting
 
 - Answer within a day; keep follow-ups short.
-- If he says no or not now: accept it, keep the core as our own package with ondata credited, and keep a port list of
-  his security fixes (architecture proposal, path A).
-- If yes: write the OpenSpec proposal he prefers, then the first PR is the smallest behaviour-neutral step (split
-  `http.ts` into a backend-free part and a CKAN part, no export changes), with `npm test` and `npm run smoke` green.
+- If he says no or not now: accept it; keep only what the vocabulary profile needs, with ondata credited (path C).
+- If yes to A: an OpenSpec change proposal if he wants one, then the PR form he chose (one PR starting the new track,
+  or steps), then test Workers next to his and the side-by-side comparison.
+- If yes to B: the first PR is the smallest behaviour-neutral step (split `http.ts` into a backend-free part and a
+  CKAN part, no export changes), with `npm test` and `npm run smoke` green.
 - Log the issue, his answer and our decision in `docs/DECISIONS.md`.
 
 ## Open items found while drafting

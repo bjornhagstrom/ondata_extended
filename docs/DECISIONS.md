@@ -314,3 +314,38 @@ that needs Björn's decision). Decisions:
 - **No HTTP mode on Node and no service-notice field**, as the original; the info document and the 404 text are the
   original's bytes (English, not in language files), as the CKAN landing page is ondata's.
 - **The binary loads the stdio module only** (`@ondata-extended/core/node/stdio`), so it does not need express.
+
+## 2026-11-10: the proposal to ondata (issue draft, Björn's direction)
+
+- **Preferred path: ondata adopts the core** (a new ondata repository; ckan-mcp-server and italianparliament-mcp
+  become profiles over time). We do not want to maintain a separate copy; keeping it ourselves is the last option.
+- **Side by side, then switch**: the new version runs as separate test Workers and npm tags next to the current
+  servers until the maintainer is satisfied; rollback is redeploying the old version.
+- **PR size is the maintainer's choice**: one large PR that starts the new track, or small steps. The earlier "no
+  large PR" line is withdrawn.
+- **Maintenance offer**: Björn does the work until ondata's services run stably on the core and documents maintenance
+  after that; no indefinite co-maintenance promise.
+- **Behaviour unchanged for parliament users too**, where possible; differences listed (P1-P13).
+- **The issue states plainly that this is a prototype**, with a status per part (CKAN complete, parliament 6 of 43
+  tools, core gaps named).
+- The plan (`docs/upstream/ondata-issue-plan.md`) is internal and is not posted.
+- **Confirmed by Björn**: the parity run time (~3 min) stays; the round 1-4 choices stand (Italian comments in ported
+  files, the original's User-Agent, the core rate limit on by default for parliament, P13). `bill-text` waits; the
+  issue describes it as not built.
+
+## 2026-11-10: example profile and publishing for review
+
+- **The repository is published publicly for Andrea's review** (Björn, 2026-11-10), with full credit to ondata
+  (NOTICE.md, file headers). The push itself still needs Björn's ok at the time, after the pre-publication checks.
+- **The issue words security points generally**; details for italianparliament-mcp go to Andrea privately if he
+  asks.
+- **Example profile** (`packages/profile-example`, `packages/host-example`; guide `docs/writing-a-profile.md`): two
+  `akn_*` tools over the Senate's Akoma Ntoso bulk data on GitHub (CC BY 4.0). Chosen because it is a real, keyless,
+  Workers-reachable source relevant to ondata, and it shows every part a profile needs (rows and handler tools,
+  host policies, `fixedUpstream`, a secret through config, telemetry fields, error hints, untrusted text). A regular
+  expression reads the XML instead of a parser, to keep the example free of dependencies. Not deployed.
+- **GitHub token as `AKN_GITHUB_TOKEN`** (optional): GitHub's anonymous limit is 60 requests an hour per IP, which a
+  shared Worker IP can exhaust. Sent to api.github.com only; never in output, logs or telemetry (tested).
+- **Senato and Workers**: the original's own Worker already queries dati.senato.it's SPARQL endpoint from Cloudflare;
+  the GitHub bulk data covers documents (texts, amendments, reports), not the linked data most tools query. Our rule
+  of no live senato.it requests from this machine stands.

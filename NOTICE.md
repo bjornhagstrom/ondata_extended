@@ -20,6 +20,13 @@ commit `fd46810`; the files say which original they follow. Its model-facing tex
 
 This project is not affiliated with or endorsed by the onData association.
 
+## Data
+
+The test recordings in `packages/profile-example/tests/fixtures/github` are files and folder listings from
+**AkomaNtosoBulkData** by the Senato della Repubblica (Italian Senate, IT Office),
+https://github.com/SenatoDellaRepubblica/AkomaNtosoBulkData, licensed CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/), recorded unchanged on 2026-11-10.
+
 ## Third-party dependencies
 
 | Package | License | Copyright |

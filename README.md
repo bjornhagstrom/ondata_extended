@@ -19,6 +19,8 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
 - `packages/host-parliament`: the parliament deployment as the original's server (stdio binary
   `italianparliament-mcp`; Cloudflare Worker with the original's `/`, `/health`, `/mcp`), core settings under
   `PARLIAMENT_*`. Not deployed.
+- `packages/profile-example` and `packages/host-example`: the worked example of `docs/writing-a-profile.md`, two
+  `akn_*` tools over the Italian Senate's Akoma Ntoso bulk data on GitHub. Not deployed.
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 
@@ -29,9 +31,10 @@ Status: private, local, pre-release. Not affiliated with the onData association.
 ```sh
 npm install
 npm run check        # typecheck, boundaries, Workers bundle, tests
-npm run build        # packages/host-{vocab,ckan,parliament}/dist/{index,worker}.js
+npm run build        # packages/host-{vocab,ckan,parliament,example}/dist/{index,worker}.js
 npm run smoke:vocab  # known answers against the live test vocabulary
 npm run smoke:ckan   # ondata's known answers against live CKAN portals (builds first)
+npm run smoke:example # known answers against the Senate's Akoma Ntoso files on GitHub (builds first)
 ```
 
 Run locally: `node packages/host-vocab/dist/index.js`, `node packages/host-ckan/dist/index.js` or

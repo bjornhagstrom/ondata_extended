@@ -1,0 +1,9 @@
+{
+  "about": "Known-answer cases against the live repository SenatoDellaRepubblica/AkomaNtosoBulkData on GitHub (checked 2026-11-10). Each case names what must come back. Five requests at most, within GitHub's anonymous limit.",
+  "cases": [
+    { "name": "the Piano Casa bill has committee amendments", "tool": "akn_list_files", "args": { "legislature": 19, "ddl": 60233 }, "expect": { "textContains": "\"name\":\"emendc\"" } },
+    { "name": "its committee summary reports include report 01512302", "tool": "akn_list_files", "args": { "legislature": 19, "ddl": 60233, "kind": "sommcomm" }, "expect": { "textContains": "01512302-rc.akn.xml" } },
+    { "name": "committee amendment 01511402 is amendment 1.4", "tool": "akn_document", "args": { "legislature": 19, "ddl": 60233, "kind": "emendc", "file": "01511402-em.akn.xml", "response_format": "json" }, "expect": { "textContains": "\"number\": \"1.4\"" } },
+    { "name": "an unknown bill is an error with a hint", "tool": "akn_list_files", "args": { "legislature": 19, "ddl": 9999999 }, "expect": { "isError": true, "textContains": "without `kind`" } }
+  ]
+}

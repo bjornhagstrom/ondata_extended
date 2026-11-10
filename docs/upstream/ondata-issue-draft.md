@@ -4,14 +4,15 @@ Before posting: see docs/upstream/ondata-issue-plan.md (preconditions: a readabl
 Placeholders: <REPO_URL>, <TEST_COUNT> (refresh on the day).
 -->
 
-# Proposal: one hardened core for ckan-mcp-server and italianparliament-mcp (CKAN behaviour unchanged)
+# Proposal: one hardened core for ckan-mcp-server and italianparliament-mcp (behaviour unchanged for users of both, as far as possible)
 
 Hi Andrea,
 
 This is a question before any code: **would a shared core for your two TypeScript MCP servers be useful to you, and
 if so, in which form?** I have built and tested one outside your repositories so that the question can be answered
-with something to look at instead of a sketch. Nothing below requires a change in ckan-mcp-server unless you want
-one, and "no, thanks" is a fine answer.
+with something to look at instead of a sketch. It is a working prototype, not a finished service (section "How
+finished this is"). Nothing below requires a change in your repositories unless you want one, and "no, thanks" is a
+fine answer.
 
 ## Summary
 
@@ -26,14 +27,18 @@ one, and "no, thanks" is a fine answer.
   checked by replaying recorded portal answers through your server and ours and comparing the outputs, by your smoke
   cases (unchanged) and by a side-by-side run against your public Worker. Thirteen known differences are listed
   below, each with its reason; most are invisible to users.
+- **The parliament port aims for the same.** Its six tools give your server's output for the same recorded answers;
+  the differences that could not be avoided are listed (P1-P13), most of them timing, error text or added guards.
 - **What it would give you.** Security fixes written once for both servers; italianparliament-mcp gets the size
   caps, timeouts and redirect checks it does not have today on every request; one Worker/stdio/HTTP host instead of
-  two; shared SPARQL helpers; a codebase that typechecks under `strict` in seconds.
+  two; shared SPARQL helpers; a codebase that typechecks under `strict` in seconds; and a ready place for the next
+  MCP server you write, which then starts as a profile instead of a copy.
 - **What it would cost you.** A boundary (the profile contract) that you would no longer change as freely as internal
   functions, a dependency between your two servers, and review time. Section "What it costs" is as long as the
   section on benefits on purpose.
-- **What I ask.** Your view on whether this is wanted, and which of the paths at the end you would consider. If the
-  answer is yes, the first step is a small, behaviour-neutral PR, after an OpenSpec proposal if you prefer that.
+- **What I ask.** Your view on whether this is wanted, and which of the paths at the end you would consider. My
+  preference is that ondata takes the core in as its own, and that the new version runs side by side with today's
+  servers until you are satisfied with it. You choose the form: an OpenSpec proposal first or not, one PR or many.
 
 ## Who is asking, and how this was made
 
@@ -58,6 +63,7 @@ are kept, and every ported file names its source file and commit).
 | `packages/profile-skos` | SKOS vocabularies, TemaTres as first adapter (our need) | ~1 000 lines |
 | `packages/profile-parliament` | six of italianparliament-mcp's tools, ported file by file | ~3 000 lines |
 | `packages/host-parliament` | The `italianparliament-mcp` binary (stdio) and the Worker, as yours; built and tested, not deployed | small |
+| `packages/profile-example`, `host-example` | The worked example of `docs/writing-a-profile.md`: two tools, tests, a Worker; not deployed | ~350 lines |
 
 <TEST_COUNT> tests (`npm run check`: typecheck, boundary check, Worker bundle check, all tests; a local script, there
 is no CI yet). A test deployment
@@ -66,11 +72,10 @@ of the CKAN profile runs on Cloudflare Workers, labelled as a test instance in i
 ## What it gives ondata and you
 
 **Security fixes once.** ckan-mcp-server has fixed at least five advisories in its HTTP layer (GHSA-8hxx, -6f9w,
--q5gv, -279h, -w3gp). In the core that code exists once. italianparliament-mcp's hosts are fixed, so its exposure
-is smaller, but its amendment and Akoma Ntoso tools fetch HTML and XML directly with `fetch`, outside its client
-(`src/tools/camera-amendments.ts:50`, `src/core/akn.ts:47` and `:168` at fd46810):
-no size cap, no timeout, and redirects followed without checks. On the core every request gets them, with no code
-of its own.
+-q5gv, -279h, -w3gp). In the core that code exists once. italianparliament-mcp talks to fixed hosts, so its exposure
+is smaller, and it has its own SPARQL client; requests made outside a shared client do not get the same guards by
+default. On the core every request, whatever tool makes it, gets the size cap, the timeout and checked redirects,
+with no code of its own. (If you want details for italianparliament-mcp, I will send them privately.)
 
 **Less code that is yours alone, honestly measured.** In the parliament port the per-host throttle and the
 timeouts became declarations:
@@ -115,6 +120,16 @@ synthetic Senato answers, with no live call to Senato.
 **A second and third user of your code.** The vocabulary profile shows that what you built holds outside CKAN.
 That is an argument you can use too.
 
+**Room for the servers you have not written yet.** This is a guess about your plans, so correct me: you have built
+many command-line tools for Italian public data sources this year (IPA, OpenBDAP, ANAC, AGENAS, the MIMIT price
+observatory, among others), and some of them may one day want an MCP server; the Sicilian regional assembly plugin
+already ships one. Today each new TypeScript server starts by copying the HTTP hardening, the hosting and the tests
+from an existing one. With a core, a new server is a profile: its tools, queries and texts, with the guards, the
+hosts, the Worker deployment, the telemetry and the test pattern already there. The SKOS profile was written that
+way, and `docs/writing-a-profile.md` walks through a small example profile with its tests and Worker: two tools over
+the Senate's Akoma Ntoso files on GitHub, the source your `amendments` tool uses. If more servers are likely, this
+may be the largest benefit; if not, the others still hold.
+
 ## What it costs you
 
 - **A boundary you would not change as freely.** Today you refactor internals at will (the probe move in
@@ -126,10 +141,27 @@ That is an argument you can use too.
 - **Review time**, for the extraction PRs, if you choose that path.
 - **A dependency between your two servers.** A bug in the core affects both.
 - **Bus factor.** Your family of projects is mostly you; ours is mostly me. A shared core with two single owners is
-  not automatically sturdier. We offer to co-maintain the core (security ports, reviews, releases) and to write down
-  what happens if either of us stops: the core stays MIT and forkable.
+  not automatically sturdier. What I can promise: I do the work to bring the core and the ported servers to a state
+  where your services run stably on it (porting the remaining tools, the side-by-side run, security fixes, reviews,
+  documentation), and I write down how it is maintained after that. I cannot promise to co-maintain it indefinitely,
+  and I would rather say so now. The core is MIT and written to be maintained by one person: decisions recorded,
+  checks automated, no part that only I understand.
 
 If these outweigh the benefits for you, that is a complete answer.
+
+## How finished this is
+
+A working, tested prototype; not a finished service. Rough status, by part:
+
+| Part | Status | What is left |
+|---|---|---|
+| Core | Covers everything the profiles use; security guards, hosts and telemetry tested | Capability gating for Node-only tools (designed, not written); the retry and table options for your parliament output (question 6); CI; published packages; a stable contract (1.0) |
+| CKAN profile and host | Complete: all 20 tools, resources and prompts, equal to yours in every check below | Following your releases (0.4.139 changed only the version string in `src` since `09e8cdc`); a production deployment |
+| Parliament profile and host | 6 of 43 tools (about 14 %), chosen as the hardest; host and Worker built and tested, not deployed | 37 tools (mostly mechanical, following the same pattern); `bill-text` (needs the gating above); your CLI; a deployment next to yours (your Worker already queries Senato's SPARQL endpoint from Cloudflare; the Akoma Ntoso files come from GitHub) |
+| SKOS profile | Works against one TemaTres instance; our own need | Not part of this proposal |
+
+In effort: the CKAN side is close to done, the parliament side about a seventh of the way, the core most of the way,
+with the gaps above named. I would rather you judge from the repository than from these words.
 
 ## Architecture
 
@@ -188,9 +220,10 @@ The profile owns every text the model sees; the core owns only generic errors an
    `npm run check` enforces it, no temporary exceptions.
 2. **Profiles import the core and the contract, never each other.** Shared helpers go into the core.
 3. **The profile owns all model-facing text**: tool descriptions, hints, prompts, URI schemes.
-4. **Backward compatibility for CKAN users is a hard requirement**: tool names, arguments, JSON shape, `CKAN_*`
-   variables, binary, endpoints, telemetry fields. Your smoke file, unchanged and green, is the definition of
-   behaviour-neutral. Any deviation is listed with its reason and migration.
+4. **Backward compatibility for your users is a hard requirement**: tool names, arguments, output shape, `CKAN_*`
+   variables, binaries, endpoints, telemetry fields; for CKAN and for italianparliament-mcp. Your smoke file,
+   unchanged and green, is the definition of behaviour-neutral for CKAN; for parliament, your tests and the parity
+   cases. Any deviation is listed with its reason and migration.
 5. **No stability promise for the profile API** (0.x) until two profiles run in production.
 6. **Security rules are core rules**: all outbound traffic through the core client; upstream content is untrusted;
    error bodies are never echoed.
@@ -258,8 +291,7 @@ rest would be mechanical.
   and marked so, and the recorder refuses any senato.it request. This is what your #117 asks for.
 - **Differences in the tools** (all listed, P1-P8): the SDK's newer validation text (as for CKAN); the Senato throttle also
   spaces retries; the core's guards apply to SPARQL and HTML requests (size cap, at most 5 checked redirects
-  instead of 20, a timeout that covers the body, 60 s on the HTML pages, which had none), and a guard refusal is
-  not retried; line breaks in endpoint values quoted in `bill-progress`'s plain-text notes are folded into a space
+  instead of 20, a timeout that covers the body), and a guard refusal is not retried; line breaks in endpoint values quoted in `bill-progress`'s plain-text notes are folded into a space
   (upstream text outside JSON escaping); a log line uses `console.error`; your request counter is not kept;
   `withSenatoLaw`, exported for tests, needs its lookup passed in.
 - **The host** (binary and Worker, P9-P13): same routes, bodies and headers as your `src/worker.ts` for the requests
@@ -269,7 +301,7 @@ rest would be mechanical.
   server has only the Senato throttle. It can be turned off with one setting.
 - **Commands:** `npx vitest run packages/profile-parliament/tests/parity` (needs your repository at fd46810 with its
   dependencies, `PARLIAMENT_REPO=...`), `npx vitest run packages/host-parliament`.
-- **Bundle:** the Worker bundle with all three profiles is 772 KiB minified, of which cheerio and its parser about
+- **Bundle:** the parliament Worker is 622 KiB minified, and a probe bundling all four profiles 779 KiB, of which cheerio and its parser about
   200 KiB.
 - **Not built:** `bill-text`, which starts a browser and external programs. A core needs a way to say "this tool
   exists only where the host can run it" (Node, not Workers); the design is clear, the code is not written.
@@ -278,10 +310,30 @@ Six small contract additions came from italianparliament-mcp, each optional for 
 a prefix (your 43 names are a user contract), per-host throttle and retry, row output with the notice after the
 rows, examples in descriptions, the SPARQL helpers in the core, and row-level results for the CLI.
 
+## Running side by side
+
+Nothing has to be switched over in one go. The new version can run next to today's servers, under its own Worker
+name and its own npm tag, while users keep the addresses they have:
+
+1. deploy the core-based servers as separate test Workers (as ours is today) and compare them with yours on the same
+   requests, as `scripts/compare-live-ckan.mjs` already does for CKAN;
+2. let whoever wants to try them do so, with the differences listed;
+3. when you are satisfied, point the existing Worker names and the npm packages at the new version, keeping every
+   tool name, argument and address;
+4. retire the old code when nothing depends on it.
+
+Rolling back at step 3 is redeploying the old version.
+
 ## Paths
 
-**A. Nothing changes in your repositories.** We keep the core as our own package, crediting ondata, and port your
-security fixes to it. Cost to you: none. Cost overall: two copies of the security code that drift over time.
+**A. ondata takes the core in as its own (my preference).** A new repository under ondata (for example
+`ondata/mcp-core`, or one repository holding the core and the profiles), owned by you, with ckan-mcp-server and
+italianparliament-mcp becoming profiles on it over time. The work moves in as a starting point, history and
+attribution kept; the switch-over follows "Running side by side". The PR size is yours to choose: one large PR that
+starts the new track, which you read as a whole while today's servers keep running, or the same content in steps.
+Profiles that are not ondata's (our SKOS profile) need not live there: with the core published as a package, they
+stay in their owners' repositories and depend on it. Whether ondata's repository should also host others' profiles
+is your call (question 8).
 
 **B. Extraction in small, behaviour-neutral steps inside ckan-mcp-server.** Each PR readable in minutes, each with
 `npm test` and `npm run smoke` green and the smoke file untouched:
@@ -289,31 +341,37 @@ security fixes to it. Cost to you: none. Cost overall: two copies of the securit
 2. make cache TTLs and truncation keys parameters, with today's values as defaults;
 3. move hint texts out of the HTTP layer;
 4. introduce the profile type and register CKAN through it, no names changed.
-italianparliament-mcp could then depend on the core folder or package when you choose, not before.
+italianparliament-mcp could then depend on the core folder or package when you choose, not before. Slower, but you
+never review more than one step at a time.
 
-**C. A separate core package owned by ondata** (`@ondata/mcp-engine` or similar), with ckan-mcp-server and
-italianparliament-mcp as consumers. Only if you want it, and only with us sharing the maintenance.
-
-My suggestion is A now, B if you want it, C only if you ask for it.
+**C. Nothing changes in your repositories.** Cost to you: none. Honestly, this is the path I would least like: I do
+not want to maintain a separate copy of your servers' security code next to yours, and the two copies would drift.
+If this is your answer, I would keep only what the vocabulary profile needs and credit ondata for it.
 
 ## What we do not propose
 
 - No renamed tools, arguments, variables, endpoints or binaries; no change to the hosted Workers' addresses.
+- No switch-over before you are satisfied: the old servers keep running until you decide otherwise.
 - Nothing for the Python servers (istat_mcp_server, opensdmx): a shared TypeScript core cannot reach them. What could
   be shared there is conventions (instance registry format, hint and untrusted-text rules), not code.
-- No large PR. If path B, the first PR is the `http.ts` split alone.
 - No SDK v2 migration as part of this.
 
 ## Questions for you
 
 1. Is a shared core something you want at all, for ckan-mcp-server, italianparliament-mcp, both or neither?
-2. If yes: path B inside ckan-mcp-server, path C as a separate package, or something else?
-3. Would you prefer an OpenSpec proposal before the first PR?
+2. If yes: path A (a new ondata repository, side by side), path B (small steps inside ckan-mcp-server), or something
+   else?
+3. One large PR that starts the new track, or small steps? And would you like an OpenSpec change proposal first
+   (`openspec/changes/...`, as for other architecture changes here)?
 4. Is italianparliament-mcp a candidate, given its CLI and the Node-only `bill-text`?
-5. Anything in the deviation list you would not accept?
+5. Anything in the deviation lists you would not accept?
 6. For italianparliament-mcp: should the core's retry and table output gain the options your server needs (retry an
    unparsable 200; rows in their own key order, text only, no cap), so your retry loop and formatting can go, or do
    you prefer to keep them in your code?
+7. Do you expect to write more MCP servers, and if so, which kinds of sources? That decides how much the core
+   should prepare for.
+8. Should an ondata core repository hold only ondata's profiles, with others (ours included) in their own
+   repositories using the published core, or would you host others' profiles too?
 
 Thanks for ckan-mcp-server. Its hardening is the reason this exists.
 

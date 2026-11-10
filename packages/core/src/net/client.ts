@@ -185,9 +185,10 @@ export async function safeFetch(
     throw error;
   }
   let current = url;
+  let hopInit = init;
   for (let hop = 0; ; hop++) {
     const response = await fetch(current, {
-      ...init,
+      ...hopInit,
       redirect: "manual",
       ...(dispatcher ? { dispatcher } : {})
     } as RequestInit);
@@ -205,8 +206,20 @@ export async function safeFetch(
     assertRedirectKeepsPrivateExemption(new URL(current).hostname, next, opts.policy);
     validateUrl(next, opts.policy, guardSettings);
     await assertHostnameResolvesSafe(new URL(next).hostname, guardSettings);
+    // Credentials are for the origin they were given to: a redirect to another origin drops them,
+    // as the Fetch standard does with manual redirects followed by hand.
+    if (new URL(next).origin !== new URL(current).origin) hopInit = withoutCredentials(hopInit);
     current = next;
   }
+}
+
+const CREDENTIAL_HEADERS = ["authorization", "proxy-authorization", "cookie"];
+
+function withoutCredentials(init: RequestInit): RequestInit {
+  if (!init.headers) return init;
+  const headers = new Headers(init.headers);
+  for (const name of CREDENTIAL_HEADERS) headers.delete(name);
+  return { ...init, headers };
 }
 
 /**

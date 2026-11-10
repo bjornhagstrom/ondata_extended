@@ -204,6 +204,11 @@ asserts the original texts unchanged.
 | `packages/host-parliament/tests/host.test.ts` (round 4) | 10 | routes and health without the reference copy, P12, the Senato throttle shared across two `/mcp` requests of one isolate (fails with an engine per request) |
 | `packages/host-parliament/tests/binary.test.ts` (round 4) | 1 | the stdio binary built as the package script does: no status line, six tools |
 | `packages/core/tests/engine.test.ts` (parliament round 4) | +2 | `jsonResponse: false` answers as an SSE stream; a failed call logged as an error from an SSE answer |
+| `packages/core/tests/client.test.ts` (example profile) | +1 | `Authorization`, `Proxy-Authorization` and `Cookie` dropped on a redirect to another origin, kept on the same origin (fails without the rule) |
+| `packages/profile-example/tests/akn.test.ts` | 7 | paths, the file-name pattern, entity decoding, reading two files recorded from GitHub (2026-11-10) |
+| `packages/profile-example/tests/contract.test.ts` | 8 | both tools against a fake `ctx.http`: URL, headers and options asked for, the token on the API only, the 1000-entry notice, 404 and non-listing answers, other statuses, the cut at `max_chars` on a code point, error hints by host |
+| `packages/profile-example/tests/profile.test.ts` | 8 | both tools end to end through MCP with recorded GitHub answers: registration, rows, Markdown and JSON, an unknown bill's hint, no request for a bad file name, the token only to api.github.com and never in output |
+| `packages/host-example/tests/host.test.ts` | 4 | Worker routes, the tool list, a completed call's log line: its fields and no token, though the token reached the request |
 
 ## Deviation list (changed expectations and changed behaviour)
 
