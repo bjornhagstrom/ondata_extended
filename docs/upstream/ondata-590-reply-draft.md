@@ -1,4 +1,4 @@
-<!-- DRAFT reply on https://github.com/ondata/ckan-mcp-server/issues/590. Not posted without Björn's ok. -->
+<!-- POSTED 2026-11-10: https://github.com/ondata/ckan-mcp-server/issues/590#issuecomment-6767332172 -->
 
 Thank you, Andrea, for the quick and clear answer. That is a fair call, and I understand the cost would land on you.
 
