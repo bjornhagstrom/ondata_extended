@@ -24,7 +24,12 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 
-Status: private, local, pre-release. Not affiliated with the onData association.
+Status: a working prototype, published for review by the maintainer of ondata's MCP servers; pre-release, no
+packages published, no stability promise for the profile contract yet (0.x). Not affiliated with or endorsed by the
+onData association. All credit for the security hardening and the ported servers goes to their authors (`NOTICE.md`).
+
+Written with AI assistance (Claude, Anthropic) under the direction and review of Björn Hagström; the claims about
+behaviour in `docs/test-parity.md` and the issue draft name the command that checks them.
 
 ## Develop
 

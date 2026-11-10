@@ -4,7 +4,10 @@ A modular MCP server platform in TypeScript: a backend-agnostic core engine (`pa
 ondata's MIT-licensed ckan-mcp-server (commit `09e8cdc`), a profile contract (`packages/profile-contract`) and
 pluggable profiles: SKOS vocabularies (`packages/profile-skos`, tools `vocab_*`, TemaTres as first adapter, its
 specifics in an `ext` object) and later CKAN (`packages/profile-ckan`), which must behave exactly like ondata's server.
-Private and local; everything in English (GUI text via `en`/`sv` language files).
+Published for review (public repository); everything in English (GUI text via `en`/`sv` language files).
+
+Note for readers of the public repository: `review/` (review checklist, review log) and the general testing guide
+named below are the maintainer's local material and are not published; `docs/DECISIONS.md` records why.
 
 ## Read first
 

@@ -328,7 +328,7 @@ that needs Björn's decision). Decisions:
 - **Behaviour unchanged for parliament users too**, where possible; differences listed (P1-P13).
 - **The issue states plainly that this is a prototype**, with a status per part (CKAN complete, parliament 6 of 43
   tools, core gaps named).
-- The plan (`docs/upstream/ondata-issue-plan.md`) is internal and is not posted.
+- The plan (`docs/upstream/ondata-issue-plan.md`) is a working note, not part of the issue (public with the repository).
 - **Confirmed by Björn**: the parity run time (~3 min) stays; the round 1-4 choices stand (Italian comments in ported
   files, the original's User-Agent, the core rate limit on by default for parliament, P13). `bill-text` waits; the
   issue describes it as not built.

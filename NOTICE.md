@@ -18,6 +18,10 @@ binding flattening), the per-host throttle and the row output model are derived 
 Andrea Borruso, https://github.com/ondata/italianparliament-mcp, MIT License, Copyright (c) 2026 Andrea Borruso,
 commit `fd46810`; the files say which original they follow. Its model-facing texts (Italian) are the original's.
 
+Some data files are ondata's, copied unchanged from `09e8cdc` (JSON cannot carry a header): the portal registry
+`packages/profile-ckan/src/portals.json`, the test fixtures under `packages/profile-ckan/tests/fixtures/` and the
+smoke cases `packages/host-ckan/tests/smoke/cases.json`.
+
 This project is not affiliated with or endorsed by the onData association.
 
 ## Data

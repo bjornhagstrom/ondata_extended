@@ -1,6 +1,6 @@
 # Plan: the proposal issue to ondata
 
-Status: draft, local. Nothing is posted without Björn's explicit ok (CLAUDE.md). The issue text is
+Status: draft. Nothing is posted without Björn's explicit ok (CLAUDE.md). The issue text is
 `docs/upstream/ondata-issue-draft.md`.
 
 ## Purpose
@@ -41,7 +41,8 @@ Mention italianparliament-mcp inside it and offer to open a pointer issue there 
    (remaining tools, side-by-side run, security fixes, reviews, documentation) and documents maintenance after that;
    no indefinite co-maintenance promise. The draft says so in "What it costs you".
 
-This plan is internal and is not posted; only the draft's text (without its HTML comment) goes into the issue.
+This plan is our working note and is not part of the issue; only the draft's text (without its HTML comment) goes
+into the issue. It is in the public repository like everything else.
 
 ## Structure of the issue (as drafted)
 

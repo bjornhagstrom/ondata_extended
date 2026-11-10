@@ -19,12 +19,12 @@ Related files: `review/CHECKLIST.md` (what a review looks at), `review/REVIEWS.m
      claims reproducible, our own review material never included.
 2. **What leaves the machine, and who says yes?** Push to any remote, npm publish, a hosted deployment (Workers or
    other), an issue, PR, comment or private security report to ondata or TemaTres, any message on Björn's behalf.
-   Every one needs Björn's explicit ok, each time. Today there is no remote, no publishing and no hosting
-   (`docs/DECISIONS.md`).
+   Every one needs Björn's explicit ok, each time. Status (2026-11-10): the repository is public on GitHub for
+   review; two test Workers are deployed (CKAN and vocabulary); no npm package is published (`docs/DECISIONS.md`).
 3. **What is "done"?** For a change: `npm run check` green (typecheck, boundaries, Workers bundle check, tests), the
    test rule in `docs/test-parity.md` met (no weakened expectation without a deviation entry, baseline not
    undercut), `mcp-reviewer` run with its findings handled and logged in `review/REVIEWS.md`. For a CKAN-profile
-   change additionally the black-box parity check against ondata at `09e8cdc` (**open**: not built yet). Björn
+   change additionally the black-box parity check against ondata at `09e8cdc` (built: `docs/test-parity.md`). Björn
    decides when something is done enough to leave the machine.
 4. **Hard rules set by the owner.** English everywhere; GUI text via `en`/`sv` language files; AI assistance
    disclosed (commit trailer, PR text) here and upstream; nothing leaves the machine without Björn's ok; the build
@@ -43,7 +43,7 @@ Related files: `review/CHECKLIST.md` (what a review looks at), `review/REVIEWS.m
    `/health` and the landing page once a hosted variant exists (egen-tjanst asks for it).
 7. **Do browser sessions need pre-approvals (Step 0)?** Not now: there is no web UI beyond a landing page and no
    browser testing planned. **Open** if a hosted landing page with language switching is built.
-8. **Is the environment shared?** Local only. Ports used by `wrangler dev` and the local Node HTTP host are shared
+8. **Is the environment shared?** Development is local; the test Workers run on Cloudflare. Ports used by `wrangler dev` and the local Node HTTP host are shared
    with other projects on this machine (**open**: fix the ports and write them down). The live smoke target for
    SKOS, begrepp.hagstrom.nu, is Björn's own instance and read-only; live CKAN portals are third parties, so live
    smoke runs nightly and before release only, never in a loop (`docs/DECISIONS.md`).
@@ -74,7 +74,7 @@ Core (day 1):
 - [ ] Pinned dependencies and a test that fails on `latest`: **open** (`package-lock.json` exists; no test yet).
 - [ ] Reset script for test data: not applicable now (no stateful test data); decide when a hosted variant exists.
 
-Before the first public version (none planned yet):
+Before the first public version (the repository is public for review since 2026-11-10; no release yet):
 
 - [x] Code review agent, checklist, read-only hook with its own test (`review/hook-test/`), 2026-11-09.
 - [ ] Reviewer trial (six faults, one decoy): designed in `review/seeds/` (untracked), **not run**; needs a base
@@ -105,9 +105,8 @@ None yet. Add each with cause and fix.
 ## Open questions
 
 - Reviewer model: decided 2026-11-09, `fable`. Codex as the second reader for what leaves the machine: confirm.
-- Black-box parity check: how it is built (two MCP clients against ondata at `09e8cdc` and the CKAN profile, same
-  fixture responses) and where its output is stored.
+- [x] Black-box parity check (`docs/test-parity.md`), 2026-11-10.
 - Version number in `/health` and the landing page.
 - Fixed local ports for `wrangler dev` and the Node HTTP host.
-- Whether `.claude/` (agent, hook, settings) and `review/` are committed (proposed: yes, except `review/seeds/`,
-  which is untracked so the answer key never reaches a worktree).
+- [x] `.claude/` and `review/` stay out of the repository (`docs/DECISIONS.md`); they are the maintainer's local
+  review material.
