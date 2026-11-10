@@ -349,3 +349,11 @@ that needs Björn's decision). Decisions:
 - **Senato and Workers**: the original's own Worker already queries dati.senato.it's SPARQL endpoint from Cloudflare;
   the GitHub bulk data covers documents (texts, amendments, reports), not the linked data most tools query. Our rule
   of no live senato.it requests from this machine stands.
+
+## 2026-11-10: plan for a stable, documented contract
+
+The profile contract is the API others will build on, so it gets a written plan to 1.0: `docs/contract-stability.md`
+(Björn). In brief: 0.x until two profiles run in production, the open contract questions are decided and the
+contract is reviewed with its future owner; then semver, deprecation before removal and a changelog; safeguards
+(an API snapshot checked in `npm run check`, a conformance test per profile, the example profile as living
+reference); TypeDoc reference plus the guide. The issue mentions the plan in one sentence, without details.

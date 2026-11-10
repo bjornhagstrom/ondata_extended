@@ -1,7 +1,7 @@
 <!--
 DRAFT, not posted. Target: ondata/ckan-mcp-server, addressed to @aborruso. Nothing is posted without Björn's ok.
 Before posting: see docs/upstream/ondata-issue-plan.md (preconditions: a readable repo, numbers refreshed, review).
-Placeholders: <REPO_URL>, <TEST_COUNT> (refresh on the day).
+Placeholder: <TEST_COUNT> (refresh on the day).
 -->
 
 # Proposal: one hardened core for ckan-mcp-server and italianparliament-mcp (behaviour unchanged for users of both, as far as possible)
@@ -48,9 +48,10 @@ for data services. Rather than copy your security code and let it drift, I would
 use.
 
 **AI assistance:** the code, the tests and this text were written with an AI assistant (Claude), under my direction
-and review, with an independent automated review before each step. Every claim below names the command that checks
-it, so you do not have to trust either of us. The work lives in <REPO_URL> (MIT; ondata's copyright and licence
-are kept, and every ported file names its source file and commit).
+and review, with an independent automated review before each step. The claims about behaviour below name the command that
+checks them, so you do not have to trust either of us. The work lives in
+https://github.com/bjornhagstrom/ondata_extended (MIT; ondata's copyright and licence are kept, and every ported
+file names its source file and commit).
 
 ## What exists
 
@@ -134,7 +135,8 @@ may be the largest benefit; if not, the others still hold.
 
 - **A boundary you would not change as freely.** Today you refactor internals at will (the probe move in
   #534-#536). With a core, the profile contract is an interface. We propose no stability promise (0.x) until two
-  profiles run in production, but it is still one more thing to think about in a change.
+  profiles run in production, but it is still one more thing to think about in a change. There is a written plan
+  for getting it to a stable, documented 1.0 (`docs/contract-stability.md`).
 - **Two packages instead of one**, or one repository with a `core` folder whose only CKAN user is CKAN. Releases of
   the core and of each server would need to stay in step.
 - **More combinations to test**: core × profile × transport. Each profile keeps its own smoke cases.
@@ -379,4 +381,4 @@ Björn
 
 ---
 *AI assistance disclosed: written with Claude (Anthropic) under my direction; code and claims reviewed by me and by
-an automated reviewer. All checks above are reproducible from <REPO_URL>.*
+an automated reviewer. All checks above are reproducible from https://github.com/bjornhagstrom/ondata_extended.*
