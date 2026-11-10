@@ -115,7 +115,7 @@ my machine `tsc --noEmit` at `09e8cdc` ran out of memory before reporting anythi
 and all profiles typecheck under `strict` in a few seconds. The port found a handful of places where optional
 fields are read as required; none changes behaviour today.
 
-**Recorded tests for the parliament endpoints.** Senato blocks an IP after a burst, and your issue #117 asks for
+**Recorded tests for the parliament endpoints.** Senato blocks an IP after a burst, and your issue ondata/italianparliament-mcp#117 asks for
 recorded SPARQL answers replayed offline. The parliament profile's tests run on recorded Camera answers and
 synthetic Senato answers, with no live call to Senato.
 
@@ -291,7 +291,7 @@ rest would be mechanical.
   133 cases, all equal (11 differ only in the SDK's validation text, 1 in the line-break folding below). The
   request on the wire is the same (URL, `Accept`, `Accept-Language`, `User-Agent`).
 - **Recordings, not live calls, for Senato.** Camera answers recorded live once, slowly; Senato answers synthetic
-  and marked so, and the recorder refuses any senato.it request. This is what your #117 asks for.
+  and marked so, and the recorder refuses any senato.it request. This is what your ondata/italianparliament-mcp#117 asks for.
 - **Differences in the tools** (all listed, P1-P8): the SDK's newer validation text (as for CKAN); the Senato throttle also
   spaces retries; the core's guards apply to SPARQL and HTML requests (size cap, at most 5 checked redirects
   instead of 20, a timeout that covers the body), and a guard refusal is not retried; line breaks in endpoint values quoted in `bill-progress`'s plain-text notes are folded into a space

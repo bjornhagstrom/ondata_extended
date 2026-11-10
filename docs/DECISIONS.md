@@ -364,3 +364,18 @@ Posted to ondata/ckan-mcp-server as #590, with Björn's ok, after the final revi
 day (1803 tests; smoke 17/18 on our Worker and on ondata's alike, the MQA case failing on data.europa.eu's HTTP 500;
 live comparison 20/21, D5). The text is `docs/upstream/ondata-issue-draft.md`. Next: answer within a day, keep
 follow-ups short; log his answer and our decision here (`docs/upstream/ondata-issue-plan.md`, "After posting").
+
+## 2026-11-10: Andrea's answer on #590
+
+Andrea Borruso answered on #590 the same day:
+- **No shared core for now**, neither path A nor the full path B; italianparliament-mcp stays as it is. Reason: he
+  does not expect many more TypeScript MCP servers, and with two servers the benefits do not cover a contract, a
+  dependency between them and the work of keeping them in step, which would stay with him.
+- **Yes to the first step of path B as a small PR**: split `src/utils/http.ts` into a backend-free part and a CKAN
+  part, no export changes, `npm test` and `npm run smoke` green, smoke file untouched; no OpenSpec proposal needed.
+- **Revisit** when the core runs in production with at least two profiles, or if he needs a third TypeScript server.
+- **Yes to the security details for italianparliament-mcp, privately**, through its private vulnerability reporting.
+
+Next (Björn, 2026-11-10): a short thank-you reply on #590, then the `http.ts` split PR. Both, and the private report,
+leave the machine only with Björn's ok each time. What happens to our core (path C in practice) is Björn's decision,
+open.
