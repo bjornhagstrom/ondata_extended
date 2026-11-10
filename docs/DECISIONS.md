@@ -277,3 +277,23 @@ language; the SDK gets the raw input shape unless a tool is strict (an empty sha
 - **Parity run time.** The parity file takes about 3 minutes (`npm run check` about 3 min), because the Senato
   throttle (≥ 2 s) applies on both sides. Kept for now: shortening it would mean changing the original's throttle
   in the harness. Open for Björn.
+
+## 2026-11-10: parliament profile, round 3 (`camera-amendments`)
+
+`camera-amendments` ported (details: `docs/parliament-port.md`, "Round 3"; P8 in `docs/test-parity.md`). This is the
+round that tests the contract on a tool the original runs outside its client: HTML fetched with the global `fetch`
+and parsed with cheerio. Decisions:
+
+- **HTML through the core's client** (`ctx.http.request` with the original's headers, fixed User-Agent, one attempt,
+  60 s timeout): the guards apply (P8). The original's texts are kept, including `fetch failed` for a socket or
+  DNS failure.
+- **cheerio as a profile dependency** (`^1.2.0`, `cheerio/slim` as in the original, which chose it to keep Node's
+  `buffer` out of its Worker bundle). The Worker probe bundle grows from 574 to 772 KiB; the CKAN and vocabulary
+  Workers are unchanged, since they do not bundle this profile. Licences listed in `NOTICE.md` (MIT, BSD-2-Clause,
+  ISC). The contract needed no change: a profile may bring its own parser.
+- **The profile's constant upstreams are `fixedUpstream`**: the two SPARQL endpoints and the Camera site hosts, so a
+  deployment's domain allowlist (which limits caller-chosen URLs) does not block them; redirects and off-host links
+  are still checked. As profile-ckan does for MQA and the portal registry.
+- **Recording from the Camera's public sites** (`www.camera.it`, `documenti.camera.it`), 14 requests in all, gently;
+  Senato never. The amendment lists are cumulative, so a future re-recording may change the counts the original's
+  tests assert; they would then fail, as the original's live tests would.

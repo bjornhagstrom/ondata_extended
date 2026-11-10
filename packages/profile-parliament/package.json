@@ -2,13 +2,16 @@
   "name": "@ondata-extended/profile-parliament",
   "version": "0.1.0",
   "private": true,
-  "description": "Italian Parliament profile: behaves like ondata's italianparliament-mcp (fd46810) on the core. Work in progress: legislatures, deputies, search, sparql, bill-progress.",
+  "description": "Italian Parliament profile: behaves like ondata's italianparliament-mcp (fd46810) on the core. Work in progress: legislatures, deputies, search, sparql, bill-progress, camera-amendments.",
   "license": "MIT",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "@ondata-extended/core": "0.1.0",
     "@ondata-extended/profile-contract": "0.1.0",
+    "cheerio": "^1.2.0",
     "zod": "^3.25.76"
   }
 }

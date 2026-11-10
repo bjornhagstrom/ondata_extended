@@ -325,3 +325,207 @@ guards) apply to `bill-progress`'s Senato and Camera queries as to round 1's. No
   policy with a shorter interval for ours (the original's own throttle cannot be changed, so only half would gain).
 - `telemetryFields` unchanged (`chamber`, `legislature`, `endpoint`, `limit`, `offset`); `bill-progress`'s `branch`
   and `countOnly` could be added (no free text). Left as is, not part of the port.
+
+# Round 3: `camera-amendments` (2026-11-10)
+
+Port of the original's `camera-amendments` (`src/tools/camera-amendments.ts`), the first parliament tool that reads
+HTML instead of SPARQL JSON, in the approach of rounds 1 and 2: the original's file, its header line, Italian texts,
+comments, selectors and examples verbatim, reach changed only. Written for folding into `docs/DECISIONS.md` and
+`docs/test-parity.md` (P8).
+
+## What the tool reads
+
+Three kinds of page, each with one `GET` and the original's headers (`User-Agent: Mozilla/5.0 (italianparliament-mcp;
++https://github.com/ondata/italianparliament-mcp)`, `Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8`,
+`Accept-Language: it-IT,it;q=0.9,en;q=0.8`):
+
+1. the scheda atto, `https://www.camera.it/leg{L}/126?leg={L}&idDocumento={id}` (`actHtmlUrl`, round 1);
+2. only when the scheda has no direct link: the per-act index
+   `https://documenti.camera.it/apps/emendamenti/ostr/{L}?attoportante=leg.{L}.eme.ac.{id}`;
+3. each distinct `getProposteEmendative.aspx` link found (relative links resolved against
+   `https://documenti.camera.it/apps/emendamenti/`), one after another, stopping early in list mode once `limit` rows
+   are in.
+
+The original sends these with the global `fetch` (`redirect: "follow"`), outside its SPARQL client: no retry, no
+throttle, no timeout. Here they go through `ctx.http`, still without retry (`retry: { attempts: 1 }`) or throttle, and
+**without a host policy** (the original has none for these hosts). Parsing is the original's: `cheerio/slim`, the same
+selectors.
+
+## File map
+
+| Original (fd46810) | Here (`packages/profile-parliament/`) | Note |
+|---|---|---|
+| `src/tools/camera-amendments.ts` | `src/tools/camera-amendments.ts` | `fetchHtml(ctx, url)` on `ctx.http` (see below); `execute(input, ctx)`; everything else verbatim |
+| `src/cheerio-slim.d.ts` | not ported | a type shim for `cheerio/slim` under the original's `moduleResolution: "node"`; this repository resolves with `"bundler"`, which reads cheerio's `exports` map, so `import * as cheerio from "cheerio/slim"` type-checks as is |
+| `src/core/html-url.ts` (`actHtmlUrl`, `parseCameraActUri`) | unchanged | ported whole in round 1 |
+
+`camera-amendments` imports nothing else from the original (no `decode-html`: names and numbers come from cheerio's
+`.text()`, which decodes entities itself). `src/index.ts`: registered in the original's `registerAll` order relative
+to the ported tools: `deputies`, `search`, `legislatures`, `bill-progress`, `camera-amendments`, `sparql`.
+
+`fetchHtml` (the only reach change):
+
+- `ctx.http.request(url, { method: "GET", headers: { Accept, "Accept-Language" } }, { userAgent: { fixed: UA },
+  timeoutMs: 60 000, retry: { attempts: 1 }, fixedUpstream })`. A non-2xx answer throws the original's
+  `Recupero fallito (<status>) su <url>`; the body is never read into a message.
+- `fixedUpstream` is set when the URL's host is `www.camera.it` or `documenti.camera.it` (the scheda, the ostr index,
+  every relative list link): the deployment's domain allowlist does not apply to the first hop of the tool's own
+  upstream. An absolute list link to any other host (from page content) is checked against the allowlist.
+- A transport failure of kind `network` or `not-found` (DNS, socket) is rethrown as `TypeError("fetch failed")`, the
+  text the original's `fetch` gives on Node, so the tool answers `Error: fetch failed` as the original does.
+
+## Dependency
+
+`cheerio` `^1.2.0` added to `packages/profile-parliament/package.json` (the original's range; lockfile resolves
+`1.2.0`, as the original's). Every package in its tree that the bundle uses resolves to the original's version:
+cheerio-select 2.1.0, css-select 5.2.2, css-what 6.2.2, domhandler 5.0.3, domutils 3.2.2, dom-serializer 2.0.0,
+htmlparser2 10.1.0 (with entities 7.0.1), entities 4.5.0, nth-check 2.1.1, boolbase 1.0.0, domelementtype 2.3.0. Only
+cheerio's `undici` dependency (used by its full entry's `fromURL`, not by `slim`) differs: it dedupes onto the
+workspace's existing `undici` 7.30.2 (the original nests 7.28.0). Installed with `--ignore-scripts`; `npm audit`
+reports nothing new (its one finding, `zod <4.6.6`, was there before). `package-lock.json`: +295 lines (22 packages,
+the full cheerio tree including the parse5/encoding-sniffer branch that `slim` does not load).
+
+**Workers:** imported as the original does (`cheerio/slim`: htmlparser2 only, no encoding-sniffer/iconv-lite, so no
+`buffer`). `npm run check:worker-bundle` passes; the probe bundle (core + every profile) grew from **574 KiB to 772
+KiB** minified (+198 KiB: entities' decode tables 76 KiB, htmlparser2 59 KiB, cheerio 21 KiB, css-select 13 KiB, the
+rest under 10 KiB each). No static Node import; the only `require(` strings in the bundle are ajv's generated-code
+literals, as before. `host-vocab` (406 KiB) and `host-ckan` (519 KiB) do not include the profile and are unchanged.
+
+## Contract and core changes
+
+None. `npm run check:boundaries` green.
+
+## SPARQL endpoints as the profile's own upstream (follow-up)
+
+`cdQuery`/`snQuery` (`src/core/client.ts`, rounds 1-2) now send with `fixedUpstream: true`, as camera-amendments' HTML
+requests do and as profile-ckan does for its MQA and registry calls: `https://dati.camera.it/sparql` and
+`https://dati.senato.it/sparql` are the profile's constant endpoints, not URLs from a caller, so a deployment's
+`ALLOWED_DOMAINS` no longer has to name them for the profile to work. A redirect hop is still checked against the
+allowlist (and, as a guard refusal, not retried). Not a deviation from the original, which has no allowlist; no tool
+output or request changes. Tests in `tests/profile.test.ts` (2): with `ALLOWED_DOMAINS=example.org` `legislatures`
+still answers from dati.camera.it; a 302 from the endpoint to `elsewhere.example.net` is refused (`Error: Domain
+"elsewhere.example.net" is not in the allowed list (PARLIAMENT_ALLOWED_DOMAINS).`) after one request. Both fail
+without the flag (mutation check).
+
+## Tests
+
+`npm run check` before (round 2 state, parity reference present): 76 files passed, 2 skipped; **1665 passed, 2
+skipped**. After: 76 passed, 2 skipped; **1741 passed, 2 skipped**. 1741 = 1665 + 4 (ported `tools.test.ts`) + 8
+(`profile.test.ts`: 6 camera-amendments, 2 SPARQL `fixedUpstream`) + 64 (32 parity cases × 2). No new test file.
+
+### Ported from the original (expectations unchanged)
+
+| Original (fd46810) | Tests | Here | Reach change |
+|---|---|---|---|
+| `src/tools/tools.test.ts` lines 1769-1824 (camera-amendments ×4, in its "Senato tools" block) | 4 | `tests/tools/tools.test.ts` | ctx; the live pages → the parity recording with the same arguments (`camera-amendments-2696-count`, `-2696-list`, `-2402-leg18`: scheda, index and lists all live; `-senato-uri`: no request); the U+00A0 in `"Locatelli Alessandra"` kept byte for byte |
+| `src/core/truncation.test.ts` | (21, already ported) | `tests/core/truncation.test.ts` | its `cameraAmendmentsTool` is now the ported tool instead of the copied `limit` field (rank and votes still stand in) |
+
+The original has no other test of this tool or of a parser (no `camera-amendments.test.ts`); `html-url.test.ts`
+(covering `actHtmlUrl` and `parseCameraActUri`) was ported in round 1.
+
+The values the original's tests assert of the live source all hold on the 2026-11-10 recording, with the live schede:
+AC 2696 referente 37 / Assemblea 25, 62 rows in list mode (its live scheda links both lists directly); AC 18-2402
+referente 54 / Assemblea 53 (its live scheda has no direct link, so the ostr fallback runs, as the test says),
+amendment 1.52 in Assemblea by `Locatelli Alessandra` (with the no-break space). No expectation needed a change.
+
+### New in `tests/profile.test.ts` (6 for camera-amendments)
+
+What the parity harness cannot show (it replays at the `fetch` boundary, and the original's `fetch` would not follow a
+replayed redirect): the three headers on both hosts; no retry on a failed page (one request, the original's error); a
+socket failure reads `Error: fetch failed`; a redirect is followed and a loop stops after 5 (`Error: Too many redirects
+(>5)`); a page over the size cap is refused (`Error: Response too large ...`); with `ALLOWED_DOMAINS=dati.camera.it`
+the scheda and documenti.camera.it are still reached, and a list link to another host is refused before any request.
+
+### Black-box parity (`tests/parity/`)
+
+**32 new cases** (133 in all), each run against the original and ours, replayed from the same recording:
+
+- AC 2696 with the live scheda (scheda and lists live), 6: `countOnly` (the sentinel 37/25) and list mode (62 rows),
+  the original's tests; the schema defaults; `limit` 1 (the second list never asked), 40 (between the two lists), 62
+  (exactly the total: notice); `countOnly` with `limit` 1 (the original's notice under two count rows).
+- AC 2696 with a synthetic scheda on purpose (lists live), 4: no direct link (the ostr fallback, index live); the
+  direct links as relative `&amp;` hrefs plus a `...Seduta.aspx` link that must not count (`countOnly`); an absolute
+  link, a link with a line break and spaces inside and a duplicate (list mode); the lists in the opposite order with
+  `limit` 30.
+- Other live acts, 4 (all live): AC 18-2402 (the original's fallback test: no direct link on the scheda, ostr index,
+  107 rows); the variant act AC 19-703-B (`countOnly`: referente 0, Assemblea 2, linked from its scheda); an act that
+  does not exist (AC 19-999999: the live scheda is a valid page with the markers and no link, the ostr index links
+  nothing → the empty text, list and `countOnly`).
+- The URI's host is not checked by the original's pattern: `https://example.org/x/attocamera.rdf/ac19_2696` reads
+  AC 2696 (live), 1.
+- Synthetic lists, 4: every shape the parser handles (article headers incl. one with a non-numeric id, relative /
+  absolute / whitespace-padded text links, entities, `(ident. ...)` normalisation, rows without number or signatory,
+  a non-numeric `idPersona`, rows that are not amendments, a row with no class, a line break and markup in a
+  signatory; sedes from a percent-encoded `sedeEsame`, from `:ass:`, `n.d.` with neither, a list on another host,
+  an empty table), list and `countOnly`; a list page without the table (maintenance page), list and `countOnly`.
+- Failures, 5: scheda 503 and 404; ostr index 500; a list 502 under `countOnly`; a 200 that is not a scheda (an
+  anti-bot page without the markers: the original's long error, not an empty result).
+- Refused before any request, 4: a Senato DDL (the original's test), a deputy URI, `ac19_` without id, a trailing
+  slash.
+- Refused by the schema, 3 (deviation P1): `billUri` not a URL; `limit` 5001; `billUri` missing + `countOnly` a string
+  + `limit` 0.
+
+**Result: 32/32 equal**, 29 exactly, 3 within P1 (the `offline-camera-amendments-*` cases). `tools/list`: the
+`camera-amendments` entry (title, description with examples, JSON Schema with `format: "uri"`, defaults, range,
+annotations) equals the original's, and the order is the original's. Mutation checks: ours with a different
+`Accept-Language` fails on `HEADERS DIFFER`; ours stripping only spaces (not all whitespace) from hrefs fails 8 cases.
+
+Harness changes (CKAN's copy untouched): `replay.ts` compares `accept-language` too (the SPARQL requests send none, so
+the earlier recordings compare as before); `record.test.ts` may reach `www.camera.it` and `documenti.camera.it` live
+besides `dati.camera.it` (same rules: sequential, ≥ 2.5 s apart, each distinct request once; senato.it never), and
+with `PARLIAMENT_PARITY_REUSE_LIVE=1` serves a request from a live answer already in the recordings instead of asking
+again (used to record in steps without asking anything twice); a dry run now lists only the requests that would
+really go out. `cases.ts` has an HTML helper (`text/html; charset=utf-8`) and a synthetic scheda. No change was needed
+for HTML answers in `replay.ts`: bodies are stored as text (UTF-8) or base64 whatever the content type; the live
+schede and ostr indexes come as `text/html; charset=utf-8`, the lists as `application/xhtml+xml`.
+
+### Recordings
+
+32 new files in `tests/parity/recorded/` (29 cases + 3 schema cases; 440 KB, most of it the live schede, 37-303 KB
+each before gzip). Recorded on 2026-11-10 in three steps, every live request distinct, sequential, ≥ 2.5 s apart, all
+HTTP 200:
+
+| Step (UTC) | Host | Live requests |
+|---|---|---|
+| 01:58:36-01:58:42 | documenti.camera.it | 3: the ostr index of AC 19-2696 and its two lists |
+| 02:00:22-02:00:48 | documenti.camera.it | 7: the ostr indexes of AC 18-2402, 19-703-B, 19-999999 and the two lists each of 2402 and 703-B (schema cases at 02:00:48, no request) |
+| 02:09:15-02:09:30 | www.camera.it | 4: the schede of AC 19-2696, 18-2402, 19-703-B, 19-999999 (everything else reused) |
+
+Totals: **www.camera.it 4, documenti.camera.it 10, dati.camera.it 0, senato.it 0**, no other host. One documenti
+answer (the ostr index of 703-B) is no longer used by any case: the live scheda of 703-B links its lists directly. The
+files now hold 9 distinct documenti.camera.it answers and 4 www.camera.it answers; every file's `recordedAt` is in
+02:00:48-02:09:30 (step 3 rewrote the camera-amendments files, reusing the earlier live answers).
+
+**Synthetic by design** (`synthetic: true`, scheda title and heading marked `[sintetico]`): the schede of the four
+AC 2696 cases above that need a scheda shape (no link, link shapes, list order), all failures, the anti-bot page, the
+maintenance page, and the parser-shape lists and their schede (act ids 99010-99013, invented names and person ids
+9000xx, a list on `example.org`). Public content in the live pages: amendment numbers, articles, first signatories'
+names and Camera person ids, and the schede as the Camera publishes them.
+
+## Deviations (new; for the deviation list)
+
+| # | What may differ | Why | Checked |
+|---|---|---|---|
+| P8 | camera-amendments' HTML requests go through the core: its guards (DNS/SSRF, the 32 MiB cap, the deployment's rate limit if configured) apply; at most 5 redirects, each re-validated (the original's `fetch` followed up to 20, anywhere); a 60 s timeout covering the body (the original had none; 60 s is the profile's longest, its SPARQL timeout); an undeclared gzip body is unpacked by its magic bytes (the original would decode the bytes as text). A guard refusal, a redirect loop and a timeout read the core's text (`Error: Response too large (N bytes)`, `Error: Too many redirects (>5)`, `Error: Request timeout connecting to <url>`); a socket/DNS failure reads the original's `Error: fetch failed`. With a domain allowlist configured, the first hop to `www.camera.it`/`documenti.camera.it` is exempt (`fixedUpstream`), but a redirect hop and an absolute list link to any other host must be listed (the original reached them) | all outbound traffic through the core's client (rule 6) | `tests/profile.test.ts` (6 tests: headers, no retry, `fetch failed`, redirect followed and loop, size cap, allowlist) |
+
+P1 also covers the three `offline-camera-amendments-*` cases. No P7-style folding is needed: everything
+`camera-amendments` takes from a page goes into the JSONL rows (JSON strings escape a line break), and the only page
+values outside JSON are list URLs in an error message, from which the original already strips all whitespace
+(`replace(/\s+/g, "")`). No deviation in tool output, `tools/list`, errors or what is sent upstream beyond P1 and P8.
+
+## Not ported (round 3)
+
+- `bill-text` (needs Björn's approval) and the other tools; hosts and CLI (the `camera-amendments list` command of
+  `src/cli.ts`).
+- `src/cheerio-slim.d.ts` (not needed, see the file map).
+
+## Open points (round 3)
+
+- A deployment with `ALLOWED_DOMAINS` needs `www.camera.it`, `documenti.camera.it` (and, for the SPARQL tools,
+  whatever host an endpoint redirects to) listed only for redirects to be followed; the first hop to each of the
+  profile's own hosts is exempt.
+- Whether a live scheda request redirects is not visible in the recording (the recorder's `fetch` follows redirects,
+  as the original's does); the four recorded schede answered 200 at the URL asked for, or after a redirect the
+  recorder followed.
+- The live pages are cumulative and change: the original's sentinel counts (37/25, 54/53) hold today; a re-record may
+  shift them, and the ported `tools.test.ts` tests would then fail, as the original's live tests would.

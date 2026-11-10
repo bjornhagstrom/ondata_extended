@@ -1,21 +1,21 @@
 /**
  * Ported from ondata/italianparliament-mcp src/core/truncation.test.ts at fd46810 (MIT, see
- * NOTICE.md). Reach: import paths; the three tools not yet ported are reached through their
- * `limit` fields (see below). Expectations unchanged.
+ * NOTICE.md). Reach: import paths; the two tools not yet ported are reached through their
+ * `limit` fields (see below); camera-amendments is the ported tool (round 3). Expectations unchanged.
  */
 
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { withTruncationNotice, truncationNotice, limitCeiling } from "../../src/core/truncation.js";
 import { searchTool } from "../../src/tools/search.js";
+import { cameraAmendmentsTool } from "../../src/tools/camera-amendments.js";
 import { toJsonl } from "../../src/core/format.js";
 import type { ToolResult } from "../../src/tools/types.js";
 
-// rank, camera-amendments and votes are not ported yet. Their `limit` fields, copied verbatim
-// from src/tools/rank.ts:44, camera-amendments.ts:31 and votes.ts:48 at fd46810, stand in for
-// their schemas: limitCeiling reads only that field. Replace with the tools when they are ported.
+// rank and votes are not ported yet. Their `limit` fields, copied verbatim from
+// src/tools/rank.ts:44 and votes.ts:48 at fd46810, stand in for their schemas: limitCeiling reads
+// only that field. Replace with the tools when they are ported.
 const rankTool = { inputSchema: z.object({ limit: z.number().int().min(1).max(100).default(20) }) };
-const cameraAmendmentsTool = { inputSchema: z.object({ limit: z.number().int().min(1).max(5000).default(2000) }) };
 const votesTool = { inputSchema: z.object({ limit: z.number().int().min(1).max(1000).default(100) }) };
 
 const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ a: String(i) }));

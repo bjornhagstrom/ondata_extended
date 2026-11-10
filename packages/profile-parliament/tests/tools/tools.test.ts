@@ -1,7 +1,8 @@
 /**
  * Ported from ondata/italianparliament-mcp src/tools/tools.test.ts at fd46810 (MIT, see NOTICE.md):
  * the tests of the ported tools (lines 41-88 and 746-769: deputies x3, legislatures, search x2;
- * round 2: lines 1013-1089 and 1107-1248, bill-progress x14, in its "Senato tools" block).
+ * round 2: lines 1013-1089 and 1107-1248, bill-progress x14, in its "Senato tools" block; round 3:
+ * lines 1769-1824, camera-amendments x4, same block: scheda atto and amendment pages recorded live).
  * The rest of that file tests tools not yet ported.
  *
  * Reach: the original queried the live endpoints ("Integration tests — hit real SPARQL
@@ -15,6 +16,7 @@ import { deputiesTool } from "../../src/tools/deputies.js";
 import { searchTool } from "../../src/tools/search.js";
 import { legislaturesTool } from "../../src/tools/legislatures.js";
 import { billProgressTool } from "../../src/tools/bill-progress.js";
+import { cameraAmendmentsTool } from "../../src/tools/camera-amendments.js";
 import { withRecording } from "../helpers.js";
 
 describe("Camera tools", () => {
@@ -315,4 +317,61 @@ describe("Senato tools", () => {
     expect(result.hint).toContain("iter Camera");
     expect(result.hint).toContain("filtri");
   }, 30000);
+
+  it("camera-amendments: scrapes counts per sede (sentinel: AC 2696 ref=37/ass=25)", async () => {
+    const result = await withRecording("camera-amendments-2696-count", (ctx) => cameraAmendmentsTool.execute({
+      billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696",
+      countOnly: true,
+      limit: 2000,
+    }, ctx));
+    const bySede = Object.fromEntries(result.rows.map((r) => [r.sede, Number(r.count)]));
+    expect(bySede["referente"]).toBe(37);
+    expect(bySede["assemblea"]).toBe(25);
+  }, 30000);
+
+  it("camera-amendments: lists amendments with number and signatory (AC 2696)", async () => {
+    const result = await withRecording("camera-amendments-2696-list", (ctx) => cameraAmendmentsTool.execute({
+      billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696",
+      countOnly: false,
+      limit: 2000,
+    }, ctx));
+    expect(result.rows.length).toBe(62);
+    expect(result.rows[0]).toHaveProperty("number");
+    expect(result.rows[0]).toHaveProperty("first_signatory");
+    expect(result.rows[0].text_url).toMatch(/getPropostaEmendativa\.aspx/);
+  }, 30000);
+
+  it("camera-amendments: falls back to the ostr index on historical acts where the scheda has no direct link (AC 2402, leg.18)", async () => {
+    // La scheda-atto storica (leg.18) non incorpora più getProposteEmendative.aspx
+    // (il bottone "Emendamenti" punta al motore di ricerca generico
+    // ricerca-emendamenti): prima del fix il tool restituiva 0 righe senza
+    // errore pur esistendo gli emendamenti alla fonte. L'indice strutturato
+    // apps/emendamenti/ostr/{leg} li contiene comunque.
+    const result = await withRecording("camera-amendments-2402-leg18", (ctx) => cameraAmendmentsTool.execute({
+      billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac18_2402",
+      countOnly: false,
+      limit: 2000,
+    }, ctx));
+    const bySede: Record<string, number> = {};
+    for (const r of result.rows) bySede[r.sede] = (bySede[r.sede] ?? 0) + 1;
+    expect(bySede["referente"]).toBe(54);
+    expect(bySede["assemblea"]).toBe(53);
+    // Emendamento Locatelli (Lega) sulla sospensione dei centri diurni,
+    // citato dalla stampa sul dl Covid, votato in Assemblea.
+    const locatelli = result.rows.find(
+      (r) => r.sede === "assemblea" && r.number === "1.52",
+    );
+    // Nbsp (U+00A0) tra cognome e nome nel dato grezzo, non normalizzato dal tool.
+    expect(locatelli?.first_signatory).toBe("Locatelli Alessandra");
+  }, 30000);
+
+  it("camera-amendments: rejects a Senato URI (offline guard)", async () => {
+    await expect(
+      withRecording("camera-amendments-senato-uri", (ctx) => cameraAmendmentsTool.execute({
+        billUri: "http://dati.senato.it/ddl/60131",
+        countOnly: false,
+        limit: 2000,
+      }, ctx)),
+    ).rejects.toThrow(/atto Camera/);
+  });
 });

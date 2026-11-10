@@ -1,7 +1,8 @@
 /**
  * Record and replay of upstream HTTP at the `fetch` boundary, shared by both servers.
  * Copied from packages/profile-ckan/tests/parity/replay.ts (profiles do not import each other),
- * with the `synthetic` mark added.
+ * with the `synthetic` mark added, and `accept-language` among the compared request headers
+ * (camera-amendments sends one; the SPARQL requests send none, so their recordings are unchanged).
  *
  * Key: method, URL and body. The request headers a server chooses (identity, encoding, content
  * type) are recorded too and must match on replay: a port that dropped the browser User-Agent
@@ -26,7 +27,7 @@ export interface RecordedExchange {
 }
 
 export const KEPT_RESPONSE_HEADERS = ["content-type", "location"];
-const COMPARED_REQUEST_HEADERS = ["user-agent", "accept", "accept-encoding", "content-type"];
+const COMPARED_REQUEST_HEADERS = ["user-agent", "accept", "accept-encoding", "accept-language", "content-type"];
 
 export function bodyOf(bytes: Uint8Array): { bodyText: string } | { bodyBase64: string } {
   try {

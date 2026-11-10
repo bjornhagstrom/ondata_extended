@@ -2,8 +2,8 @@
  * The profile through a real MCP client, on the core. Moved from the contract spike
  * (packages/spike-parliament/tests/spike.test.ts, deleted in round 1) and adjusted where the spike
  * had departed from the original (each change is listed in docs/parliament-port.md, "Spike tests
- * moved"); plus tests of this port's own request layer (src/core/client.ts) and of the cached
- * current legislature.
+ * moved"); plus tests of this port's own request layer (src/core/client.ts), of the cached
+ * current legislature, and of camera-amendments' HTML requests on the core (round 3).
  *
  * Camera answers are the parity recordings (dati.camera.it, 2026-11-10) or synthetic; Senato
  * answers are always synthetic (Senato blocks an IP after a burst and the block does not decay).
@@ -241,6 +241,21 @@ describe("request layer (src/core/client.ts) on the core", () => {
   });
 });
 
+describe("SPARQL endpoints are the profile's own upstream (fixedUpstream)", () => {
+  it("a domain allowlist that does not name them does not block a SPARQL tool", async () => {
+    const r = await call(await client(false, { PARLIAMENT_ALLOWED_DOMAINS: "example.org" }), "legislatures", {});
+    expect(r.isError).toBe(false);
+    expect(calls.map((c) => c.host)).toEqual(["dati.camera.it"]);
+  });
+
+  it("a redirect off the endpoint's host is still checked against the allowlist, and not repeated", async () => {
+    handler = () => new Response(null, { status: 302, headers: { location: "https://elsewhere.example.net/sparql" } });
+    const r = await call(await client(false, { PARLIAMENT_ALLOWED_DOMAINS: "example.org" }), "legislatures", {});
+    expect(calls.map((c) => c.host)).toEqual(["dati.camera.it"]);
+    expect(r).toMatchObject({ isError: true, text: 'Error: Domain "elsewhere.example.net" is not in the allowed list (PARLIAMENT_ALLOWED_DOMAINS).' });
+  });
+});
+
 describe("current legislature for the search ranking", () => {
   it("is asked once per process and then cached", async () => {
     handler = (url) => (url.searchParams.get("query")!.includes('"repubblica_"')
@@ -251,5 +266,75 @@ describe("current legislature for the search ranking", () => {
     await call(c, "search", { name: "bianchi", chamber: "camera" });
     expect(calls.filter((x) => x.query.includes('"repubblica_"'))).toHaveLength(1);
     expect(calls).toHaveLength(3);
+  });
+});
+
+describe("camera-amendments: HTML requests through the core (round 3)", () => {
+  const SCHEDA = "https://www.camera.it/leg19/126?leg=19&idDocumento=99020";
+  const LIST = "https://documenti.camera.it/apps/emendamenti/getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99020&sedeEsame=referente";
+  const page = (body: string, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+  const scheda = (href: string) => page(`<html><body>idDocumento <a href="${href}">Emendamenti</a></body></html>`);
+  const list = page.bind(null, `<table><tr class="normale" id="tr.id.1"><td><a href="getPropostaEmendativa.aspx?idPropostaEmendativa=1.1.">1.1.</a></td></tr></table>`);
+  const args = { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_99020", countOnly: true };
+
+  it("sends the original's headers (its browser-like User-Agent, Accept, Accept-Language) to both hosts", async () => {
+    handler = (url) => (url.hostname === "www.camera.it" ? scheda(LIST.replace(/&/g, "&amp;")) : list());
+    const r = await call(await client(), "camera-amendments", args);
+    expect(r.isError).toBe(false);
+    expect(calls.map((c) => c.host)).toEqual(["www.camera.it", "documenti.camera.it"]);
+    for (const c of calls) {
+      expect(c.headers.get("user-agent")).toBe("Mozilla/5.0 (italianparliament-mcp; +https://github.com/ondata/italianparliament-mcp)");
+      expect(c.headers.get("accept")).toBe("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+      expect(c.headers.get("accept-language")).toBe("it-IT,it;q=0.9,en;q=0.8");
+    }
+  });
+
+  it("does not repeat a failed page (no retry, as the original), and gives the original's error", async () => {
+    handler = () => page("down", 503);
+    const r = await call(await client(), "camera-amendments", args);
+    expect(calls).toHaveLength(1);
+    expect(r).toMatchObject({ isError: true, text: `Error: Recupero fallito (503) su ${SCHEDA}` });
+  });
+
+  it("a connection failure reads as the original's fetch failure", async () => {
+    handler = () => { throw new TypeError("fetch failed"); };
+    const r = await call(await client(), "camera-amendments", args);
+    expect(calls).toHaveLength(1);
+    expect(r).toMatchObject({ isError: true, text: "Error: fetch failed" });
+  });
+
+  it("follows a redirect (the original fetched with redirect: follow) and stops a loop after 5 (deviation P8)", async () => {
+    handler = (url) => (url.toString() === SCHEDA ? new Response(null, { status: 302, headers: { location: "/leg19/126?leg=19&idDocumento=99020&x=1" } })
+      : url.hostname === "www.camera.it" ? scheda(LIST.replace(/&/g, "&amp;")) : list());
+    const ok = await call(await client(), "camera-amendments", args);
+    expect(ok.isError).toBe(false);
+    expect(JSON.parse(ok.text.split("\n")[0])).toMatchObject({ sede: "referente", count: "1" });
+    calls = [];
+    handler = (url) => new Response(null, { status: 302, headers: { location: url.toString() } });
+    const loop = await call(await client(), "camera-amendments", args);
+    expect(calls).toHaveLength(6);
+    expect(loop).toMatchObject({ isError: true, text: "Error: Too many redirects (>5)" });
+  });
+
+  it("a page over the core's size cap is refused (deviation P8)", async () => {
+    handler = () => page(`<html><body>idDocumento ${"x".repeat(5000)}</body></html>`);
+    const r = await call(await client(false, { PARLIAMENT_MAX_RESPONSE_BYTES: "1000" }), "camera-amendments", args);
+    expect(calls).toHaveLength(1);
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^Error: Response too large/);
+  });
+
+  it("with a domain allowlist: the scheda and documenti.camera.it are the tool's own upstream; a list on another host is refused (deviation P8)", async () => {
+    const other = "https://example.org/getProposteEmendative.aspx?sedeEsame=referente";
+    handler = (url) => (url.hostname === "www.camera.it" ? scheda(LIST.replace(/&/g, "&amp;")) : list());
+    const ok = await call(await client(false, { PARLIAMENT_ALLOWED_DOMAINS: "dati.camera.it" }), "camera-amendments", args);
+    expect(ok.isError).toBe(false);
+    expect(calls.map((c) => c.host)).toEqual(["www.camera.it", "documenti.camera.it"]);
+    calls = [];
+    handler = (url) => (url.hostname === "www.camera.it" ? scheda(other) : list());
+    const refused = await call(await client(false, { PARLIAMENT_ALLOWED_DOMAINS: "dati.camera.it" }), "camera-amendments", args);
+    expect(calls.map((c) => c.host)).toEqual(["www.camera.it"]);
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toMatch(/^Error: .*example\.org/);
   });
 });

@@ -3,7 +3,7 @@
  * Andrea Borruso; tool names without a prefix, arguments, Italian texts, queries, output), checked
  * case by case by the black-box parity test (tests/parity, docs/parliament-port.md). Ported in
  * rounds: round 1 has `legislatures`, `deputies`, `search` and `sparql`, round 2 `bill-progress`,
- * in the original's registration order.
+ * round 3 `camera-amendments`, in the original's registration order.
  */
 
 import type { Profile } from "@ondata-extended/profile-contract";
@@ -14,17 +14,20 @@ import { deputiesTool } from "./tools/deputies.js";
 import { searchTool } from "./tools/search.js";
 import { legislaturesTool } from "./tools/legislatures.js";
 import { billProgressTool } from "./tools/bill-progress.js";
+import { cameraAmendmentsTool } from "./tools/camera-amendments.js";
 import { sparqlTool } from "./tools/sparql.js";
 import type { Tool } from "./tools/types.js";
 
 export { SparqlError, cdQuery, snQuery } from "./core/client.js";
 export { CAMERA_ENDPOINT, SENATO_ENDPOINT } from "./core/endpoints.js";
-export { deputiesTool, searchTool, legislaturesTool, billProgressTool, sparqlTool };
+export { deputiesTool, searchTool, legislaturesTool, billProgressTool, cameraAmendmentsTool, sparqlTool };
 export type { Tool, ToolResult } from "./tools/types.js";
 
 /** The ported tools, in the order of the original's `registerAll` (src/server.ts). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const PARLIAMENT_TOOLS: Tool<any>[] = [deputiesTool, searchTool, legislaturesTool, billProgressTool, sparqlTool];
+export const PARLIAMENT_TOOLS: Tool<any>[] = [
+  deputiesTool, searchTool, legislaturesTool, billProgressTool, cameraAmendmentsTool, sparqlTool
+];
 
 export function createParliamentProfile(): Profile {
   return {

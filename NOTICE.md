@@ -27,5 +27,10 @@ This project is not affiliated with or endorsed by the onData association.
 | zod | MIT | Copyright (c) 2020 Colin McDonnell |
 | undici | MIT | Copyright (c) Matteo Collina and Undici contributors |
 | express | MIT | Copyright (c) 2009-2014 TJ Holowaychuk, 2013-2014 Roman Shtylman, 2014-2015 Douglas Christopher Wilson |
+| cheerio (parliament profile, `cheerio/slim`) | MIT | Copyright (c) 2022 The Cheerio contributors |
+| htmlparser2 | MIT | Copyright 2010, 2011, Chris Winberry |
+| dom-serializer | MIT | Copyright (c) 2014 The cheeriojs contributors |
+| domhandler, domutils, domelementtype, css-select, css-what, cheerio-select, entities, nth-check | BSD-2-Clause | Copyright (c) Felix Böhm |
+| boolbase | ISC | Felix Böhm |
 
 Development dependencies (TypeScript, Vitest, esbuild, Wrangler) are not distributed.

@@ -4,8 +4,10 @@
  * match.
  *
  * Network rules, enforced here and not left to the cases:
- * - Only dati.camera.it may be reached live, one request at a time, at least 2 s apart; a request
- *   already answered in this run is served from that answer, not sent again.
+ * - Only dati.camera.it, www.camera.it and documenti.camera.it (camera-amendments' HTML) may be reached live, one
+ *   request at a time, at least 2.5 s apart; a request already answered in this run is served from
+ *   that answer, not sent again. With PARLIAMENT_PARITY_REUSE_LIVE=1 the live answers already in
+ *   the recordings count as answered too (recording in steps without asking anything twice).
  * - Every other host is refused unless the case answers it synthetically. A senato.it host is
  *   NEVER reached (Senato blocks the IP permanently): its answers are always synthetic.
  *
@@ -14,8 +16,8 @@
  */
 
 import { describe, it, vi, expect } from "vitest";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { gzipSync } from "node:zlib";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { CASES, type ParityCase } from "./cases.js";
 import { PARLIAMENT_COMMIT, originalAvailable, originalClient, type Observed } from "./original.js";
@@ -29,10 +31,26 @@ const ONLY = process.env.PARLIAMENT_PARITY_ONLY;
  */
 const NO_LIVE = process.env.PARLIAMENT_PARITY_NO_LIVE === "1";
 export const RECORDED_DIR = join(import.meta.dirname, "recorded");
-const LIVE_HOST = "dati.camera.it";
+const LIVE_HOSTS = new Set(["dati.camera.it", "www.camera.it", "documenti.camera.it"]);
+const REUSE_LIVE = process.env.PARLIAMENT_PARITY_REUSE_LIVE === "1";
 const LIVE_SPACING_MS = 2500;
 
 interface LiveAnswer { status: number; statusText: string; headers: Record<string, string>; bytes: Uint8Array }
+
+/** The live (not synthetic) answers already in the recordings, by key. */
+function recordedLiveAnswers(): Map<string, LiveAnswer> {
+  const live = new Map<string, LiveAnswer>();
+  if (!existsSync(RECORDED_DIR)) return live;
+  for (const f of readdirSync(RECORDED_DIR).filter((n) => n.endsWith(".json.gz"))) {
+    const rec = JSON.parse(gunzipSync(readFileSync(join(RECORDED_DIR, f))).toString("utf8")) as { exchanges: RecordedExchange[] };
+    for (const e of rec.exchanges) {
+      if (e.synthetic || live.has(e.key)) continue;
+      const bytes = e.bodyText !== undefined ? new TextEncoder().encode(e.bodyText) : new Uint8Array(Buffer.from(e.bodyBase64 ?? "", "base64"));
+      live.set(e.key, { status: e.status, statusText: e.statusText, headers: e.headers, bytes });
+    }
+  }
+  return live;
+}
 
 function guardedFetch(realFetch: typeof fetch, c: ParityCase, log: RecordedExchange[], live: Map<string, LiveAnswer>, pace: { last: number; sent: number }, refused: string[]): typeof fetch {
   const seen = new Map<string, number>();
@@ -48,14 +66,14 @@ function guardedFetch(realFetch: typeof fetch, c: ParityCase, log: RecordedExcha
     } else if (/(^|\.)senato\.it$/i.test(url.hostname)) {
       refused.push(`${c.id}: senato.it without a synthetic answer: ${key}`);
       throw new Error(`REFUSED: a senato.it request without a synthetic answer (${c.id})`);
-    } else if (url.hostname !== LIVE_HOST || url.protocol !== "https:") {
+    } else if (!LIVE_HOSTS.has(url.hostname) || url.protocol !== "https:") {
       refused.push(`${c.id}: not a live recording host: ${key}`);
       throw new Error(`REFUSED: ${url.hostname} is not a live recording host (${c.id})`);
+    } else if (live.has(key)) {
+      answer = live.get(key)!;
     } else if (NO_LIVE) {
       refused.push(`${c.id}: live (dry run): ${key}`);
       throw new Error(`REFUSED (dry run): ${key}`);
-    } else if (live.has(key)) {
-      answer = live.get(key)!;
     } else {
       const wait = pace.last + LIVE_SPACING_MS - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -76,11 +94,11 @@ function guardedFetch(realFetch: typeof fetch, c: ParityCase, log: RecordedExcha
   }) as typeof fetch;
 }
 
-describe.runIf(RECORD && originalAvailable())("record parity cases (live dati.camera.it, synthetic Senato)", () => {
+describe.runIf(RECORD && originalAvailable())("record parity cases (live dati.camera.it, www.camera.it and documenti.camera.it, synthetic Senato)", () => {
   it("records every case", async () => {
     mkdirSync(RECORDED_DIR, { recursive: true });
     const realFetch = globalThis.fetch;
-    const live = new Map<string, LiveAnswer>();
+    const live = REUSE_LIVE ? recordedLiveAnswers() : new Map<string, LiveAnswer>();
     const pace = { last: 0, sent: 0 };
     // A refused request would be recorded as the original's reaction to a failure (several tools
     // swallow one): never silently. The run fails at the end; fix the case and record it again.

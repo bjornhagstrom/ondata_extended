@@ -5,6 +5,9 @@
  * - Requests go through the engine's HTTP client (`ctx.http`: SSRF guards, size cap, timeout that
  *   also covers the body) instead of the global `fetch`; the context is passed in, not held at
  *   module level. Same URL, same method, same `Accept` and `User-Agent` headers.
+ * - Both endpoints are the profile's constant upstream (`fixedUpstream`): a deployment's domain
+ *   allowlist does not block them; a redirect hop is still checked against it. (The original has
+ *   no allowlist.)
  * - The Senato throttle (>= 2 s between the start of two requests, process-wide) is the profile's
  *   host policy (`hostPolicies` in ../index.ts), applied by the core to every request to that host,
  *   retries included (the original throttled once per logical query, before the first attempt).
@@ -70,7 +73,9 @@ async function sparqlRequest(
           method: "GET",
           headers: { Accept: "application/json" },
         },
-        { userAgent: { fixed: USER_AGENT }, timeoutMs, retry: { attempts: 1 } },
+        // The profile's own constant endpoint, not a URL from the caller: a deployment's domain
+        // allowlist does not apply to the first hop (redirects are still checked).
+        { userAgent: { fixed: USER_AGENT }, timeoutMs, retry: { attempts: 1 }, fixedUpstream: true },
       );
       if (res.status < 200 || res.status > 299) {
         if (res.status >= 400 && res.status < 500 && res.status !== 429) {

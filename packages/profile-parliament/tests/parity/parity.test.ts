@@ -27,8 +27,8 @@ const recordings: Recording[] = existsSync(DIR)
   ? readdirSync(DIR).filter((f) => f.endsWith(".json.gz")).sort().map((f) => JSON.parse(gunzipSync(readFileSync(join(DIR, f))).toString("utf8")))
   : [];
 
-/** The tools this profile ports (round 1, round 2). */
-const PORTED = ["deputies", "search", "legislatures", "bill-progress", "sparql"];
+/** The tools this profile ports (round 1, round 2, round 3). */
+const PORTED = ["deputies", "search", "legislatures", "bill-progress", "camera-amendments", "sparql"];
 
 async function replay(rec: Recording, caller: McpCaller) {
   const misses: string[] = [];
@@ -64,7 +64,8 @@ const DEVIATIONS: Record<string, { id: string; check(ours: Observed, theirs: Obs
 for (const caseId of [
   "offline-deputies-bad-date", "offline-search-bad-chamber", "offline-sparql-limit-range",
   "offline-bill-progress-bad-number", "offline-bill-progress-bad-branch", "offline-bill-progress-bad-uri",
-  "offline-bill-progress-bad-date", "offline-bill-progress-ranges"
+  "offline-bill-progress-bad-date", "offline-bill-progress-ranges",
+  "offline-camera-amendments-bad-uri", "offline-camera-amendments-limit-range", "offline-camera-amendments-types"
 ]) {
   DEVIATIONS[caseId] = {
     id: "P1",

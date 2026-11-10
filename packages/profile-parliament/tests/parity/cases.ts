@@ -3,12 +3,14 @@
  * filters, ranking, birthplace parsing, empty results, errors and truncation.
  *
  * Upstream answers come from two sources, and each exchange in a recording says which:
- * - dati.camera.it, recorded live once (sequential, >= 2 s apart, identical requests asked once).
+ * - dati.camera.it, and for camera-amendments www.camera.it and documenti.camera.it, recorded live
+ *   once (sequential, >= 2.5 s apart, identical requests asked once).
  * - Synthetic: every dati.senato.it answer (Senato blocks an IP after a burst and the block does
  *   not decay; NO request may ever reach a senato.it host), and the Camera failures (HTTP errors,
  *   a broken body, a flapping endpoint) and a few edge answers that a live endpoint cannot be asked
  *   for on demand. Synthetic answers are shaped like the endpoints' SPARQL JSON (Virtuoso), from the
- *   original's queries and tests, and marked `synthetic: true` in the recording.
+ *   original's queries and tests (camera-amendments: HTML in the live pages' markup), and marked
+ *   `synthetic: true` in the recording.
  */
 
 export type Synthetic = (url: URL, n: number) => { status: number; body: string; contentType?: string } | undefined;
@@ -123,6 +125,65 @@ const UNAVAILABLE: Fail = { status: 503, body: "Service Unavailable", contentTyp
 const CAMERA_TIMELINE_VARS = ["titolo", "date", "stato", "pres", "ini"];
 const PROBE_VARS = ["a", "id", "date", "stato"];
 const AC = "http://dati.camera.it/ocd/attocamera.rdf/ac";
+
+
+// camera-amendments (round 3). The tool reads three kinds of HTML page: the scheda atto
+// (www.camera.it/leg{L}/126), the per-act ostr index and the amendment lists
+// (documenti.camera.it/apps/emendamenti), all recorded live. A synthetic scheda (a page with the
+// markers of a real scheda, `idDocumento`, and the given list links) stands in only where a case
+// needs a scheda shape on purpose: no direct link (the ostr fallback), link shapes, list order,
+// invented acts and failures.
+const html = (body: string, status = 200) => ({ status, body, contentType: "text/html; charset=utf-8" });
+const isScheda = (u: URL) => u.hostname === "www.camera.it" && /^\/leg\d+\/126$/.test(u.pathname);
+/** A synthetic scheda atto: the markers, and the given amendment-list links. */
+const scheda = (id: string, links: string[] = []) => html(
+  `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><title>[sintetico] Scheda atto ${id}</title></head><body>` +
+  `<form action="126?idDocumento=${id}"><h1>[sintetico] Scheda del progetto di legge ${id}</h1>` +
+  links.map((l) => `<a href="${l}">Proposte emendative</a>`).join(" ") +
+  `</form></body></html>`
+);
+/** Answers the scheda only; everything else goes to the live recorder (documenti.camera.it). */
+const ca = (id: string, links: string[] = [], other?: Synthetic): Synthetic => (u, n) => (isScheda(u) ? scheda(id, links) : other?.(u, n));
+const EME = "https://documenti.camera.it/apps/emendamenti/";
+// The two cumulative lists of AC 2696 and one per-sitting list, as the act's ostr index links them (live, 2026-11-10).
+const L2696_REF = "getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.2696&amp;tipoSeduta=1&amp;sedeEsame=referente&amp;urnTestoRiferimento=urn:leg:19:2696:null:null:com:02:referente&amp;tipoListaEmendamenti=1";
+const L2696_ASS = "getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.2696&amp;tipoSeduta=0&amp;sedeEsame=null&amp;urnTestoRiferimento=urn:leg:19:2696:null:A:ass:null:null&amp;tipoListaEmendamenti=1";
+const L2696_SEDUTA = "getProposteEmendativeSeduta.aspx?contenitorePortante=leg.19.eme.ac.2696&amp;tipoSeduta=1&amp;sedeEsame=referente&amp;urnTestoRiferimento=urn:leg:19:2696:null:null:com:02:referente&amp;dataSeduta=20260224&amp;tipoListaEmendamenti=1";
+const MAINTENANCE = "<!DOCTYPE html><html><body><h1>[sintetico] Servizio in manutenzione</h1><p>Riprovare più tardi.</p></body></html>";
+
+// Synthetic lists for ac19_99010, in the markup of the live lists (rows `tr.normale#tr.id.*`, article headers
+// `tr.rigaArticolo#cmd.art..<n>.<k>`, number and text link `idPropostaEmendativa=`, signatory link `idPersona=`,
+// identical amendments in `.emendamentiIdentici`).
+const SHAPE_LINKS = [
+  "getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99010&amp;sedeEsame=commissione%20V%20%28bilancio%29&amp;tipoListaEmendamenti=1",
+  "getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99010&amp;sedeEsame=null&amp;urnTestoRiferimento=urn:leg:19:99010:null:A:ass:null:null",
+  "https://example.org/emendamenti/getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99010",
+  "getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99010&amp;sedeEsame=null&amp;sedeEsame=assemblea"
+];
+const row = (id: string, cells: string) => `<tr class="normale" id="${id}">${cells}</tr>`;
+const num = (href: string, text: string) => `<td><a href="${href}">${text}</a></td>`;
+const sig = (pid: string, name: string) => `<td><a href="https://www.camera.it/deputati/scheda?idPersona=${pid}">${name}</a></td>`;
+const SHAPE_LIST_1 = `<html><body><table>
+<tr class="rigaArticolo" id="cmd.art..1.0"><td>Art. 1</td></tr>
+${row("tr.id.1", num("getPropostaEmendativa.aspx?contenitorePortante=leg.19.eme.ac.99010&amp;idPropostaEmendativa=1.1.", "1.1.") + sig("900001", "Rossi&nbsp;Mario") + `<td><span class="emendamentiIdentici">(  ident.\n 1.2. ,\t1.3.   )</span></td>`)}
+${row("tr.id.2", num("  getPropostaEmendativa.aspx?idPropostaEmendativa=1.2.\n&amp;position=1  ", " 1.2 ") + sig("900002", "Bianchi\nAnna <b>[sintetico]</b>"))}
+${row("tr.id.3", "<td>senza link</td>")}
+<tr class="rigaArticolo" id="cmd.art..12.3"><td>Art. 12</td></tr>
+${row("tr.id.4", num("https://example.org/testo?idPropostaEmendativa=12.1.", "12.1.") + `<td><a href="?idPersona=abc">Verdi Luca &amp; altri</a></td>`)}
+<tr class="rigaArticolo" id="cmd.art..bis"><td>Art. 12-bis</td></tr>
+${row("tr.id.5", num("getPropostaEmendativa.aspx?idPropostaEmendativa=12.01.", "12.01.") + sig("900003", "D&#39;Amico Paola") + `<td><span class="emendamentiIdentici">(IDENT. 12.02.)</span></td>`)}
+<tr class="normale" id="riga.altro"><td><a href="getPropostaEmendativa.aspx?idPropostaEmendativa=9.9.">9.9.</a></td></tr>
+<tr id="tr.id.6"><td><a href="getPropostaEmendativa.aspx?idPropostaEmendativa=Tit.1.">Tit.1.</a></td></tr>
+</table></body></html>`;
+const SHAPE_LIST_2 = `<html><body><table>
+${row("tr.id.1", num("getPropostaEmendativa.aspx?idPropostaEmendativa=1.100.", "1.100.") + sig("900004", "Neri Carla"))}
+</table></body></html>`;
+const shapeLists: Synthetic = (u) => {
+  if (!u.pathname.endsWith("getProposteEmendative.aspx")) return undefined;
+  if (u.hostname === "example.org") return html(SHAPE_LIST_2);
+  if (u.searchParams.get("sedeEsame") === "null" && u.searchParams.getAll("sedeEsame").length === 2) return html("<html><body><table></table></body></html>");
+  return html(u.searchParams.get("sedeEsame") === "null" ? SHAPE_LIST_2 : SHAPE_LIST_1);
+};
 
 export const CASES: ParityCase[] = [
   // legislatures
@@ -480,6 +541,54 @@ export const CASES: ParityCase[] = [
   { id: "bill-progress-countonly-number", kind: "tool", name: "bill-progress", args: { number: "1353", branch: "S", countOnly: true, limit: 100, offset: 0 } },
   { id: "bill-progress-countonly-camera-uri", kind: "tool", name: "bill-progress", args: { uri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_302", countOnly: true } },
 
+  // camera-amendments: a synthetic scheda without a direct link (as on historical schede): the ostr index (live) gives the lists.
+  { id: "camera-amendments-2696-ostr", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", countOnly: false, limit: 2000 }, synthetic: ca("2696") },
+  // A synthetic scheda with direct links of every shape (relative, as the ostr index gives them; absolute; with whitespace
+  // inside and duplicated; a ...Seduta link that is not a list); the lists live. Then the live scheda: the original's
+  // tests (sentinel: referente 37, Assemblea 25; 62 rows).
+  { id: "camera-amendments-2696-links-count", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", countOnly: true, limit: 2000 }, synthetic: ca("2696", [L2696_REF, L2696_ASS, L2696_SEDUTA]) },
+  { id: "camera-amendments-2696-count", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", countOnly: true, limit: 2000 } },
+  { id: "camera-amendments-2696-links-list", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", countOnly: false, limit: 2000 }, synthetic: ca("2696", [EME + L2696_REF, `${EME}getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.2696&amp;tipoSeduta=0&amp;sedeEsame=null&amp;\n   urnTestoRiferimento=urn:leg:19:2696:null:A:ass:null:null&amp;tipoListaEmendamenti=1`, L2696_REF]) },
+  { id: "camera-amendments-2696-list", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", countOnly: false, limit: 2000 } },
+  // Live scheda from here on unless a synthetic one is given. Defaults (countOnly false, limit 2000) from the schema.
+  { id: "camera-amendments-2696-defaults", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696" } },
+  // limit: reached on the first list (the second is not asked), between the two, and exactly at the total.
+  { id: "camera-amendments-2696-limit1", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", limit: 1 } },
+  { id: "camera-amendments-2696-limit40", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", limit: 40 } },
+  { id: "camera-amendments-2696-limit62", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", limit: 62 } },
+  { id: "camera-amendments-2696-count-limit1", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", countOnly: true, limit: 1 } },
+  // Lists in the opposite order (Assemblea first): a synthetic scheda.
+  { id: "camera-amendments-2696-ass-first", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", limit: 30 }, synthetic: ca("2696", [L2696_ASS, L2696_REF]) },
+  // The original's fallback test: a leg. 18 act whose scheda has no direct link; scheda, ostr index and lists live.
+  { id: "camera-amendments-2402-leg18", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac18_2402", countOnly: false, limit: 2000 } },
+  // A variant act (a later reading): its own id in the ostr URL.
+  { id: "camera-amendments-703-B", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_703-B", countOnly: true } },
+  // An act that does not exist: whatever the live scheda and ostr index answer.
+  { id: "camera-amendments-none", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_999999" } },
+  { id: "camera-amendments-none-count", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_999999", countOnly: true } },
+  // The URI's host is not checked by the original's pattern: any URL ending in attocamera.rdf/ac<L>_<id> is a Camera act.
+  { id: "camera-amendments-foreign-host", kind: "tool", name: "camera-amendments", args: { billUri: "https://example.org/x/attocamera.rdf/ac19_2696", countOnly: true } },
+  // Every shape the parser handles, on synthetic lists (a sede from the query string, percent-encoded; `:ass:`; neither;
+  // a list on another host): article headers, relative/absolute/whitespace text links, entities, identical amendments,
+  // rows without number or signatory, rows that are not amendments, a line break and markup in a signatory.
+  { id: "camera-amendments-shapes", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_99010" }, synthetic: ca("99010", SHAPE_LINKS, shapeLists) },
+  { id: "camera-amendments-shapes-count", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_99010", countOnly: true }, synthetic: ca("99010", SHAPE_LINKS, shapeLists) },
+  // A list page without the amendment table (maintenance page): no rows from it.
+  { id: "camera-amendments-list-no-table", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_99011" }, synthetic: ca("99011", [`getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99011&amp;sedeEsame=referente`], () => html(MAINTENANCE)) },
+  { id: "camera-amendments-list-no-table-count", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_99011", countOnly: true }, synthetic: ca("99011", [`getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99011&amp;sedeEsame=referente`], () => html(MAINTENANCE)) },
+  // HTTP failures: the scheda (503, 404), the ostr index (500), a list (502).
+  { id: "camera-amendments-scheda-503", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696" }, synthetic: (u) => (isScheda(u) ? html("<html><body>Service Unavailable</body></html>", 503) : undefined) },
+  { id: "camera-amendments-scheda-404", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", countOnly: true }, synthetic: (u) => (isScheda(u) ? html("<html><body>Not Found</body></html>", 404) : undefined) },
+  { id: "camera-amendments-ostr-500", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_99012" }, synthetic: ca("99012", [], (u) => (u.pathname.includes("/ostr/") ? html("<html><body>Errore</body></html>", 500) : undefined)) },
+  { id: "camera-amendments-list-502", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_99013", countOnly: true }, synthetic: ca("99013", [`getProposteEmendative.aspx?contenitorePortante=leg.19.eme.ac.99013&amp;sedeEsame=referente`], () => html("Bad Gateway", 502)) },
+  // A 200 that is not a scheda (an anti-bot page): the original's error, not an empty result.
+  { id: "camera-amendments-antibot", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696" }, synthetic: (u) => (isScheda(u) ? html("<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>") : undefined) },
+  // Refused before any request: not a Camera act (the original's test: a Senato DDL), malformed act URIs.
+  { id: "camera-amendments-senato-uri", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.senato.it/ddl/60131", countOnly: false, limit: 2000 } },
+  { id: "camera-amendments-deputy-uri", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/deputato.rdf/d302940_19" } },
+  { id: "camera-amendments-no-id", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_" } },
+  { id: "camera-amendments-trailing-slash", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696/", countOnly: true } },
+
   // Arguments the schema refuses (no request is made).
   { id: "offline-deputies-bad-date", kind: "tool", name: "deputies", args: { bornFrom: "1990" } },
   { id: "offline-search-bad-chamber", kind: "tool", name: "search", args: { name: "rossi", chamber: "regno" } },
@@ -488,5 +597,8 @@ export const CASES: ParityCase[] = [
   { id: "offline-bill-progress-bad-branch", kind: "tool", name: "bill-progress", args: { number: "1", branch: "X" } },
   { id: "offline-bill-progress-bad-uri", kind: "tool", name: "bill-progress", args: { uri: "not a url" } },
   { id: "offline-bill-progress-bad-date", kind: "tool", name: "bill-progress", args: { dateFrom: "2026-4-1" } },
-  { id: "offline-bill-progress-ranges", kind: "tool", name: "bill-progress", args: { legislature: 0, limit: 1001, offset: -1 } }
+  { id: "offline-bill-progress-ranges", kind: "tool", name: "bill-progress", args: { legislature: 0, limit: 1001, offset: -1 } },
+  { id: "offline-camera-amendments-bad-uri", kind: "tool", name: "camera-amendments", args: { billUri: "ac19_2696" } },
+  { id: "offline-camera-amendments-limit-range", kind: "tool", name: "camera-amendments", args: { billUri: "http://dati.camera.it/ocd/attocamera.rdf/ac19_2696", limit: 5001 } },
+  { id: "offline-camera-amendments-types", kind: "tool", name: "camera-amendments", args: { countOnly: "yes", limit: 0 } }
 ];
