@@ -357,3 +357,10 @@ The profile contract is the API others will build on, so it gets a written plan 
 contract is reviewed with its future owner; then semver, deprecation before removal and a changelog; safeguards
 (an API snapshot checked in `npm run check`, a conformance test per profile, the example profile as living
 reference); TypeDoc reference plus the guide. The issue mentions the plan in one sentence, without details.
+
+## 2026-11-10: proposal issue posted
+
+Posted to ondata/ckan-mcp-server as #590, with Björn's ok, after the final review and the numbers refreshed on the
+day (1803 tests; smoke 17/18 on our Worker and on ondata's alike, the MQA case failing on data.europa.eu's HTTP 500;
+live comparison 20/21, D5). The text is `docs/upstream/ondata-issue-draft.md`. Next: answer within a day, keep
+follow-ups short; log his answer and our decision here (`docs/upstream/ondata-issue-plan.md`, "After posting").

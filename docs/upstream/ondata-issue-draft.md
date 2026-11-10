@@ -1,7 +1,7 @@
 <!--
-DRAFT, not posted. Target: ondata/ckan-mcp-server, addressed to @aborruso. Nothing is posted without Björn's ok.
+POSTED 2026-11-10 as https://github.com/ondata/ckan-mcp-server/issues/590 (this file is the text as posted).
 Before posting: see docs/upstream/ondata-issue-plan.md (preconditions: a readable repo, numbers refreshed, review).
-Placeholder: <TEST_COUNT> (refresh on the day).
+Numbers refreshed 2026-11-10 (tests, smoke, live comparison, bundle sizes).
 -->
 
 # Proposal: one hardened core for ckan-mcp-server and italianparliament-mcp (behaviour unchanged for users of both, as far as possible)
@@ -29,8 +29,8 @@ fine answer.
   below, each with its reason; most are invisible to users.
 - **The parliament port aims for the same.** Its six tools give your server's output for the same recorded answers;
   the differences that could not be avoided are listed (P1-P13), most of them timing, error text or added guards.
-- **What it would give you.** Security fixes written once for both servers; italianparliament-mcp gets the size
-  caps, timeouts and redirect checks it does not have today on every request; one Worker/stdio/HTTP host instead of
+- **What it would give you.** Security fixes written once for both servers; every request italianparliament-mcp
+  makes gets the core's size caps, timeouts and redirect checks; one Worker/stdio/HTTP host instead of
   two; shared SPARQL helpers; a codebase that typechecks under `strict` in seconds; and a ready place for the next
   MCP server you write, which then starts as a profile instead of a copy.
 - **What it would cost you.** A boundary (the profile contract) that you would no longer change as freely as internal
@@ -66,14 +66,14 @@ file names its source file and commit).
 | `packages/host-parliament` | The `italianparliament-mcp` binary (stdio) and the Worker, as yours; built and tested, not deployed | small |
 | `packages/profile-example`, `host-example` | The worked example of `docs/writing-a-profile.md`: two tools, tests, a Worker; not deployed | ~350 lines |
 
-<TEST_COUNT> tests (`npm run check`: typecheck, boundary check, Worker bundle check, all tests; a local script, there
+1 803 tests, 2 skipped (`npm run check`: typecheck, boundary check, Worker bundle check, all tests; a local script, there
 is no CI yet). A test deployment
 of the CKAN profile runs on Cloudflare Workers, labelled as a test instance in its headers and footer.
 
 ## What it gives ondata and you
 
-**Security fixes once.** ckan-mcp-server has fixed at least five advisories in its HTTP layer (GHSA-8hxx, -6f9w,
--q5gv, -279h, -w3gp). In the core that code exists once. italianparliament-mcp talks to fixed hosts, so its exposure
+**Security fixes once.** ckan-mcp-server has published at least eight advisories in its HTTP layer (SSRF, size and
+redirect checks: GHSA-3xm7, -g84h, -798p, -vmrr, -38f8, -q5gv, -x32r, -279h; `SECURITY.md`). In the core that code exists once. italianparliament-mcp talks to fixed hosts, so its exposure
 is smaller, and it has its own SPARQL client; requests made outside a shared client do not get the same guards by
 default. On the core every request, whatever tool makes it, gets the size cap, the timeout and checked redirects,
 with no code of its own. (If you want details for italianparliament-mcp, I will send them privately.)
@@ -106,7 +106,8 @@ two servers differ (italianparliament-mcp's preflight and plain 404s, its SSE an
 small router in front and the core an option; a core fix to those routes would not reach it.
 
 **Shared modules.** SPARQL helpers (`validateSelectQuery`, `injectLimit`, `sparqlStringLiteral`, `flattenBindings`;
-the parliament versions, which are the stricter ones), table output, field rendering for CKAN scheming, the
+the parliament versions, which are the stricter ones; the CKAN port keeps its own `sparql_query` code for exact
+parity), table output, field rendering for CKAN scheming, the
 untrusted-text wrappers.
 
 **Typechecked.** Your CONTRIBUTING notes that `build:tsc` routinely exhausts the heap and that nothing runs it. On
@@ -134,10 +135,10 @@ may be the largest benefit; if not, the others still hold.
 ## What it costs you
 
 - **A boundary you would not change as freely.** Today you refactor internals at will (the probe move in
-  #534-#536). With a core, the profile contract is an interface. We propose no stability promise (0.x) until two
+  #534 and #536). With a core, the profile contract is an interface. We propose no stability promise (0.x) until two
   profiles run in production, but it is still one more thing to think about in a change. There is a written plan
   for getting it to a stable, documented 1.0 (`docs/contract-stability.md`).
-- **Two packages instead of one**, or one repository with a `core` folder whose only CKAN user is CKAN. Releases of
+- **Two packages instead of one**, or one repository with a `core` folder that only CKAN uses at first. Releases of
   the core and of each server would need to stay in step.
 - **More combinations to test**: core × profile × transport. Each profile keeps its own smoke cases.
 - **Review time**, for the extraction PRs, if you choose that path.
@@ -243,14 +244,14 @@ The profile owns every text the model sees; the core owns only generic errors an
 
 | Check | What it does | Result |
 |---|---|---|
-| Parity harness | Your server at `09e8cdc` loaded in-process and our profile, both given the same recorded portal answers; tool lists, resource templates and prompts compared entry by entry; 121 cases (tool calls, resource reads, prompts) compared output by output; your Node (axios) path replayed as well | All equal, except D8 (SDK version text), checked exactly |
+| Parity harness | Your server at `09e8cdc` loaded in-process and our profile, both given the same recorded portal answers; tool lists, resource templates and prompts compared entry by entry; 121 cases (tool calls, resource reads, prompts) compared output by output (119 run from the repository; the other two use a 23 MB third-party portal registry kept local, re-recorded on demand); your Node (axios) path replayed as well | All equal, except D8 (SDK version text), checked exactly |
 | Your test suite | Every test file ported except the DataStore table UI (not registered in your server); expectations unchanged, reach adapted (fake fetch instead of axios mocks) | Green |
-| Your smoke cases | `tests/smoke/cases.json` copied unchanged, run against our binary and against our deployed Worker | 18/18 and 18/18 |
+| Your smoke cases | `tests/smoke/cases.json` copied unchanged, run against our binary (2026-11-09) and against our deployed Worker (2026-11-10) | 18/18 and 18/18. Rerun on the Workers 2026-11-10, later: 17/18 on ours and on yours alike; the MQA case fails on both because data.europa.eu answered HTTP 500 |
 | Worker parity | Your `src/worker.ts` and ours given the same HTTP requests: status, headers, body, log line, Analytics data point | Equal except the version (D13) |
-| Live comparison | The same 21 requests to your public Worker (0.4.139) and ours, sent at the same moment | 20 identical; the 21st is D5 below |
+| Live comparison | The same 21 requests to your public Worker (0.4.139) and our test Worker, sent at the same moment (our observation, 2026-11-10; the test Worker's address on request) | 20 identical; the 21st is D5 below |
 
 Commands: `npm run check`, `npm run smoke:ckan`, `SMOKE_URL=<worker>/mcp node scripts/smoke-ckan.mjs`,
-`node scripts/compare-live-ckan.mjs`.
+`node scripts/compare-live-ckan.mjs <ours>/mcp` (any deployment of the CKAN host against yours).
 
 <details>
 <summary>The 13 listed deviations</summary>
@@ -381,4 +382,5 @@ Björn
 
 ---
 *AI assistance disclosed: written with Claude (Anthropic) under my direction; code and claims reviewed by me and by
-an automated reviewer. All checks above are reproducible from https://github.com/bjornhagstrom/ondata_extended.*
+an automated reviewer. The checks above can be rerun from https://github.com/bjornhagstrom/ondata_extended; the two live rows need
+a deployment.*
