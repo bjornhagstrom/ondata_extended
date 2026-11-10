@@ -150,7 +150,8 @@ second portal, three offline (not SELECT, http endpoint, MQA on another portal):
 | ondata (09e8cdc) | Here | How |
 |---|---|---|
 | `src/worker.ts` behaviour | `packages/host-ckan/tests/worker-parity.test.ts` (11) | ondata's Worker loaded from the clone and ours given the same requests (the version field checked as D13) (`/`, `/health`, `/mcp` GET/OPTIONS/initialize/broken JSON, a 404, four tool calls refused before the network): status, headers and body equal; for tool calls also the log line and the Analytics data point, duration aside |
-| `tests/smoke/cases.json`, `scripts/smoke.mjs` | `packages/host-ckan/tests/smoke/cases.json`, `scripts/smoke-ckan.mjs` | cases copied unchanged; the script runs our binary. 18/18 live on 2026-11-09 |
+| `tests/smoke/cases.json`, `scripts/smoke.mjs` | `packages/host-ckan/tests/smoke/cases.json`, `scripts/smoke-ckan.mjs` | cases copied unchanged; the script runs our binary. 18/18 live on 2026-11-09 ; against the deployed Worker (`SMOKE_URL=.../mcp`) 18/18 on 2026-11-10 |
+| ondata's public Worker (0.4.139) | `scripts/compare-live-ckan.mjs` | the same 21 requests (three lists, 16 tool calls over 12 tools, a resource, a prompt) to ondata's Worker and our deployed one at the same moment: 20 identical after masking the service notice; the one difference is D5 (an unresolvable host: ours `Server not found`, ondata's Worker Cloudflare's HTTP 530). 2026-11-10 |
 
 `packages/host-ckan/tests/host.test.ts` (5, new) covers routes, health counts and ondata's log fields without the
 clone; `binary.test.ts` (3, new) builds the binary as the package script does and runs it: ondata's status lines
@@ -165,6 +166,15 @@ over stdio and HTTP, 20 tools, `CKAN_ALLOWED_DOMAINS` applied, and the refusal t
 |---|---|---|---|
 | `src/tools/sparql.test.ts`, `validateSelectQuery` block | 5 | `packages/core/tests/sparql.test.ts` | Inputs and verdicts unchanged; the two expected message substrings translated with the messages ("Solo query SELECT supportate" → "Only SELECT queries are supported", "keyword di scrittura DROP" → "update keyword DROP"): deliberate, the core's text is English |
 | `src/core/sparql-literal.test.ts` | 5 | same file | unchanged |
+| `src/core/flatten`, `format`, `html-url`, `normalize`, `person-name`, `province-region`, `zod-error`, `truncation` tests | 3, 7, 13, 8, 13, 6, 3, 21 | `packages/profile-parliament/tests/core/` same names | import paths; in `truncation`, three tools not yet ported reached through their `limit` fields copied verbatim |
+| `src/tools/deputies.birthplace.test.ts`, `deputies.birthplace-filter.test.ts` | 4, 4 | `packages/profile-parliament/tests/tools/` | import paths |
+| `src/tools/sparql.test.ts` | 10 | `packages/profile-parliament/tests/tools/sparql.test.ts` | ctx; the three live tests read recordings (Camera recorded, Senato synthetic) |
+| `src/tools/tools.test.ts` lines 41-88, 746-769 | 6 | `packages/profile-parliament/tests/tools/tools.test.ts` | ctx; live endpoints → the parity recording with the same arguments |
+
+Parliament round 1 (2026-11-10): 98 original tests ported with unchanged expectations; details, file map and what
+was not ported in `docs/parliament-port.md`. The two `validateSelectQuery` substrings translated above stay English
+in the core; the profile rethrows the core's refusal in the original's Italian, so its own ported `sparql.test.ts`
+asserts the original texts unchanged.
 
 ## New tests (code that ondata did not have)
 
@@ -176,12 +186,14 @@ over stdio and HTTP, 20 tools, `CKAN_ALLOWED_DOMAINS` applied, and the refusal t
 | `packages/profile-skos/tests/profile.test.ts` | 30 | the eight vocab_ tools end to end through MCP with recorded and synthetic TemaTres answers: order, labels, notes, mappings, private notes, hostile text, URI ownership and patterns, error hints |
 | `packages/host-vocab/tests/host.test.ts` | 5 | language files, generated landing page (en/sv) and /health, Worker routes |
 | `packages/core/tests/host-policy.test.ts` | 21 | per-host retry (what is retried and what never is: refused redirect, oversized body, redirect loop, Anubis single honest request, bounded attempts), shared throttle, row output and its two channels |
-| `packages/core/tests/sparql.test.ts` | 2 of 12 | `injectLimit`, `flattenBindings` (the other 10 are ported, see above) |
+| `packages/core/tests/sparql.test.ts` | 4 of 14 | `injectLimit`, `flattenBindings`, and (parliament round 1) the update keyword on `SparqlValidationError` (the other 10 are ported, see above) |
 | `packages/core/tests/client.test.ts` (round 2) | +6 | `allowlistedAs` (first hop only, literal guards kept); a gzip body without Content-Encoding or with `identity` is unpacked, within the decompressed cap, and kept as it came when it only starts like gzip; `TransportError.kind` asserted in the existing transport tests |
 | `packages/core/tests/engine.test.ts` (round 2) | +5 | `strictInput` (MCP and `runRowsTool`), `validateUrl` with the private-host exemption, `cache.defaultTtlSeconds` |
 | `packages/profile-ckan/tests/http.test.ts` (round 2, end of file) | 4 | the allowlist on the caller's host across the portals.json rewrite, a caller host outside it, a redirect loop without retry hint, an oversized body as `CkanApiError` |
 | `packages/profile-ckan/tests/parity/` (round 2) | 95 + 95 | our profile against ondata for the 13 cases of the ported tools plus 7 offline cases; ondata's Node path against its fetch path for all 95 |
-| `packages/spike-parliament/tests/spike.test.ts` | 14 | the contract spike through MCP: unprefixed names, examples, recorded Camera answers, per-chamber truncation, Senato throttle, Camera retry, no retry on 403, SPARQL validation and escaping |
+| `packages/core/tests/engine.test.ts` (parliament round 1) | +1 | the SDK gets the raw input shape unless the tool is strict (an empty shape lists as `{ type: "object", properties: {} }`) |
+| `packages/profile-parliament/tests/profile.test.ts` | 19 | the 14 tests of the deleted contract spike (`packages/spike-parliament`), moved onto the real port with seven expectations moved toward the original (listed in `docs/parliament-port.md`), plus 5: the request sent, an unparsable 2xx retried 5 times, a size-cap refusal and a redirect loop not repeated, the current legislature asked once |
+| `packages/profile-parliament/tests/parity/` | 76 | the original at fd46810 and the profile over 37 recorded cases (Camera recorded live 2026-11-10, 18 requests; Senato synthetic, no request to any senato.it host): 37/37 equal, 3 within P1; `tools/list` entries and order equal |
 
 ## Deviation list (changed expectations and changed behaviour)
 
@@ -196,7 +208,7 @@ this core, which had dropped that first-hop check.
 | D2 | One fetch-based path on Node and Workers. The body is read as a stream and stopped at the smaller of the wire cap and the decompressed cap (defaults 32 MiB and 64 MiB, so 32 MiB, as in ondata). | ondata read the whole body, then compared its size. | Same limit. | None. |
 | D3 | Startup message for a missing allowlist says "which hosts" instead of "which CKAN hosts". | The core names no backend. | Wording only. | The CKAN host may wrap the message. |
 | D4 | Redirect hops check the private-host exemption on every path (ondata did it only on the axios path). | Consistency with D1. | None. | None. |
-| D5 | Every request gets the DNS check on the first hop, also on the CKAN path (ondata did it only on the strict paths; the CKAN path relied on the agents' pinned lookup). An unresolvable first host is reported as `Server not found: <url>` (a `TransportError`) without a request, as ondata's axios path reported ENOTFOUND. | Defence in depth: holds even if the pinning dispatcher cannot load. | One extra DNS lookup per uncached request. | None. |
+| D5 | Every request gets the DNS check on the first hop, also on the CKAN path (ondata did it only on the strict paths; the CKAN path relied on the agents' pinned lookup). An unresolvable first host is reported as `Server not found: <url>` (a `TransportError`) without a request, as ondata's axios path reported ENOTFOUND. | Defence in depth: holds even if the pinning dispatcher cannot load. | One extra DNS lookup per uncached request. On Workers an unresolvable host reads `Server not found: <url>` where ondata's Worker reports Cloudflare's `Network error: Cloudflare could not reach the portal (HTTP 530)` (seen live, 2026-11-10). | None. |
 | D6 | Default redirect limit 5 for every request; ondata's `safeFetch` defaulted to 3 (sparql, quality, portal discovery) and its CKAN path used 5. | One default. | The CKAN profile passes `maxHops: 3` where ondata used `safeFetch`'s default. | None, if the profile does so. |
 | D7 | `jsonToolResult` wraps a top-level array or null as `{ items: ... }` in `structuredContent`, which MCP requires to be an object. ondata passed it through (no ondata caller passes an array at 09e8cdc). | Protocol conformance. | None today. | None. |
 | D8 | Argument validation errors (unknown key, invalid URL, out of range) read `Invalid arguments for tool X: <message> at <path>`, one line per issue, instead of the Zod issues as a JSON array. | SDK 1.32.2 here, 1.27.1 in ondata: the SDK writes this text. | Shorter, same facts. | None. ondata gets the same text when it upgrades the SDK. |
@@ -205,4 +217,14 @@ this core, which had dropped that first-hop check.
 | D11 | ondata's direct calls (MQA, SPARQL, the portal registry) now have the core's size cap (32 MiB) and its first-hop DNS check, and SPARQL's 15 s timeout applies to each request instead of to the POST and its GET fallback together. | One client with the same guards for every request. | A larger answer is refused as too large (the registry is about 23 MB today). A slow POST and a slow GET can take up to 30 s together. Failure texts are ondata's per call (an unknown host: `fetch failed` for MQA and the registry, `Cannot resolve ...` for SPARQL; a timeout: `AbortSignal.timeout`'s text for MQA and the registry, `This operation was aborted` for SPARQL). | None. |
 | D12 | The Worker log line's `cache_hit` comes from this call's requests. ondata read a module-level "last request" value, so a tool call that made no CKAN request could log the previous call's value. | Telemetry per server instance (no state shared between concurrent requests in an isolate). | `cache_hit` is absent when the call made no request, and never another call's. | None. |
 | D13 | `initialize` (serverInfo) and `/health` report our version (`0.1.0`) instead of ondata's `0.4.138`; the Workers service notices (two headers, the Markdown footer) are the deployment's settings, ondata's texts by default. | A release of ours is not ondata's release; a test deployment must not claim to be ondata's demo instance. | A client that reads the version sees ours. ondata deploying this code keeps its notices without changes. | None. |
+
+Parliament profile (italianparliament-mcp at `fd46810`), round 1:
+
+| # | What | Why | Effect for users | Migration |
+|---|---|---|---|---|
+| P1 | Argument validation errors: one line per issue (`message at path`) after the same prefix, instead of the issues as a JSON array. | SDK 1.32.2 here, 1.27.1 in the original (as D8). | Shorter, same facts. | None. |
+| P2 | The Senato throttle (≥ 2 s between request starts) also spaces retries; the original throttled once per query. | The core applies a host policy to every request, which is what the host counts. | Timing only. | None. |
+| P3 | The core's guards apply (32 MiB cap, at most 5 re-validated redirects instead of fetch's 20, DNS/SSRF checks, a timeout covering the body, the rate limit if configured). A guard refusal is not retried and reads the core's text; unresolvable hosts and timeouts are retried as in the original. | All outbound traffic through the core's client (rule 6). | Only for answers no parliament endpoint gives today. | None. |
+| P4 | The current-legislature warning uses `console.error` instead of `process.stderr.write`. | No `process` on Workers. | Same bytes on Node. | None. |
+| P5 | `requestCounts` (a per-process request counter) is not kept. | It served the original's live test suite only. | None. | None. |
 

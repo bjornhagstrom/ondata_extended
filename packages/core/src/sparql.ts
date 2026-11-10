@@ -58,7 +58,11 @@ function stripLiteralsAndIris(query: string): string {
 const WRITE_KEYWORDS = /\b(INSERT|DELETE|LOAD|CLEAR|DROP|CREATE|COPY|MOVE)\b/i;
 
 export class SparqlValidationError extends Error {
-  constructor(message: string) {
+  /**
+   * The update keyword found (upper case), when that was the reason; absent when the query does
+   * not start with SELECT. Lets a profile word the refusal in its own language.
+   */
+  constructor(message: string, readonly keyword?: string) {
     super(message);
     this.name = "SparqlValidationError";
   }
@@ -75,7 +79,8 @@ export function validateSelectQuery(query: string): void {
   }
   const write = skeleton.match(WRITE_KEYWORDS);
   if (write) {
-    throw new SparqlValidationError(`Only SELECT queries are supported: found the update keyword ${write[1].toUpperCase()}.`);
+    const keyword = write[1].toUpperCase();
+    throw new SparqlValidationError(`Only SELECT queries are supported: found the update keyword ${keyword}.`, keyword);
   }
 }
 

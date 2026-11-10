@@ -13,6 +13,9 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
   20 tools, 7 resource templates and 6 prompts, checked case by case against ondata's server (`docs/test-parity.md`).
 - `packages/host-ckan`: the CKAN deployment as a drop-in for ondata's server (binary `ckan-mcp-server`, stdio or
   `TRANSPORT=http`, the same `CKAN_*` settings; Cloudflare Worker with ondata's `/`, `/health`, `/mcp`).
+- `packages/profile-parliament`: the Italian Parliament profile, behaving as ondata's italianparliament-mcp 0.38.0
+  (commit `fd46810`); work in progress, 4 of its 43 tools (`legislatures`, `deputies`, `search`, `sparql`), checked
+  case by case against the original (`docs/parliament-port.md`). No deployment package yet.
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 

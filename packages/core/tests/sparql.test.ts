@@ -2,7 +2,7 @@
 // src/tools/sparql.test.ts (validateSelectQuery block) and src/core/sparql-literal.test.ts.
 // Inputs and verdicts unchanged; test names and expected message texts translated to English (logged in docs/test-parity.md).
 import { describe, it, expect } from "vitest";
-import { validateSelectQuery, sparqlStringLiteral, injectLimit, flattenBindings } from "../src/index.js";
+import { validateSelectQuery, sparqlStringLiteral, injectLimit, flattenBindings, SparqlValidationError } from "../src/index.js";
 
 describe("SELECT validation", () => {
   describe("validateSelectQuery", () => {
@@ -75,5 +75,26 @@ describe("injectLimit and flattenBindings (new)", () => {
   it("gives one string per variable, empty when unbound", () => {
     expect(flattenBindings({ head: { vars: ["a", "b"] }, results: { bindings: [{ a: { type: "literal", value: "x" } }] } }))
       .toEqual([{ a: "x", b: "" }]);
+  });
+});
+
+describe("SparqlValidationError.keyword (new)", () => {
+  const refusal = (query: string) => {
+    try {
+      validateSelectQuery(query);
+    } catch (error) {
+      return error as SparqlValidationError;
+    }
+    throw new Error("expected a refusal");
+  };
+
+  it("names the update keyword found, upper case, so a profile can word the refusal itself", () => {
+    const e = refusal("SELECT ?s WHERE { ?s ?p ?o } ; drop GRAPH <http://x/g>");
+    expect(e).toBeInstanceOf(SparqlValidationError);
+    expect(e.keyword).toBe("DROP");
+  });
+
+  it("is absent when the query does not start with SELECT", () => {
+    expect(refusal("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }").keyword).toBeUndefined();
   });
 });

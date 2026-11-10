@@ -91,7 +91,10 @@ export function registerProfiles(server: McpServer, profiles: readonly Profile[]
         {
           title: tool.title,
           description: describeTool(tool.description, tool.examples),
-          inputSchema: inputSchemaOf(tool),
+          // The raw shape, as ondata's servers register it, unless the tool is strict: the SDK then
+          // lists an empty shape as `{ type: "object", properties: {} }`, where a z.object({}) would
+          // add `additionalProperties: false`. A non-empty shape lists the same either way.
+          inputSchema: tool.strictInput ? inputSchemaOf(tool) : tool.inputSchema,
           ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
           ...(tool.annotations ? { annotations: tool.annotations } : {})
         },

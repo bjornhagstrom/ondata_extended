@@ -11,10 +11,11 @@ say so in their header comment, naming the original file. The security hardening
 DNS pinning, redirect re-validation, size caps, parseable JSON truncation, untrusted-content handling) is the work
 of the ckan-mcp-server maintainers; the GHSA references in comments point to their advisories.
 
-The contract spike in `packages/spike-parliament` and the shared SPARQL helpers in `packages/core/src/sparql.ts`
-(read-only SELECT validation, string-literal escaping, binding flattening) and the per-host throttle are derived from
-**italianparliament-mcp** by Andrea Borruso, https://github.com/ondata/italianparliament-mcp, MIT License,
-Copyright (c) 2026 Andrea Borruso, commit `fd46810`; the files say which original they follow.
+The Italian Parliament profile in `packages/profile-parliament` (its source files, tests and test recordings), the
+shared SPARQL helpers in `packages/core/src/sparql.ts` (read-only SELECT validation, string-literal escaping,
+binding flattening), the per-host throttle and the row output model are derived from **italianparliament-mcp** by
+Andrea Borruso, https://github.com/ondata/italianparliament-mcp, MIT License, Copyright (c) 2026 Andrea Borruso,
+commit `fd46810`; the files say which original they follow. Its model-facing texts (Italian) are the original's.
 
 This project is not affiliated with or endorsed by the onData association.
 

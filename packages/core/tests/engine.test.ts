@@ -355,6 +355,21 @@ describe("strict tool input (strictInput)", () => {
     expect(JSON.parse(r.content[0].text)).toEqual({ q: "x" });
   });
 
+  it("lists a tool without arguments as an empty object schema, as the SDK lists a raw shape (no additionalProperties)", async () => {
+    const { client } = await connect([testProfile({
+      tools: [
+        { name: "demo_none", description: "No args", inputSchema: {}, handler: async (_a, ctx) => ctx.output.text("ok") },
+        { name: "demo_none_strict", description: "No args, strict", inputSchema: {}, strictInput: true, handler: async (_a, ctx) => ctx.output.text("ok") }
+      ],
+      prompts: []
+    })]);
+    const tools = Object.fromEntries((await client.listTools()).tools.map((t) => [t.name, t.inputSchema]));
+    expect(tools.demo_none).toEqual({ type: "object", properties: {}, $schema: "http://json-schema.org/draft-07/schema#" });
+    expect(tools.demo_none_strict).toMatchObject({ type: "object", properties: {}, additionalProperties: false });
+    const r = await client.callTool({ name: "demo_none", arguments: { extra: 1 } }) as { isError?: boolean };
+    expect(r.isError).toBeFalsy();
+  });
+
   it("applies to runRowsTool too", async () => {
     const { runRowsTool, inputSchemaOf } = await import("../src/index.js");
     expect(() => inputSchemaOf({ inputSchema: shape, strictInput: true }).parse({ q: "x", extra: 1 })).toThrow("Unrecognized key");

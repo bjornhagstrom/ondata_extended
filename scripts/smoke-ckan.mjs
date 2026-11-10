@@ -14,6 +14,8 @@
  *
  *   npm run smoke:ckan            all cases (builds the binary first)
  *   npm run smoke:ckan -- lecce   only cases whose name matches
+ *   SMOKE_URL=https://<worker>/mcp node scripts/smoke-ckan.mjs
+ *                                 the same cases against a deployed server (no local binary started)
  */
 
 import { readFileSync } from "node:fs";
@@ -28,9 +30,12 @@ const FILTER = process.argv[2]?.toLowerCase();
 const HOST = join(ROOT, "packages/host-ckan");
 const { cases } = JSON.parse(readFileSync(join(HOST, "tests/smoke/cases.json"), "utf8"));
 const selected = FILTER ? cases.filter((c) => c.name.toLowerCase().includes(FILTER)) : cases;
-const domains = [...new Set(selected.map((c) => new URL(c.server).hostname))].join(",");
+const domains = process.env.SMOKE_URL ? "" : [...new Set(selected.map((c) => new URL(c.server).hostname))].join(",");
 
-const server = spawn("node", [join(HOST, "dist/index.js")], {
+// SMOKE_URL: run against a deployed server instead of starting the local binary.
+const REMOTE = process.env.SMOKE_URL;
+const MCP_URL = REMOTE ?? `http://localhost:${PORT}/mcp`;
+const server = REMOTE ? null : spawn("node", [join(HOST, "dist/index.js")], {
   env: { ...process.env, TRANSPORT: "http", PORT: String(PORT), CKAN_ALLOWED_DOMAINS: domains },
   stdio: ["ignore", "ignore", "pipe"]
 });
@@ -39,12 +44,12 @@ const server = spawn("node", [join(HOST, "dist/index.js")], {
 // occupied port surfaces as twelve cases failing with `fetch failed`, which reads like a
 // broken server rather than a runner that never started one.
 let stderr = "";
-server.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+server?.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
 let exited = null;
-server.on("exit", (code, signal) => { exited = signal ?? `code ${code}`; });
-server.on("error", (err) => { exited = err.message; });
+server?.on("exit", (code, signal) => { exited = signal ?? `code ${code}`; });
+server?.on("error", (err) => { exited = err.message; });
 
-const stop = () => server.kill();
+const stop = () => server?.kill();
 process.on("exit", stop);
 process.on("SIGINT", () => { stop(); process.exit(130); });
 
@@ -63,7 +68,7 @@ async function waitReady(timeoutMs = 20000) {
       // /mcp. And the answer has to name our tools — a 200 from whatever else happens
       // to hold the port would otherwise let the whole suite run against it, turning a
       // bind failure into twelve puzzling case failures.
-      const res = await fetch(`http://localhost:${PORT}/mcp`, {
+      const res = await fetch(MCP_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
         body: JSON.stringify({ jsonrpc: "2.0", method: "tools/list", id: 0 })
@@ -72,7 +77,7 @@ async function waitReady(timeoutMs = 20000) {
         const tools = (await res.json())?.result?.tools ?? [];
         if (tools.some((t) => t?.name === "ckan_package_search")) return;
         throw new Error(
-          `something else is answering on port ${PORT}: it replied to tools/list without offering ckan_package_search`
+          `something else is answering at ${MCP_URL}: it replied to tools/list without offering ckan_package_search`
         );
       }
     } catch (err) {
@@ -81,20 +86,20 @@ async function waitReady(timeoutMs = 20000) {
     }
     await sleep(200);
   }
-  throw new Error(`server did not answer on port ${PORT} within ${timeoutMs / 1000}s`);
+  throw new Error(`server did not answer at ${MCP_URL} within ${timeoutMs / 1000}s`);
 }
 
 try {
   await waitReady();
 } catch (err) {
   console.error(`smoke: ${err.message}`);
-  console.error("hint: `npm run build -w @ondata-extended/host-ckan` produces packages/host-ckan/dist/index.js; SMOKE_PORT moves the port.");
+  if (!REMOTE) console.error("hint: `npm run build -w @ondata-extended/host-ckan` produces packages/host-ckan/dist/index.js; SMOKE_PORT moves the port.");
   stop();
   process.exit(2);
 }
 
 async function call(tool, server_url, args) {
-  const res = await fetch(`http://localhost:${PORT}/mcp`, {
+  const res = await fetch(MCP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
     body: JSON.stringify({

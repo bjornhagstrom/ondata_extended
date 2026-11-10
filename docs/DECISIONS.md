@@ -226,3 +226,39 @@ Björn's decisions (2026-11-09):
 - **The landing page carries no test-instance notice** (Björn's decision: ondata's page unchanged). The notices are
   in the `/mcp` headers and the Markdown footer.
 
+
+## 2026-11-10: parliament profile, round 1 (`packages/profile-parliament`)
+
+Björn's direction (2026-11-09): not the whole profile, but a representative hard set built for real; round 1 is the
+spike's four tools (`legislatures`, `deputies`, `search`, `sparql`) ported fully from italianparliament-mcp at
+`fd46810`, with ranking and birthplace. Details: `docs/parliament-port.md`; tests and P1-P5: `docs/test-parity.md`.
+The throwaway `packages/spike-parliament` is deleted; its tests moved onto the port.
+
+Choices made in the round (Claude's, flagged for Björn):
+
+- **`handler`, not `rows`, for exact output.** The core's table output (C3) and row tools (C6) order keys by the
+  column list, add `structuredContent` and cut at the character limit; the original prints each row in its own key
+  order, has no `structuredContent` and no cap. A faithful port registers the original's `makeHandler`. Contract
+  finding: a ported server of this kind uses neither `rows`, `output.table` nor `HostPolicy.retry`. Options for
+  later: a "rows as they are, text only" flag and a retry predicate on the host policy, or accept `handler` for
+  ported servers. Not decided; the issue draft says so.
+- **Retries stay in the profile** (the original's loop retries everything except a 4xx other than 429, including an
+  unparsable 2xx); the core's narrower retry is switched off per request. The host policies carry the Senato
+  throttle and the 60 s timeouts. All requests still go through the core's client and its guards (P3).
+- **The original's identity on the wire** (`User-Agent: italianparliament-mcp/0.38.0`), for parity, as the CKAN
+  profile keeps ondata's. A release of ours may want its own (cf. D13).
+- **No `sanitizeInline`/`wrapUntrusted` on the parliament tools' output**, as in the original: the output is JSONL
+  (`JSON.stringify` escapes newlines; no Markdown structure to break), and parity requires the original's bytes.
+  `untrustedSourceLabel` is declared for core messages. Revisit if a tool gains Markdown output.
+- **Italian comments and Italian test names kept in files ported from the original** (an exception to "everything
+  in English" for ported code only): the files mirror the original file by file, so a reader can diff them against
+  upstream, and a translated comment would be a change the original's maintainer has to read past. New code and
+  every non-ported file are English. Björn may reverse this; translating is mechanical.
+- **Senato data synthetic only**: no request to any senato.it host (it blocks an IP permanently); the recorder
+  refuses one. One synthetic Senato row reuses a real deputy's name with an invented id, to exercise the
+  Camera-before-Senato tie-break; it is marked synthetic.
+- **The parity reference** is a copy of the original at fd46810 with its dependencies in
+  `../ondata-italianparliament-mcp/repo` (beside ondata's CKAN clone), so `npm run check` runs the parity tests here.
+
+Core changes (generic, no backend named): `SparqlValidationError.keyword`, so a profile words the refusal in its own
+language; the SDK gets the raw input shape unless a tool is strict (an empty shape then lists as the original's).
