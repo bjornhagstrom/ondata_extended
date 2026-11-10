@@ -13,7 +13,7 @@
  *   ... PARLIAMENT_PARITY_ONLY=search (one case or prefix)
  */
 
-import { describe, it, vi } from "vitest";
+import { describe, it, vi, expect } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { join } from "node:path";
@@ -23,7 +23,10 @@ import { KEPT_RESPONSE_HEADERS, bodyOf, exchangeKey, requestHeaders, type Record
 
 const RECORD = process.env.PARLIAMENT_PARITY_RECORD === "1";
 const ONLY = process.env.PARLIAMENT_PARITY_ONLY;
-/** Dry run: refuse every live request (checks the harness and the synthetic cases without network). */
+/**
+ * Dry run: refuse every live request and write nothing (checks the harness and the synthetic cases
+ * without network, and lists the live requests a recording would send).
+ */
 const NO_LIVE = process.env.PARLIAMENT_PARITY_NO_LIVE === "1";
 export const RECORDED_DIR = join(import.meta.dirname, "recorded");
 const LIVE_HOST = "dati.camera.it";
@@ -31,7 +34,7 @@ const LIVE_SPACING_MS = 2500;
 
 interface LiveAnswer { status: number; statusText: string; headers: Record<string, string>; bytes: Uint8Array }
 
-function guardedFetch(realFetch: typeof fetch, c: ParityCase, log: RecordedExchange[], live: Map<string, LiveAnswer>, pace: { last: number; sent: number }): typeof fetch {
+function guardedFetch(realFetch: typeof fetch, c: ParityCase, log: RecordedExchange[], live: Map<string, LiveAnswer>, pace: { last: number; sent: number }, refused: string[]): typeof fetch {
   const seen = new Map<string, number>();
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const key = exchangeKey(input, init);
@@ -43,10 +46,13 @@ function guardedFetch(realFetch: typeof fetch, c: ParityCase, log: RecordedExcha
     if (synthetic) {
       answer = { status: synthetic.status, statusText: "", headers: synthetic.contentType ? { "content-type": synthetic.contentType } : {}, bytes: new TextEncoder().encode(synthetic.body) };
     } else if (/(^|\.)senato\.it$/i.test(url.hostname)) {
+      refused.push(`${c.id}: senato.it without a synthetic answer: ${key}`);
       throw new Error(`REFUSED: a senato.it request without a synthetic answer (${c.id})`);
     } else if (url.hostname !== LIVE_HOST || url.protocol !== "https:") {
+      refused.push(`${c.id}: not a live recording host: ${key}`);
       throw new Error(`REFUSED: ${url.hostname} is not a live recording host (${c.id})`);
     } else if (NO_LIVE) {
+      refused.push(`${c.id}: live (dry run): ${key}`);
       throw new Error(`REFUSED (dry run): ${key}`);
     } else if (live.has(key)) {
       answer = live.get(key)!;
@@ -76,13 +82,16 @@ describe.runIf(RECORD && originalAvailable())("record parity cases (live dati.ca
     const realFetch = globalThis.fetch;
     const live = new Map<string, LiveAnswer>();
     const pace = { last: 0, sent: 0 };
+    // A refused request would be recorded as the original's reaction to a failure (several tools
+    // swallow one): never silently. The run fails at the end; fix the case and record it again.
+    const refused: string[] = [];
     const cases = CASES.filter((c) => !ONLY || c.id.startsWith(ONLY));
     try {
       for (const c of cases) {
         const log: RecordedExchange[] = [];
         vi.resetModules();
         const original = await originalClient();
-        globalThis.fetch = guardedFetch(realFetch, c, log, live, pace);
+        globalThis.fetch = guardedFetch(realFetch, c, log, live, pace, refused);
         const recordedAt = new Date().toISOString();
         let output: Observed;
         try {
@@ -93,11 +102,17 @@ describe.runIf(RECORD && originalAvailable())("record parity cases (live dati.ca
           globalThis.fetch = realFetch;
         }
         const { synthetic: _fn, ...stored } = c;
+        if (NO_LIVE) {
+          console.log(`${c.id} (dry run): ${log.length} synthetic exchange(s), ${output.isError ? "error" : "ok"}: ${output.text.slice(0, 160).replace(/\n/g, " ")}`);
+          continue;
+        }
         writeFileSync(join(RECORDED_DIR, `${c.id}.json.gz`), gzipSync(JSON.stringify({ case: stored, original: PARLIAMENT_COMMIT, recordedAt, output, exchanges: log })));
         console.log(`${c.id}: ${log.length} exchange(s) (${log.filter((e) => e.synthetic).length} synthetic), ${output.isError ? "error" : "ok"}, ${output.text.length} chars; live requests so far: ${pace.sent}`);
       }
     } finally {
       globalThis.fetch = realFetch;
     }
+    if (NO_LIVE) console.log(`dry run: live requests a recording would send (distinct): ${new Set(refused.filter((r) => r.includes("live (dry run)")).map((r) => r.split(": live (dry run): ")[1])).size}\n${refused.join("\n")}`);
+    else expect(refused).toEqual([]);
   }, 30 * 60 * 1000);
 });

@@ -262,3 +262,18 @@ Choices made in the round (Claude's, flagged for Björn):
 
 Core changes (generic, no backend named): `SparqlValidationError.keyword`, so a profile words the refusal in its own
 language; the SDK gets the raw input shape unless a tool is strict (an empty shape then lists as the original's).
+
+## 2026-11-10: parliament profile, round 2 (`bill-progress`)
+
+`bill-progress` ported with its helpers (details and parity: `docs/parliament-port.md`, "Round 2"; P6, P7 in
+`docs/test-parity.md`). It reaches only the two SPARQL endpoints. Decisions:
+
+- **Untrusted text in notices (revises round 1's "no sanitizing" choice).** Round 1's argument held because every
+  upstream value sat inside a JSON string. `bill-progress` quotes endpoint values (phases, states, dates, DDL ids,
+  act URIs) in plain-text notices after the rows; a line break there would start a line of its own in the tool
+  output. Line breaks in those values are folded into a space (P7), the smallest change that closes it; nothing
+  else in the original's text changes, and the rows stay the original's. Rule: a parliament tool that puts upstream
+  values outside JSON escaping folds line breaks; Markdown output would need `sanitizeInline`.
+- **Parity run time.** The parity file takes about 3 minutes (`npm run check` about 3 min), because the Senato
+  throttle (≥ 2 s) applies on both sides. Kept for now: shortening it would mean changing the original's throttle
+  in the harness. Open for Björn.

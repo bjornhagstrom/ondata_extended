@@ -171,6 +171,11 @@ over stdio and HTTP, 20 tools, `CKAN_ALLOWED_DOMAINS` applied, and the refusal t
 | `src/tools/sparql.test.ts` | 10 | `packages/profile-parliament/tests/tools/sparql.test.ts` | ctx; the three live tests read recordings (Camera recorded, Senato synthetic) |
 | `src/tools/tools.test.ts` lines 41-88, 746-769 | 6 | `packages/profile-parliament/tests/tools/tools.test.ts` | ctx; live endpoints → the parity recording with the same arguments |
 
+| `src/core/decode-html`, `chamber-uri`, `law-ref`, `senato-query-size`, `chunk` tests (round 2) | 7, 3, 7, 5, 5 | `packages/profile-parliament/tests/core/` same names | import paths |
+| `src/core/sparql-literal.test.ts` (round 2, again) | 5 | `packages/profile-parliament/tests/core/sparql-literal.test.ts` | a duplicate of the core copy above, kept for a one-to-one file map; counted once |
+| `src/tools/bill-progress.law.test.ts`, `bill-signatories.test.ts` (round 2) | 3, 6 | `packages/profile-parliament/tests/tools/` | import paths; `withSenatoLaw` gets its lookup explicitly (P6) |
+| `src/tools/tools.test.ts`, bill-progress (lines 1013-1089, 1107-1248, round 2) | 14 | `packages/profile-parliament/tests/tools/tools.test.ts` | ctx; each call reads the parity recording with the same arguments. Where both sides of an assertion come from synthetic Senato answers (countOnly equals the list; the law assertions), the test checks the code path, not the source |
+
 Parliament round 1 (2026-11-10): 98 original tests ported with unchanged expectations; details, file map and what
 was not ported in `docs/parliament-port.md`. The two `validateSelectQuery` substrings translated above stay English
 in the core; the profile rethrows the core's refusal in the original's Italian, so its own ported `sparql.test.ts`
@@ -193,7 +198,7 @@ asserts the original texts unchanged.
 | `packages/profile-ckan/tests/parity/` (round 2) | 95 + 95 | our profile against ondata for the 13 cases of the ported tools plus 7 offline cases; ondata's Node path against its fetch path for all 95 |
 | `packages/core/tests/engine.test.ts` (parliament round 1) | +1 | the SDK gets the raw input shape unless the tool is strict (an empty shape lists as `{ type: "object", properties: {} }`) |
 | `packages/profile-parliament/tests/profile.test.ts` | 19 | the 14 tests of the deleted contract spike (`packages/spike-parliament`), moved onto the real port with seven expectations moved toward the original (listed in `docs/parliament-port.md`), plus 5: the request sent, an unparsable 2xx retried 5 times, a size-cap refusal and a redirect loop not repeated, the current legislature asked once |
-| `packages/profile-parliament/tests/parity/` | 76 | the original at fd46810 and the profile over 37 recorded cases (Camera recorded live 2026-11-10, 18 requests; Senato synthetic, no request to any senato.it host): 37/37 equal, 3 within P1; `tools/list` entries and order equal |
+| `packages/profile-parliament/tests/parity/` | 204 | the original at fd46810 and the profile over 101 recorded cases (round 1: 37, Camera recorded live 2026-11-10, 18 requests; round 2: 64 for `bill-progress`, 22 Camera requests; Senato always synthetic, no request to any senato.it host): 101/101 equal, 8 within P1, 1 within P7; `tools/list` entries and order equal |
 
 ## Deviation list (changed expectations and changed behaviour)
 
@@ -227,4 +232,6 @@ Parliament profile (italianparliament-mcp at `fd46810`), round 1:
 | P3 | The core's guards apply (32 MiB cap, at most 5 re-validated redirects instead of fetch's 20, DNS/SSRF checks, a timeout covering the body, the rate limit if configured). A guard refusal is not retried and reads the core's text; unresolvable hosts and timeouts are retried as in the original. | All outbound traffic through the core's client (rule 6). | Only for answers no parliament endpoint gives today. | None. |
 | P4 | The current-legislature warning uses `console.error` instead of `process.stderr.write`. | No `process` on Workers. | Same bytes on Node. | None. |
 | P5 | `requestCounts` (a per-process request counter) is not kept. | It served the original's live test suite only. | None. | None. |
+| P6 | `withSenatoLaw(rows, lookup)` (exported for tests) requires `lookup`; the original defaulted it to `senatoLawByUri`. | That default needs the engine context. | Not model-facing. | None. |
+| P7 | Line breaks in endpoint values quoted in `bill-progress`'s plain-text notices are folded into a space. | Upstream content is untrusted; the notice is outside JSON escaping. | Only for a value with a line break; rows unchanged. | None. |
 

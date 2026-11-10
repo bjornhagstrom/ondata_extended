@@ -184,3 +184,144 @@ folding: `docs/spike-parliament.md` (history), `docs/test-parity.md` (the `spike
 - Contract findings for C2/C3/C6: a faithful port of this backend uses none of `HostPolicy.retry`, `output.table`
   or `rows`, for the reasons above. Options if wanted: a `RowsResult`/`TableOptions` flag for "rows as they are, text
   only, no cap", and a retry predicate on the host policy; or accept `handler` as the way for ported servers.
+
+# Round 2: `bill-progress` (2026-11-10)
+
+Port of the original's `bill-progress` (`src/tools/bill-progress.ts`, 674 lines) with every helper it imports,
+transitively, in the same approach as round 1: one ported file per original file, the original's header line, Italian
+texts, queries, comments and examples verbatim, reach changed only (the engine context threaded through every
+function that queries). Folded into `docs/DECISIONS.md` and `docs/test-parity.md` after review (P6, P7).
+
+## Hosts
+
+`bill-progress` reaches only the two SPARQL endpoints, through `cdQuery`/`snQuery` (round 1's client, `ctx.http`):
+`dati.camera.it/sparql` and `dati.senato.it/sparql`. No HTML, AKN, RSS or GitHub fetch: the `html_url`, `rss_url`
+and `law_url` columns (camera.it, senato.it, normattiva.it) are strings built from URIs, never requested.
+
+## File map
+
+| Original (fd46810) | Here (`packages/profile-parliament/`) | Note |
+|---|---|---|
+| `src/tools/bill-progress.ts` | `src/tools/bill-progress.ts` | ctx through `execute`, `countSenatoDdl`, `runSenatoDdlQuery`, `crossBranchPhases`, `cameraIterTimeline`, `cameraLawFromSenato`, `navetteVariants`, `currentLegislature`; `withSenatoLaw`'s lookup is a required argument (P6) |
+| `src/tools/bill-signatories.ts` | `src/tools/bill-signatories.ts` | **in part**: only its two pure exported helpers (lines 94-119, verbatim). `cameraPhasePattern` is used by bill-progress; `parseCameraActUri` (a different function from `html-url.ts`'s) comes along because the original's test of this file covers both. The `bill-signatories` tool is not ported |
+| `src/core/law-ref.ts` | same | `senatoLawByUri(ctx, uris)` |
+| `src/core/decode-html.ts`, `html-entity-variants.ts`, `chamber-uri.ts`, `senato-query-size.ts` | same names | verbatim |
+| `src/core/chunk.ts` | same | verbatim; no tool calls it in round 2, it is here because the original's `senato-query-size.test.ts` uses it |
+| `src/core/sparql-literal.ts` | same | re-exports the core's `sparqlStringLiteral` (same escapes, same code, as `flatten.ts` in round 1) |
+| (round 1) `html-url.ts` (`actHtmlUrl`, `ddlRssUrl`, `parseCameraActUri`), `current-legislature.ts`, `client.ts`, `prefixes.ts`, `flatten.ts`, `types.ts` | unchanged | already ported whole in round 1 |
+
+`src/index.ts`: `billProgressTool` registered in the original's `registerAll` order relative to the ported tools:
+`deputies`, `search`, `legislatures`, `bill-progress`, `sparql` (checked by the `tools/list` parity test).
+
+No core or contract change.
+
+## Tests
+
+`npm run check` before (round 1 state, parity reference at the default path): 68 files passed, 2 skipped; **1482
+passed, 2 skipped**. After: 76 passed, 2 skipped; **1663 passed, 2 skipped**. Without the parity reference
+(`PARLIAMENT_REPO=/nonexistent`): 75 passed, 3 skipped; **1461 passed, 204 skipped**. 1663 = 1482 + 41 (ported
+helper and tool unit tests) + 14 (ported `tools.test.ts`) + 126 (63 parity cases × 2).
+
+### Ported from the original (55, expectations unchanged)
+
+| Original (fd46810) | Tests | Here | Reach change |
+|---|---|---|---|
+| `src/core/decode-html.test.ts`, `chamber-uri.test.ts`, `law-ref.test.ts`, `senato-query-size.test.ts`, `chunk.test.ts`, `sparql-literal.test.ts` | 7, 3, 7, 5, 5, 5 | `tests/core/` same names | import paths |
+| `src/tools/bill-progress.law.test.ts` | 3 | `tests/tools/` same name | import paths (the test already injects the lookup, so P6 needs no change) |
+| `src/tools/bill-signatories.test.ts` | 6 | `tests/tools/` same name | import paths |
+| `src/tools/tools.test.ts` lines 1013-1089, 1107-1248 (bill-progress ×14, its "Senato tools" block) | 14 | `tests/tools/tools.test.ts` | ctx; live endpoints → the parity recording with the same arguments, one recording per `execute` call (22 calls) |
+
+The ported `tools.test.ts` tests that touch Senato read synthetic answers shaped to what the original's tests assert of
+the live source (ddl/58034 → L. 177/2025-11-13, ddl/59612 → legge costituzionale 2/2026-05-18, ddl/49285 → the two
+pairs 1/687 and 2020-10-19/2100-01-01, ddl/55479 → no law; C.2669 → S.1924; S.1511 exists in leg. 18). Where both
+sides of an assertion come from synthetic answers (the countOnly-equals-list test), the test checks the code path,
+not the source. The Camera halves (C.302, C.2696, C.703-B, ac18_2617) are live recordings.
+
+`sparql-literal.test.ts` duplicates the five tests round 1 already ported to `packages/core/tests/sparql.test.ts`
+(same expectations); it is kept here so the original's file map stays one to one, and is counted once in
+`docs/test-parity.md`. `html-entity-variants.ts` has no test in the original (none at fd46810); it is exercised
+through the parity case with `'`, `"`, `\` and `è` in the keyword.
+
+### Black-box parity (`tests/parity/`)
+
+**63 new cases** (`cases.ts`, 100 in all; 64 and 101 with P7's case added after review), each run against the original and ours (both replayed from the same
+recording):
+
+- Senato list (synthetic Senato), 21: `ddlUri` with an ordinary law, a constitutional law, the ambiguous two-pair law
+  and no law; a Senato URI passed as `uri`; `countOnly` with keyword, dates, legislature only, and an unbound count
+  (→ `"0"`); keyword list (1000 limit); legislature with limit 3 and 1; no filter at all; a keyword with `'`, `"`,
+  `\` and `è` (escape and HTML-entity variants); a date range; empty list; law lookup 403 (the `NOTA` on unverified
+  law); 200 rows (law lookup split into two batches under the 2047-byte request-URI limit); every law shape (each
+  `natura` with a Normattiva link, an unknown natura, a 2100-01-01 placeholder only, a number without date, a URI not
+  `/ddl/<n>`, a row with only `?s` bound); list 403 (error); 502, 502, 200 (the retry loop).
+- `--number` on branch S, 10: `1809 S 19`; `1353` with no branch and no legislature (default S, current legislature
+  asked live on Camera, navetta suffix `-B`); `1511 S 18`; the cross-branch fallback `2669 S 19` (all phases,
+  `La lettura al Senato è S.1924`) and with `limit 1` (truncated notice, no completeness claim); `offset 50` (no
+  fallback); a DDL with only a Camera phase (`Nessuna fase al Senato...`); two `idDdl` (one with a `"` the original
+  strips) with a phase without status, a four-reading navetta and the law lookup failing (both notices joined); no
+  Camera phase (empty hint); ids but no rows (empty hint).
+- Camera timeline (live Camera; Senato law lookup synthetic), 20: C.302 (`uri`), C.2696 with keyword `criminalità`,
+  C.703-B (final reading, law on the last row), C.703 (navetta notice pointing to C.703-B), C.703 with offset 1 (no
+  probe), C.302 through `ddlUri`, keyword without match (Camera hint), an act that does not exist, `2617 C 18` with
+  limit 100, limit 1 and `dateFrom 2035` (Camera hint), ac18_2617 with a date window, `2822 C` without legislature
+  (current legislature live; navetta notice to C.2822-B), `4144 C 17`; the navette probe failing on every attempt
+  (timeline kept, no notice); Camera 503 on every attempt (error); the Camera law lookup failing (403, `NOTA`); a
+  synthetic `-A` act (entities, tags and `^^xsd` in titles, an odd date, approved definitively with an ambiguous
+  constitutional law, three later readings incl. one without `id`: plural notice); a synthetic act with the law
+  lookup failing and one later reading (both notices); a synthetic `-Z` act (no later letter, no probe).
+- Refused before any request, 7: unknown host (`uri`, with and without `countOnly`), a look-alike host
+  `dati.camera.it.example.org`, an unknown `ddlUri` with the Senato host in its query string, `countOnly` with
+  branch C, with `--number`, with a Camera `uri`.
+- Refused by the schema, 5 (deviation P1): `number` not digits, `branch` not S/C, `uri` not a URL, `dateFrom` not
+  `YYYY-MM-DD`, legislature 0 + limit 1001 + offset -1 together.
+
+**Result: 63/63 equal**, 58 exactly, 5 within P1 (the `offline-bill-progress-*` cases). `tools/list`: the
+`bill-progress` entry (title, description with examples, JSON Schema including `format: "uri"`, regex patterns and
+the enum, annotations) equals the original's, and the order is the original's.
+
+Harness changes: P1's check accepts a tool name with a hyphen (`[\w-]+`, was `\w+`, which only matched round 1's
+names); `PORTED` lists `bill-progress`; the recorder now fails the run when any request was refused (a refused
+request would otherwise be recorded as the original's reaction to a failure, which `bill-progress` swallows in two
+places: the law lookup and the navette probe), and its dry run (`PARLIAMENT_PARITY_NO_LIVE=1`) writes nothing and
+lists the live requests a recording would send.
+
+Runtime: the parity file now takes about 3 minutes (was well under one). Most of it is the Senato host policy (≥ 2 s
+between request starts) on both sides: many cases send 2-4 Senato queries. `npm run check` wall time went from about
+26 s to about 3 min on this machine.
+
+### Recordings
+
+63 new files in `tests/parity/recorded/` (260 KB), recorded **2026-11-10 01:26:51-01:29:10 UTC** (the five
+schema cases at 01:26:51, no request). **dati.camera.it: 22 live requests** (distinct; sequential, ≥ 2.5 s apart,
+each asked once and reused across cases), all HTTP 200: 14 timelines, 7 navette probes, 1 current-legislature probe.
+**dati.senato.it: zero requests**; every Senato answer synthetic (`synthetic: true`), keyed by the kind of query the
+original sends (count, list, cross-branch ids, cross-branch list, law by URI, Camera act's law), with LIMIT/OFFSET
+applied as the endpoint would. Invented values: DDL ids 9xxxx, idDdl 99xxx, titles marked `[sintetico]`, law
+numbers on invented DDLs; the four real DDL ids carry only what the original's tests assert. Synthetic Camera
+answers: the 503s, the failing probe, and the three acts ac19_99001-A, ac19_99002, ac19_99003-Z. No other host.
+
+## Deviations (new; for the deviation list)
+
+| # | What may differ | Why | Checked |
+|---|---|---|---|
+| P6 | `withSenatoLaw(rows, lookup)` (exported for tests) takes `lookup` as a required argument; the original defaulted it to `senatoLawByUri`. Not model-facing; the original's test always passes it | the default would need the engine context, which a default parameter cannot reach | `tests/tools/bill-progress.law.test.ts` (unchanged) |
+
+| P7 | Line breaks in endpoint values quoted in a plain-text notice (the cross-branch phase list and DDL ids; the navette variants' ids, states, dates and URIs) are folded into a space; the original prints them. The rows are unchanged (JSON strings escape the break) | after review: the notice is the first place a parliament tool puts upstream values outside JSON escaping, so a line break in an endpoint value would start a line of its own in the tool output (rule 6, untrusted content) | parity case `bill-progress-number-2669-S-newline` (synthetic), checked exactly in `DEVIATIONS`; fails without the fix (mutation check) |
+
+P1 also covers the five `offline-bill-progress-*` cases; P2 (the Senato throttle also spaces retries) and P3 (core
+guards) apply to `bill-progress`'s Senato and Camera queries as to round 1's. No deviation in tool output,
+`tools/list`, errors or what is sent upstream beyond these.
+
+## Not ported (round 2)
+
+- The `bill-signatories` tool and the rest of its file (only its two pure helpers are here).
+- `camera-amendments` (round 3), `bill-text` and the other tools; hosts and CLI.
+- The original's `src/core/*.test.ts` for helpers not ported (akn, bill-number, camera-legislature, freshness,
+  membership-at, ...): `bill-progress` does not import them.
+
+## Open points (round 2)
+
+- Parity runtime (about 3 minutes, Senato spacing). Options: keep; or let the parity harness run the Senato host
+  policy with a shorter interval for ours (the original's own throttle cannot be changed, so only half would gain).
+- `telemetryFields` unchanged (`chamber`, `legislature`, `endpoint`, `limit`, `offset`); `bill-progress`'s `branch`
+  and `countOnly` could be added (no free text). Left as is, not part of the port.

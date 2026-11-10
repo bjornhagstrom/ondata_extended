@@ -2,8 +2,8 @@
  * The Italian Parliament profile: behaves like ondata's italianparliament-mcp at fd46810 (MIT,
  * Andrea Borruso; tool names without a prefix, arguments, Italian texts, queries, output), checked
  * case by case by the black-box parity test (tests/parity, docs/parliament-port.md). Ported in
- * rounds: round 1 has `legislatures`, `deputies`, `search` and `sparql`, in the original's
- * registration order.
+ * rounds: round 1 has `legislatures`, `deputies`, `search` and `sparql`, round 2 `bill-progress`,
+ * in the original's registration order.
  */
 
 import type { Profile } from "@ondata-extended/profile-contract";
@@ -13,17 +13,18 @@ import { DEFAULT_TIMEOUT_MS } from "./core/endpoints.js";
 import { deputiesTool } from "./tools/deputies.js";
 import { searchTool } from "./tools/search.js";
 import { legislaturesTool } from "./tools/legislatures.js";
+import { billProgressTool } from "./tools/bill-progress.js";
 import { sparqlTool } from "./tools/sparql.js";
 import type { Tool } from "./tools/types.js";
 
 export { SparqlError, cdQuery, snQuery } from "./core/client.js";
 export { CAMERA_ENDPOINT, SENATO_ENDPOINT } from "./core/endpoints.js";
-export { deputiesTool, searchTool, legislaturesTool, sparqlTool };
+export { deputiesTool, searchTool, legislaturesTool, billProgressTool, sparqlTool };
 export type { Tool, ToolResult } from "./tools/types.js";
 
 /** The ported tools, in the order of the original's `registerAll` (src/server.ts). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const PARLIAMENT_TOOLS: Tool<any>[] = [deputiesTool, searchTool, legislaturesTool, sparqlTool];
+export const PARLIAMENT_TOOLS: Tool<any>[] = [deputiesTool, searchTool, legislaturesTool, billProgressTool, sparqlTool];
 
 export function createParliamentProfile(): Profile {
   return {
