@@ -14,8 +14,11 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
 - `packages/host-ckan`: the CKAN deployment as a drop-in for ondata's server (binary `ckan-mcp-server`, stdio or
   `TRANSPORT=http`, the same `CKAN_*` settings; Cloudflare Worker with ondata's `/`, `/health`, `/mcp`).
 - `packages/profile-parliament`: the Italian Parliament profile, behaving as ondata's italianparliament-mcp 0.38.0
-  (commit `fd46810`); work in progress, 4 of its 43 tools (`legislatures`, `deputies`, `search`, `sparql`), checked
-  case by case against the original (`docs/parliament-port.md`). No deployment package yet.
+  (commit `fd46810`); work in progress, 6 of its 43 tools (`deputies`, `search`, `legislatures`, `bill-progress`,
+  `camera-amendments`, `sparql`), checked case by case against the original (`docs/parliament-port.md`).
+- `packages/host-parliament`: the parliament deployment as the original's server (stdio binary
+  `italianparliament-mcp`; Cloudflare Worker with the original's `/`, `/health`, `/mcp`), core settings under
+  `PARLIAMENT_*`. Not deployed.
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 
@@ -26,16 +29,18 @@ Status: private, local, pre-release. Not affiliated with the onData association.
 ```sh
 npm install
 npm run check        # typecheck, boundaries, Workers bundle, tests
-npm run build        # packages/host-{vocab,ckan}/dist/{index,worker}.js
+npm run build        # packages/host-{vocab,ckan,parliament}/dist/{index,worker}.js
 npm run smoke:vocab  # known answers against the live test vocabulary
 npm run smoke:ckan   # ondata's known answers against live CKAN portals (builds first)
 ```
 
-Run locally: `node packages/host-vocab/dist/index.js` or `node packages/host-ckan/dist/index.js` (stdio), or with
+Run locally: `node packages/host-vocab/dist/index.js`, `node packages/host-ckan/dist/index.js` or
+`node packages/host-parliament/dist/index.js` (stdio; the parliament one has no HTTP mode, as the original), or with
 `TRANSPORT=http` and an allowlist (`VOCAB_ALLOWED_DOMAINS=begrepp.hagstrom.nu`, `CKAN_ALLOWED_DOMAINS=...`) for
 `http://127.0.0.1:3000/mcp`.
 
 Test deployment (Cloudflare Workers, `docs/DECISIONS.md`): `npx wrangler login` once, then `npm run deploy:ckan` and
-`npm run deploy:vocab`. wrangler sends no usage telemetry (`send_metrics = false`).
+`npm run deploy:vocab`. wrangler sends no usage telemetry (`send_metrics = false`). `npm run deploy:parliament`
+exists but has not been run (deploying needs Björn's ok).
 
 Read first: `docs/DECISIONS.md`, `docs/test-parity.md`, `docs/tematres-api-derisking.md`.

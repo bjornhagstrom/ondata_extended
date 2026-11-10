@@ -154,7 +154,7 @@ exchange carries `synthetic: true`.
 |---|---|---|---|
 | P1 | Argument validation errors (before any tool code): one line per issue, `message at path`, after the same `MCP error -32602: Input validation error: Invalid arguments for tool X: ` prefix, instead of the issues as a JSON array. Same issues, same messages, same error flag, no `structuredContent` | SDK 1.32.2 here, 1.27.1 in the original (as D8 for CKAN) | parity cases `offline-deputies-bad-date`, `offline-search-bad-chamber`, `offline-sparql-limit-range` (`DEVIATIONS` in `parity.test.ts`) |
 | P2 | The Senato throttle (≥ 2 s between request starts) also spaces retries; the original throttled once per logical query. Timing only, never output | the core applies a host policy to every request: that is what the host counts | `tests/profile.test.ts` (two searches ≥ 1950 ms apart) |
-| P3 | The core's guards apply: 32 MiB body cap, at most 5 redirects each re-validated (the original's `fetch` followed up to 20), DNS/SSRF checks, a timeout that also covers reading the body, and the deployment's rate limit if configured. A guard refusal (an answer over the cap, a redirect loop, a host resolving to a private address, the rate limit) is not retried and reads the core's text (`Error: Response too large (N bytes)`, `Error: Too many redirects (>5)`, ...), where the original would have retried and said `SPARQL request failed after 5 attempts` (or succeeded). An unresolvable host and a timeout are transport failures: retried five times and ending in the original's text, as in the original | all outbound traffic through the core's client (rule 6); repeating a guard refusal cannot help | `tests/profile.test.ts` (size cap, redirect loop) |
+| P3 | The core's guards apply: 32 MiB body cap, at most 5 redirects each re-validated (the original's `fetch` followed up to 20), DNS/SSRF checks, a timeout that also covers reading the body, and the deployment's rate limit (on by default, P13). A guard refusal (an answer over the cap, a redirect loop, a host resolving to a private address, the rate limit) is not retried and reads the core's text (`Error: Response too large (N bytes)`, `Error: Too many redirects (>5)`, ...), where the original would have retried and said `SPARQL request failed after 5 attempts` (or succeeded). An unresolvable host and a timeout are transport failures: retried five times and ending in the original's text, as in the original | all outbound traffic through the core's client (rule 6); repeating a guard refusal cannot help | `tests/profile.test.ts` (size cap, redirect loop) |
 | P4 | The current-legislature warning is written with `console.error` instead of `process.stderr.write` (same text and newline on Node; the Workers log on Workers) | no `process` on Workers | not observable in tool output |
 | P5 | `requestCounts` (per-process request counter) is not kept | it served the original's live test suite only | none |
 
@@ -506,7 +506,7 @@ names and Camera person ids, and the schede as the Camera publishes them.
 
 | # | What may differ | Why | Checked |
 |---|---|---|---|
-| P8 | camera-amendments' HTML requests go through the core: its guards (DNS/SSRF, the 32 MiB cap, the deployment's rate limit if configured) apply; at most 5 redirects, each re-validated (the original's `fetch` followed up to 20, anywhere); a 60 s timeout covering the body (the original had none; 60 s is the profile's longest, its SPARQL timeout); an undeclared gzip body is unpacked by its magic bytes (the original would decode the bytes as text). A guard refusal, a redirect loop and a timeout read the core's text (`Error: Response too large (N bytes)`, `Error: Too many redirects (>5)`, `Error: Request timeout connecting to <url>`); a socket/DNS failure reads the original's `Error: fetch failed`. With a domain allowlist configured, the first hop to `www.camera.it`/`documenti.camera.it` is exempt (`fixedUpstream`), but a redirect hop and an absolute list link to any other host must be listed (the original reached them) | all outbound traffic through the core's client (rule 6) | `tests/profile.test.ts` (6 tests: headers, no retry, `fetch failed`, redirect followed and loop, size cap, allowlist) |
+| P8 | camera-amendments' HTML requests go through the core: its guards (DNS/SSRF, the 32 MiB cap, the deployment's rate limit (on by default, P13)) apply; at most 5 redirects, each re-validated (the original's `fetch` followed up to 20, anywhere); a 60 s timeout covering the body (the original had none; 60 s is the profile's longest, its SPARQL timeout); an undeclared gzip body is unpacked by its magic bytes (the original would decode the bytes as text). A guard refusal, a redirect loop and a timeout read the core's text (`Error: Response too large (N bytes)`, `Error: Too many redirects (>5)`, `Error: Request timeout connecting to <url>`); a socket/DNS failure reads the original's `Error: fetch failed`. With a domain allowlist configured, the first hop to `www.camera.it`/`documenti.camera.it` is exempt (`fixedUpstream`), but a redirect hop and an absolute list link to any other host must be listed (the original reached them) | all outbound traffic through the core's client (rule 6) | `tests/profile.test.ts` (6 tests: headers, no retry, `fetch failed`, redirect followed and loop, size cap, allowlist) |
 
 P1 also covers the three `offline-camera-amendments-*` cases. No P7-style folding is needed: everything
 `camera-amendments` takes from a page goes into the JSONL rows (JSON strings escape a line break), and the only page
@@ -529,3 +529,135 @@ values outside JSON are list URLs in an error message, from which the original a
   recorder followed.
 - The live pages are cumulative and change: the original's sentinel counts (37/25, 54/53) hold today; a re-record may
   shift them, and the ported `tools.test.ts` tests would then fail, as the original's live tests would.
+
+# Round 4: host (2026-11-10)
+
+`packages/host-parliament`: the parliament profile deployed as the original's server, on the core's hosts, modelled
+on `packages/host-ckan`. Out of scope: the CLI (`src/cli.ts`, citty), `bill-text`, the other tools, the DXT manifest,
+deploying.
+
+## What the original's entries do (fd46810)
+
+- **`src/index.ts`** (bin `italianparliament-mcp` in its `package.json`; the other bin, `italianparliament`, is the
+  CLI): `createServer()` (name `italianparliament-mcp`, version `0.38.0`), `registerAll`, `StdioServerTransport`.
+  Nothing on stderr while it runs; on a startup failure `Fatal: <message>` and exit code 1. No HTTP mode on Node and
+  **no environment variable read anywhere in `src/`** (checked with grep), so there are no setting names to keep.
+- **`src/worker.ts`** (`wrangler.toml`: name `italianparliament-mcp`, `nodejs_compat`, observability on, **no
+  analytics binding**):
+  - `GET /`: a JSON info document `{"name":"italianparliament-mcp","version":"0.38.0","description":"MCP server for
+    querying Italian Parliament SPARQL endpoints (Camera + Senato)","mcp_endpoint":"/mcp","tools":43}`,
+    `Content-Type: application/json`, `Access-Control-Allow-Origin: *`. No HTML landing page.
+  - `GET /health`: `{"status":"ok","runtime":"cloudflare-workers"}`, same headers. No version, no counts.
+  - `OPTIONS /mcp`: 200, empty body, `Access-Control-Allow-Origin: *`, `-Allow-Methods: POST, OPTIONS`,
+    `-Allow-Headers: Content-Type`.
+  - `POST /mcp`: a new server per request, stateless `WebStandardStreamableHTTPServerTransport` with the SDK's
+    default answer, an **SSE stream** (not `enableJsonResponse`); `Access-Control-Allow-Origin: *` added. On an
+    exception: 500 with the exception's message in a JSON-RPC error.
+  - Anything else, `GET /mcp` and `DELETE /mcp` included: `404 Not Found`, plain text, no CORS header.
+  - No log line, no data point, no service-notice headers.
+
+## Design
+
+- **`src/server.ts`**: `SERVER_NAME = "italianparliament-mcp"`, `SERVER_VERSION = profile.version` (`0.1.0`, one
+  semver for the platform, as D13 for CKAN), `CONFIG_PREFIXES = ["PARLIAMENT"]` (the core's settings:
+  `PARLIAMENT_ALLOWED_DOMAINS`, `PARLIAMENT_RATE_LIMIT_*`, ...; the original reads none), `createParliamentEngine`,
+  `buildServer`, as `host-ckan`.
+- **`src/node.ts`**: the original's `main()`: `runStdio(buildServer(engine))` with no status line, `Fatal: ...` and
+  exit 1 on failure. No `TRANSPORT=http` (the original has none).
+- **`src/worker.ts`**: the core's `createWorkerHandler` serves `GET /` (the info document as `landing`), `GET /health`
+  and `POST /mcp` (with `jsonResponse: false`, so the answer is an SSE stream as the original's); a thin router in
+  front answers the original's preflight and its bare 404 for every other route, which differ from the core's
+  CKAN-shaped ones (204 preflight with more methods, 405 on `GET /mcp`, CORS on 404). No `logEntry`, `analytics` or
+  `extraHeaders`: the original has none.
+- **One engine per isolate** (`engine ??= createParliamentEngine(env)`), as `host-ckan`: the engine holds the host
+  policies, so the Senato throttle (≥ 2 s between request starts) spans every request the isolate serves, as the
+  original's module-level throttle chain does. An engine per request would give each request its own throttle and
+  let concurrent requests reach `dati.senato.it` back to back (the block that does not decay). Tested, and the test
+  fails with an engine per request (checked by making that change).
+- **`wrangler.toml`**: name `ondata-extended-parliament`, `main = "dist/worker.js"`, `nodejs_compat`,
+  `send_metrics = false`, observability on, no `[vars]` and no analytics binding. **Not deployed.** Root scripts:
+  `deploy:parliament` (like `deploy:ckan`; not run) and `build` now also builds this package.
+
+## Core changes
+
+Both generic, defaults unchanged (CKAN and vocabulary hosts and their parity tests unaffected):
+
+1. `WorkerHostOptions.jsonResponse` (`packages/core/src/worker.ts`), default `true`: with `false`, `POST /mcp` is
+   answered as the transport's SSE stream. The log line's status and error summary are read from a JSON body only, so
+   with SSE they would say `ok`; no deployment logs with SSE today. Test: `core/tests/engine.test.ts` (+1).
+2. `runStdio(server, label?)` (`packages/core/src/node/stdio.ts`): without a label, no status line on stderr (the
+   original prints none). Tested through the binary test (stderr empty).
+
+## File map
+
+| Original (fd46810) | Here (`packages/host-parliament/`) | Note |
+|---|---|---|
+| `src/server.ts` `createServer` (name, version) | `src/server.ts` | name kept, version ours (P9); `registerAll` → `registerProfiles` |
+| `src/index.ts` | `src/node.ts` | `runStdio` without a label; the same `Fatal:` line |
+| `src/worker.ts` | `src/worker.ts` | core host for `/`, `/health`, `POST /mcp`; the original's preflight and 404 in the router |
+| `package.json` bin `italianparliament-mcp`, `build`, `build:worker` | `package.json` | same bin name; builds as `host-ckan`'s (SDK, express, zod, undici external; cheerio bundled) |
+| `wrangler.toml` | `wrangler.toml` | our Worker name, `send_metrics = false`, no `[build]` (the root script builds) |
+| bin `italianparliament` (`src/cli.ts`), `manifest.json`, `build:dxt` | not ported | out of scope |
+
+## Tests
+
+`npm run check` before: **1741 passed, 2 skipped**. After (the parliament parity reference present at the default
+path): 79 files passed, 2 skipped; **1774 passed, 2 skipped** = 1741 + 21 + 10 + 1 + 1 (core). Without the reference
+copy the 21 Worker parity tests are skipped, as the profile's parity tests are.
+
+- **`tests/worker-parity.test.ts` (21)**: the original's `src/worker.ts` is imported in-process from
+  `PARLIAMENT_REPO` (the profile's parity helper: skipped when absent, fails on another commit), ours beside it,
+  fresh modules per test; both get the same `Request` and are compared on status, headers (all but `Date`) and body.
+  - Equal (12, P11 mapped on SSE answers): `GET /health`; `GET /mcp`, `DELETE /mcp`, `OPTIONS /`, `GET /other`,
+    `POST /` (all the bare 404); `OPTIONS /mcp`; `POST /mcp` `initialize` (P9 mapped), broken JSON, without the SSE
+    `Accept` (406), a notification (202), an unknown method.
+  - `GET /`: equal byte for byte once `version` and `tools` are set to ours (P9, P10); the original's values are
+    asserted (`0.38.0`, 43), ours (`0.1.0`, 6).
+  - `tools/list`: status and headers equal; our six entries equal the original's entries for those names, in its
+    order; the original lists 43; everything around the list equal (P10).
+  - Tool calls refused before the network, with `fetch` stubbed to record any request (none made, on either side), 6:
+    `sparql` CONSTRUCT and a hidden update, `bill-progress` on an unknown host and a look-alike host,
+    `camera-amendments` without an act id, an unknown tool.
+  - A tool call answered from the parity recording `legislatures` (dati.camera.it, recorded 2026-11-10): both
+    sides send exactly the recorded request and give the same SSE answer.
+  - **Result: 21/21**; the only differences are P9, P10, P11, each asserted to be exactly that.
+- **`tests/host.test.ts` (10)**, without the reference copy: name, version, prefix; the info document; health bytes;
+  the preflight; the bare 404 (`GET /mcp` included, no CORS); `POST /mcp` as SSE with the six tools; no log line for a
+  tool call; the Senato throttle across two separate `/mcp` requests (≥ 1950 ms; `fetch` stubbed, no request leaves
+  the process); P12 (a thrown exception gives `Internal error`, the message not echoed); `wrangler.toml` (name,
+  `send_metrics = false`, observability, no analytics binding).
+- **`tests/binary.test.ts` (1)**: builds `src/node.ts` as the package script does, runs it over stdio: `initialize`
+  gives `serverInfo` `{ name: "italianparliament-mcp", version: "0.1.0" }`, `tools/list` the six tools in the
+  original's order, stderr empty. No tool called.
+- Core: +1 (`jsonResponse`).
+- No live request in any of these tests; none to senato.it.
+
+Workers bundle (`npm run check:worker-bundle`, now with `packages/host-parliament/src/worker.ts`): **621 KiB**
+minified, no static Node import (probe 772, `host-vocab` 406, `host-ckan` 519, unchanged). The Node binary
+`dist/index.js` is 428 KB.
+
+## Deviations (new; for the deviation list)
+
+| # | What may differ | Why | Checked |
+|---|---|---|---|
+| P9 | The version is ours, `0.1.0`, where the original says `0.38.0`: the info document at `/` and `serverInfo` of `initialize` (Worker and stdio). The upstream `User-Agent` stays `italianparliament-mcp/0.38.0` (round 1) | one semver for the platform (as D13 for CKAN) | `worker-parity.test.ts` (`/`, `initialize`), `binary.test.ts` |
+| P10 | The deployment serves the six ported tools, not 43: `tools/list` lists those six (each entry equal to the original's, in its order), and the info document at `/` says `"tools":6`. A call to any other tool gets the SDK's `Tool X not found` | the port is in rounds; the count states what this deployment serves | `worker-parity.test.ts` (`/`, `tools/list`), `host.test.ts` |
+| P11 | SSE answers on `POST /mcp` carry `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` where the original sends `Cache-Control: no-cache` | MCP SDK 1.32.2 here, 1.27.1 in the original (as P1) | `worker-parity.test.ts` (every SSE answer: exactly these two, the rest equal) |
+| P12 | An exception while serving `/mcp` answers 500 with `{"code":-32603,"message":"Internal error"}`; the original puts the exception's message there. The detail goes to the Worker log (`console.error`) | no internal detail to callers (core rule, GHSA-6f9w in ondata) | `host.test.ts` |
+| P13 | The core's settings apply under `PARLIAMENT_*`: a domain allowlist if set, and the core's per-host upstream rate limit, **on by default** outside tests (5 requests/s, burst 10, at most 5 s wait per request, then a refusal; per isolate on Workers, per process on Node; `PARLIAMENT_RATE_LIMIT_ENABLED=false` turns it off). The original has no limit beyond the Senato throttle. Timing only for a single call; under concurrent load a call can be refused | the core's guard for every deployment; the profile's P3/P8 say "if configured", which for this host means "unless turned off" | not tested here (the core's `rate-limiter.test.ts`) |
+
+No difference in routes, statuses, the other headers, `/health`, the preflight, the 404s, the tool answers or the
+requests sent upstream beyond P9-P13 (and the profile's P1-P8).
+
+## Open points (round 4)
+
+- **Rate limit default (P13)**: keep the core's default (protective, as the CKAN and vocabulary hosts) or turn it off
+  for this host to match the original. Claude kept the default.
+- **`/health` without a version**, as the original; `docs/testing-application.md` keeps "a version number in
+  `/health`" open. Adding one would be a deviation from the original's body.
+- **Not deployed**; `wrangler deploy --dry-run` not run either (wrangler may contact the network). A test deployment
+  should set a service notice somewhere (the original has no notice headers and the info document has no notice
+  field), or accept that the Worker looks like the original's apart from P9-P13.
+- The stdio binary has no HTTP mode (as the original). The core's Node HTTP host could serve one under
+  `PARLIAMENT_HTTP_*` if wanted; that would be an addition, not parity.
+- The info document's `tools` counts the profile's tools (6); it will follow the profile as rounds add tools.

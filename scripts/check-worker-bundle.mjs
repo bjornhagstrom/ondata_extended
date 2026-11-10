@@ -15,7 +15,8 @@ const ROOT = join(fileURLToPath(import.meta.url), "..", "..");
 const ENTRIES = [
   "scripts/fixtures/worker-bundle-entry.ts",
   "packages/host-vocab/src/worker.ts",
-  "packages/host-ckan/src/worker.ts"
+  "packages/host-ckan/src/worker.ts",
+  "packages/host-parliament/src/worker.ts"
 ];
 const out = mkdtempSync(join(tmpdir(), "worker-bundle-"));
 try {

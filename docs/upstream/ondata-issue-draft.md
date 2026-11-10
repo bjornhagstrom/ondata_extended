@@ -1,10 +1,10 @@
 <!--
 DRAFT, not posted. Target: ondata/ckan-mcp-server, addressed to @aborruso. Nothing is posted without Björn's ok.
 Before posting: see docs/upstream/ondata-issue-plan.md (preconditions: a readable repo, numbers refreshed, review).
-Placeholders: <REPO_URL>, <TEST_COUNT>, <PARLIAMENT_*> (fill from docs/parliament-port.md after the parliament rounds).
+Placeholders: <REPO_URL>, <TEST_COUNT> (refresh on the day).
 -->
 
-# Proposal: one hardened core for ckan-mcp-server and italianparliament-mcp (no change for users)
+# Proposal: one hardened core for ckan-mcp-server and italianparliament-mcp (CKAN behaviour unchanged)
 
 Hi Andrea,
 
@@ -56,7 +56,8 @@ are kept, and every ported file names its source file and commit).
 | `packages/profile-ckan` | ckan-mcp-server's tools, resources, prompts and texts, ported file by file | ~6 800 lines |
 | `packages/host-ckan` | The `ckan-mcp-server` binary and the Worker, as yours | small |
 | `packages/profile-skos` | SKOS vocabularies, TemaTres as first adapter (our need) | ~1 000 lines |
-| `packages/profile-parliament` | italianparliament-mcp's <PARLIAMENT_TOOLS>, ported file by file | <PARLIAMENT_LINES> |
+| `packages/profile-parliament` | six of italianparliament-mcp's tools, ported file by file | ~3 000 lines |
+| `packages/host-parliament` | The `italianparliament-mcp` binary (stdio) and the Worker, as yours; built and tested, not deployed | small |
 
 <TEST_COUNT> tests (`npm run check`: typecheck, boundary check, Worker bundle check, all tests; a local script, there
 is no CI yet). A test deployment
@@ -66,7 +67,8 @@ of the CKAN profile runs on Cloudflare Workers, labelled as a test instance in i
 
 **Security fixes once.** ckan-mcp-server has fixed at least five advisories in its HTTP layer (GHSA-8hxx, -6f9w,
 -q5gv, -279h, -w3gp). In the core that code exists once. italianparliament-mcp's hosts are fixed, so its exposure
-is smaller, but its amendment and Akoma Ntoso tools fetch HTML and XML directly with `fetch`, outside its client:
+is smaller, but its amendment and Akoma Ntoso tools fetch HTML and XML directly with `fetch`, outside its client
+(`src/tools/camera-amendments.ts:50`, `src/core/akn.ts:47` and `:168` at fd46810):
 no size cap, no timeout, and redirects followed without checks. On the core every request gets them, with no code
 of its own.
 
@@ -88,11 +90,14 @@ code should keep its own, is one of the questions below. The saving today is the
 and the shared helpers, not your tools' formatting.
 
 **Your CLI pattern is kept.** italianparliament-mcp's rule "CLI e MCP sempre allineati" holds: the ported tools keep
-your `Tool` objects with `execute(input, ctx)`, which a CLI calls exactly as yours does; the MCP side registers your
-`makeHandler`. The core also offers row-returning tools and `runRowsTool` for a CLI, for servers written new.
+your `Tool` objects, with one extra argument: `execute(input, ctx)`, where `ctx` is the engine context a CLI creates
+once. The MCP side registers your `makeHandler`. Your CLI itself (`src/cli.ts`) is not ported. The core also offers
+row-returning tools and `runRowsTool` for a CLI, for servers written new.
 
-**One host for both servers.** stdio, Streamable HTTP and the Worker entry (with `/`, `/health`, CORS, telemetry per
-tool call) are core code with per-deployment settings. A fix to the Worker host reaches both servers.
+**Mostly one host for both servers.** stdio, Streamable HTTP and the Worker entry (`/`, `/health`, `POST /mcp`, CORS,
+telemetry per tool call) are core code with per-deployment settings, and both deployments here use them. Where your
+two servers differ (italianparliament-mcp's preflight and plain 404s, its SSE answers), the parliament Worker has a
+small router in front and the core an option; a core fix to those routes would not reach it.
 
 **Shared modules.** SPARQL helpers (`validateSelectQuery`, `injectLimit`, `sparqlStringLiteral`, `flattenBindings`;
 the parliament versions, which are the stricter ones), table output, field rendering for CKAN scheming, the
@@ -236,17 +241,36 @@ Commands: `npm run check`, `npm run smoke:ckan`, `SMOKE_URL=<worker>/mcp node sc
 ## Parliament: what a port looks like
 
 Ported from italianparliament-mcp at `fd46810` (0.38.0), file by file, with your Italian texts, queries, tool
-names (no prefix) and examples unchanged: <PARLIAMENT_TOOLS_LIST>.
+names (no prefix) and examples unchanged: `legislatures`, `deputies` (with birthplace parsing and filters),
+`search` (with ranking), `sparql`, `bill-progress` (both chambers, the navetta, the law lookup) and
+`camera-amendments` (HTML from camera.it, parsed with `cheerio/slim`). Six of 43 tools, chosen to cover the hard
+cases: both endpoints, the Senato throttle, the cross-chamber logic, and a tool that fetches and parses HTML. The
+rest would be mechanical.
 
-- **Your tests:** <PARLIAMENT_PORTED_TESTS> of your unit tests ported with unchanged expectations; the ones that
-  call the live endpoints read recorded answers instead.
+- **Your tests:** 152 of your tests ported into the profile with unchanged expectations (plus 10 into the core,
+  where two expected message substrings were translated with the core's English text); the ones that call the live endpoints read
+  recorded answers instead. Where a Senato answer had to be synthetic, the test checks the code path, not Senato's
+  data, and says so.
 - **Parity:** your server loaded in-process and the profile given the same recorded answers:
-  <PARLIAMENT_PARITY>. The request on the wire is the same (URL, `Accept`, `User-Agent`).
+  133 cases, all equal (11 differ only in the SDK's validation text, 1 in the line-break folding below). The
+  request on the wire is the same (URL, `Accept`, `Accept-Language`, `User-Agent`).
 - **Recordings, not live calls, for Senato.** Camera answers recorded live once, slowly; Senato answers synthetic
   and marked so, and the recorder refuses any senato.it request. This is what your #117 asks for.
-- **Differences** (all listed): the SDK's newer validation text (as for CKAN); the Senato throttle also spaces
-  retries; the core's guards apply (size cap, at most 5 checked redirects instead of 20, a timeout that covers the
-  body), and a guard refusal is not retried; a log line uses `console.error`; your request counter is not kept.
+- **Differences in the tools** (all listed, P1-P8): the SDK's newer validation text (as for CKAN); the Senato throttle also
+  spaces retries; the core's guards apply to SPARQL and HTML requests (size cap, at most 5 checked redirects
+  instead of 20, a timeout that covers the body, 60 s on the HTML pages, which had none), and a guard refusal is
+  not retried; line breaks in endpoint values quoted in `bill-progress`'s plain-text notes are folded into a space
+  (upstream text outside JSON escaping); a log line uses `console.error`; your request counter is not kept;
+  `withSenatoLaw`, exported for tests, needs its lookup passed in.
+- **The host** (binary and Worker, P9-P13): same routes, bodies and headers as your `src/worker.ts` for the requests
+  tested, except the version (ours), the tool count (6), two SSE headers from the newer SDK, a generic `Internal
+  error` instead of the exception's message, and one you would want to know about: the core's upstream rate limit
+  (5 requests/s per host, burst 10) is on by default on every deployment of the core, also this one, where your
+  server has only the Senato throttle. It can be turned off with one setting.
+- **Commands:** `npx vitest run packages/profile-parliament/tests/parity` (needs your repository at fd46810 with its
+  dependencies, `PARLIAMENT_REPO=...`), `npx vitest run packages/host-parliament`.
+- **Bundle:** the Worker bundle with all three profiles is 772 KiB minified, of which cheerio and its parser about
+  200 KiB.
 - **Not built:** `bill-text`, which starts a browser and external programs. A core needs a way to say "this tool
   exists only where the host can run it" (Node, not Workers); the design is clear, the code is not written.
 
@@ -274,7 +298,7 @@ My suggestion is A now, B if you want it, C only if you ask for it.
 
 ## What we do not propose
 
-- No renamed tools, arguments, variables, endpoints or binaries; no change to the hosted Worker's address.
+- No renamed tools, arguments, variables, endpoints or binaries; no change to the hosted Workers' addresses.
 - Nothing for the Python servers (istat_mcp_server, opensdmx): a shared TypeScript core cannot reach them. What could
   be shared there is conventions (instance registry format, hint and untrusted-text rules), not code.
 - No large PR. If path B, the first PR is the `http.ts` split alone.

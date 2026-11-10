@@ -16,10 +16,11 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check": "npm run typecheck && npm run check:boundaries && npm run check:worker-bundle && npm test",
     "check:worker-bundle": "node scripts/check-worker-bundle.mjs",
-    "build": "npm run build -w @ondata-extended/host-vocab && npm run build:worker -w @ondata-extended/host-vocab && npm run build -w @ondata-extended/host-ckan && npm run build:worker -w @ondata-extended/host-ckan",
+    "build": "npm run build -w @ondata-extended/host-vocab && npm run build:worker -w @ondata-extended/host-vocab && npm run build -w @ondata-extended/host-ckan && npm run build:worker -w @ondata-extended/host-ckan && npm run build -w @ondata-extended/host-parliament && npm run build:worker -w @ondata-extended/host-parliament",
     "smoke:vocab": "npm run build && node scripts/smoke-vocab.mjs",
     "smoke:ckan": "npm run build -w @ondata-extended/host-ckan && node scripts/smoke-ckan.mjs",
     "deploy:ckan": "npm run build:worker -w @ondata-extended/host-ckan && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-ckan/wrangler.toml",
+    "deploy:parliament": "npm run build:worker -w @ondata-extended/host-parliament && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-parliament/wrangler.toml",
     "deploy:vocab": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml"
   },
   "engines": {

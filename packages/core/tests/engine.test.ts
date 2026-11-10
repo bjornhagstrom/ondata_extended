@@ -242,6 +242,50 @@ describe("createWorkerHandler", () => {
     vi.restoreAllMocks();
   });
 
+  it("answers POST /mcp as JSON by default and as an SSE stream with jsonResponse: false", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const make = (jsonResponse?: boolean) => createWorkerHandler<Record<string, never>>({
+      buildServer: () => {
+        const s = createMcpServer({ name: "w", version: "0" });
+        registerProfiles(s, [testProfile()], engine());
+        return s;
+      },
+      health: () => ({ status: "ok" }),
+      ...(jsonResponse === undefined ? {} : { jsonResponse })
+    });
+    const list = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+    const json = await make().fetch(call(list), {});
+    expect(json.headers.get("content-type")).toContain("application/json");
+    expect((await json.json() as { id: number }).id).toBe(1);
+    const sse = await make(false).fetch(call(list), {});
+    expect(sse.headers.get("content-type")).toBe("text/event-stream");
+    expect(sse.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const text = await sse.text();
+    expect(text).toMatch(/^event: message\n/m);
+    const data = text.split("\n").find((l) => l.startsWith("data: "))!;
+    expect(JSON.parse(data.slice(6)).id).toBe(1);
+    vi.restoreAllMocks();
+  });
+
+  it("logs a failed call as an error also when the answer is an SSE stream", async () => {
+    const log = vi.fn();
+    vi.spyOn(console, "log").mockImplementation(log);
+    const h = createWorkerHandler<Record<string, never>>({
+      buildServer: () => {
+        const s = createMcpServer({ name: "w", version: "0" });
+        registerProfiles(s, [testProfile()], engine());
+        return s;
+      },
+      health: () => ({ status: "ok" }),
+      logEntry: (tool, args) => pickTelemetryFields(tool, args, ["q"]),
+      jsonResponse: false
+    });
+    const res = await h.fetch(call({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "demo_fail", arguments: {} } }), {});
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    expect(JSON.parse(log.mock.calls.at(-1)![0])).toMatchObject({ status: "error", error_kind: "other" });
+    vi.restoreAllMocks();
+  });
+
   it("logs an error kind for a failed call", async () => {
     const log = vi.fn();
     const h = handler(log);

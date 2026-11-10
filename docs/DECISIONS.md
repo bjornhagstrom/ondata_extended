@@ -297,3 +297,20 @@ and parsed with cheerio. Decisions:
 - **Recording from the Camera's public sites** (`www.camera.it`, `documenti.camera.it`), 14 requests in all, gently;
   Senato never. The amendment lists are cumulative, so a future re-recording may change the counts the original's
   tests assert; they would then fail, as the original's live tests would.
+
+## 2026-11-10: parliament profile, round 4 (`packages/host-parliament`)
+
+The parliament profile as the original's server: the stdio binary `italianparliament-mcp` and a Worker with the
+original's routes (details: `docs/parliament-port.md`, "Round 4: host"; P9-P13 in `docs/test-parity.md`). Built and
+tested locally; **not deployed** (deploying it would send Cloudflare traffic to Senato, whose blocks do not decay;
+that needs Björn's decision). Decisions:
+
+- **Core hosts where they fit, a small router where the original differs.** `GET /`, `/health` and `POST /mcp` are
+  the core's `createWorkerHandler`; the original's preflight (200, `POST, OPTIONS`) and bare 404s differ from
+  ckan-mcp-server's and sit in a router in front. Two generic core options: `jsonResponse: false` (answer as an SSE
+  stream) and `runStdio(server, label?)` (no status line). A core fix to those two routes would not reach this host.
+- **One engine per isolate**, so the Senato throttle covers every request an isolate serves (tested).
+- **The core's upstream rate limit stays on by default** (P13), as on the other hosts; it can be turned off.
+- **No HTTP mode on Node and no service-notice field**, as the original; the info document and the 404 text are the
+  original's bytes (English, not in language files), as the CKAN landing page is ondata's.
+- **The binary loads the stdio module only** (`@ondata-extended/core/node/stdio`), so it does not need express.

@@ -31,6 +31,12 @@ export interface WorkerHostOptions<Env> {
   dataPoint?(entry: Record<string, unknown>): { blobs?: string[]; doubles?: number[]; indexes?: string[] };
   /** Added to every /mcp response (service notices); a function when they depend on the deployment's env. */
   extraHeaders?: Record<string, string> | ((env: Env) => Record<string, string>);
+  /**
+   * Answer POST /mcp as one JSON body (default) or, with false, as an SSE stream, the transport's
+   * default. The log line's status and error summary are read from a JSON body only; with an SSE
+   * answer they say "ok".
+   */
+  jsonResponse?: boolean;
 }
 
 const CORS = { "Access-Control-Allow-Origin": "*" };
@@ -83,7 +89,7 @@ export function createWorkerHandler<Env>(options: WorkerHostOptions<Env>) {
 
         try {
           const server = options.buildServer(env);
-          const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+          const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: options.jsonResponse ?? true });
           await server.connect(transport);
 
           let logEntry: Record<string, unknown> | null = null;
@@ -104,7 +110,11 @@ export function createWorkerHandler<Env>(options: WorkerHostOptions<Env>) {
             logEntry.duration_ms = durationMs;
             let status = "ok";
             try {
-              const rj = (await response.clone().json()) as Record<string, unknown>;
+              // A JSON answer, or (jsonResponse: false) an SSE stream whose last `data:` line holds it.
+              const body = await response.clone().text();
+              const sse = (response.headers.get("content-type") ?? "").includes("text/event-stream");
+              const data = sse ? body.split("\n").filter((l) => l.startsWith("data: ")).at(-1)?.slice(6) : body;
+              const rj = JSON.parse(data ?? "") as Record<string, unknown>;
               const result = rj?.result as Record<string, unknown> | undefined;
               if (result?.isError || rj?.error) {
                 status = "error";

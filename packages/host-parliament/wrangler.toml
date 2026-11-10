@@ -1,0 +1,12 @@
+# The parliament Worker of ondata-extended, a test deployment (docs/parliament-port.md, "Round 4: host").
+# Deploy: npm run deploy:parliament (needs `npx wrangler login` once; the script builds dist/worker.js first).
+# Not deployed yet: deploying needs Björn's ok. No analytics binding: the original's Worker has none.
+name = "ondata-extended-parliament"
+main = "dist/worker.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+# No usage telemetry to Cloudflare from wrangler (nothing leaves the machine unasked).
+send_metrics = false
+
+[observability]
+enabled = true

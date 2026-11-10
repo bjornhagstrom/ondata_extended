@@ -45,7 +45,7 @@ Mention italianparliament-mcp inside it and offer to open a pointer issue there 
 
 1. Summary and the question asked (yes/no and which path).
 2. Who is asking, and disclosure.
-3. What exists: core, contract, three profiles, two hosts, a test deployment.
+3. What exists: core, contract, three profiles, three hosts (two deployed as test instances: CKAN and vocabulary).
 4. What it gives ondata and the maintainer (the main section).
 5. What it costs the maintainer (as plainly as section 4).
 6. Architecture sketch: layers, a tool call's path, the contract in brief.
@@ -67,8 +67,8 @@ Mention italianparliament-mcp inside it and offer to open a pointer issue there 
 
 ## Open items found while drafting
 
-- The parliament section depends on the parliament rounds in progress (2026-11-10); refresh it from
-  `docs/parliament-port.md` when they are committed.
+- The parliament section reflects rounds 1-4 (2026-11-10: six tools, the host). Refresh it from
+  `docs/parliament-port.md` if more is built before posting.
 - `bill-text` (Node-only, starts a browser) is not built; the issue describes capability gating as designed, not as
   shown, unless Björn approves building it first.
 - Upstream backlog items (ondata's `tsc` running out of memory; a prompt naming `ckan_resource_show`) are separate,
