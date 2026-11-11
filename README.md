@@ -26,8 +26,15 @@ Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 
 Status: a working prototype, published for review by the maintainer of ondata's MCP servers; pre-release, no
 packages published, no stability promise for the profile contract yet (0.x; the plan to 1.0 is
-`docs/contract-stability.md`). Not affiliated with or endorsed by the
-onData association. All credit for the security hardening and the ported servers goes to their authors (`NOTICE.md`).
+`docs/contract-stability.md`). Not affiliated with or endorsed by the onData association. All credit for the
+security hardening and the ported servers goes to their authors (`NOTICE.md`).
+
+Outcome of the proposal ([ondata/ckan-mcp-server#590](https://github.com/ondata/ckan-mcp-server/issues/590)):
+ondata does not adopt a shared core for now. The maintainer agreed to one small step, splitting the backend-free
+HTTP safety out of `src/utils/http.ts` in ckan-mcp-server, proposed as
+[ondata/ckan-mcp-server#591](https://github.com/ondata/ckan-mcp-server/pull/591). The question is to be revisited
+when this core runs in production with at least two profiles, or if a third TypeScript server is needed
+(`docs/DECISIONS.md`, 2026-11-10).
 
 Written with AI assistance (Claude, Anthropic) under the direction and review of Björn Hagström; the claims about
 behaviour in `docs/test-parity.md` and the issue draft name the command that checks them.
