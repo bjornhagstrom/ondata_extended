@@ -1,7 +1,6 @@
 <!--
-DRAFT PR, not opened. Target: ondata/ckan-mcp-server, branch refactor/split-http-utils from the fork
-bjornhagstrom/ckan-mcp-server. Local clone: ~/Developer/ondata-ckan-pr, commit e99adf4. Nothing is pushed or opened
-without Björn's ok.
+OPENED 2026-11-11 as https://github.com/ondata/ckan-mcp-server/pull/591 from bjornhagstrom/ckan-mcp-server,
+branch refactor/split-http-utils, commit e99adf4. Posted with lines unwrapped and the Claude Code attribution line.
 Title: refactor: split backend-free HTTP safety out of utils/http.ts
 -->
 
