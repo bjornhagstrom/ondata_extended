@@ -390,3 +390,19 @@ open.
   still reach it through the `http.ts` re-exports and could move next to `safe-http.ts` once it has its own consumers.
 - The security details for italianparliament-mcp were sent privately on 2026-11-11, as agreed on #590.
 - Next step upstream: Björn's decision, each step agreed with Andrea before a PR.
+
+## 2026-11-12: Andrea's answer on step 2
+
+On #590 (comment 6820640188), Andrea Borruso:
+- **Yes to step 2**, kept to one purpose: `safe-http.ts` free of CKAN.
+- **Settings passed explicitly, per call:** `http.ts` reads the `CKAN_*` variables and hands them to the
+  `safe-http.ts` functions. No module-level `configure()` with mutable state in the security code (a missing or late
+  call is easy to miss).
+- **Messages byte-identical**, shown by the unchanged tests. The SSRF tests stay where they are for this step.
+- **He stops after step 2.** Steps 3 and 4 (hint texts out of the HTTP layer, the profile type) lead towards the
+  shared core, and his answer on that is unchanged; his "looking forward to the next steps" on #591 was broader than
+  he meant. Revisit only on his earlier conditions: the core in production with two profiles, or a third TypeScript
+  server.
+
+So: step 2 is the last upstream step for now. Our core continues on its own (path C in practice).
+
