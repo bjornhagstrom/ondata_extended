@@ -1,5 +1,5 @@
 <!--
-OPENED 2026-11-11 as https://github.com/ondata/ckan-mcp-server/pull/591 from bjornhagstrom/ckan-mcp-server,
+MERGED 2026-11-11 23:06 UTC (approved by aborruso, review 5866510332). OPENED 2026-11-11 as https://github.com/ondata/ckan-mcp-server/pull/591 from bjornhagstrom/ckan-mcp-server,
 branch refactor/split-http-utils, commit e99adf4. Posted with lines unwrapped and the Claude Code attribution line.
 Title: refactor: split backend-free HTTP safety out of utils/http.ts
 -->

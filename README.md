@@ -31,8 +31,8 @@ security hardening and the ported servers goes to their authors (`NOTICE.md`).
 
 Outcome of the proposal ([ondata/ckan-mcp-server#590](https://github.com/ondata/ckan-mcp-server/issues/590)):
 ondata does not adopt a shared core for now. The maintainer agreed to one small step, splitting the backend-free
-HTTP safety out of `src/utils/http.ts` in ckan-mcp-server, proposed as
-[ondata/ckan-mcp-server#591](https://github.com/ondata/ckan-mcp-server/pull/591). The question is to be revisited
+HTTP safety out of `src/utils/http.ts` in ckan-mcp-server, merged as
+[ondata/ckan-mcp-server#591](https://github.com/ondata/ckan-mcp-server/pull/591) (2026-11-11). The question is to be revisited
 when this core runs in production with at least two profiles, or if a third TypeScript server is needed
 (`docs/DECISIONS.md`, 2026-11-10).
 

@@ -379,3 +379,14 @@ Andrea Borruso answered on #590 the same day:
 Next (Björn, 2026-11-10): a short thank-you reply on #590, then the `http.ts` split PR. Both, and the private report,
 leave the machine only with Björn's ok each time. What happens to our core (path C in practice) is Björn's decision,
 open.
+
+## 2026-11-11: #591 merged; private report sent
+
+- `ondata/ckan-mcp-server#591` (the `http.ts` split, first step of path B) was approved and merged by Andrea Borruso
+  on 2026-11-11. He checked the verbatim move, the unchanged 20 exports and the absence of a circular import, and
+  wrote that he looks forward to the next steps of path B.
+- His two non-blocking notes for those steps: `safe-http.ts` still reads the `CKAN_*` settings and names CKAN and
+  `sparql_query` in its messages, so making it backend-free means injecting that configuration; and the SSRF tests
+  still reach it through the `http.ts` re-exports and could move next to `safe-http.ts` once it has its own consumers.
+- The security details for italianparliament-mcp were sent privately on 2026-11-11, as agreed on #590.
+- Next step upstream: Björn's decision, each step agreed with Andrea before a PR.
