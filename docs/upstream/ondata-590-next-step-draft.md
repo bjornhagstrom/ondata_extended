@@ -1,5 +1,6 @@
 <!--
-DRAFT comment, not posted. Target: ondata/ckan-mcp-server#590 (the discussion issue; #591 is merged).
+POSTED 2026-11-12: https://github.com/ondata/ckan-mcp-server/issues/590#issuecomment-6819172899 (lines unwrapped).
+Was: DRAFT comment. Target: ondata/ckan-mcp-server#590 (the discussion issue; #591 is merged).
 Purpose: ask, softly, whether Andrea wants step 2 of path B, based on his own notes on #591; easy to decline.
 Sources: his #591 review ("Two notes for the next steps, not blocking"; note 2: "when the module gets its own
 consumers"), his merge comment ("looking forward to the next steps of path B"), his #590 answer ("it may give you a
@@ -20,9 +21,9 @@ how I would do it, in case you want it. If you would rather stop here, that is c
 - **No export changes:** `utils/http.js` keeps the same names and signatures, so no importer and no test changes;
   only `safe-http.ts`'s own signatures change. The `CKAN_*` variables, defaults and messages stay exactly as they
   are.
-- The settings are read when a guard runs, as today, not once at load: the tests set `CKAN_PRIVATE_HOSTS` and
-  `CKAN_ALLOWED_DOMAINS` per test, and the safe agents are built once and check private hosts at lookup time. So
-  getters or per-call settings, not a snapshot.
+- Each setting is read when it is today (the size caps at load, the others when a guard runs), not all once at
+  load: the tests set `CKAN_PRIVATE_HOSTS` and `CKAN_ALLOWED_DOMAINS` per test, and the safe agents are built once
+  and check private hosts at lookup time. So getters or per-call settings, not a snapshot.
 - `npm test`, `npm run smoke` (smoke file untouched), `npm run build` and `npm run build:worker` green. The CKAN
   and `sparql_query` mentions in comments move to `http.ts` or become generic.
 
