@@ -1,5 +1,6 @@
 <!--
-DRAFT PR, not opened. Target: ondata/ckan-mcp-server, branch refactor/inject-safe-http-settings from the fork
+OPENED 2026-11-12 as https://github.com/ondata/ckan-mcp-server/pull/594 (commit cb9464f, lines unwrapped, Claude Code attribution line).
+Was: DRAFT PR. Target: ondata/ckan-mcp-server, branch refactor/inject-safe-http-settings from the fork
 bjornhagstrom/ckan-mcp-server. Local clone: ~/Developer/ondata-ckan-pr, commit cb9464f on main 205ba4a (amended from 83621d5 after the Codex review).
 Agreed on #590 (comment 6820640188): settings passed explicitly per call, no configure(), messages byte-identical,
 SSRF tests stay; Andrea stops after this step. Nothing is pushed or opened without Björn's ok.
