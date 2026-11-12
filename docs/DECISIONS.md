@@ -406,3 +406,15 @@ On #590 (comment 6820640188), Andrea Borruso:
 
 So: step 2 is the last upstream step for now. Our core continues on its own (path C in practice).
 
+
+## 2026-11-12: step 2 merged (#594)
+
+Andrea approved and merged #594 the same day
+([review](https://github.com/ondata/ckan-mcp-server/pull/594#pullrequestreview-5875531397)). He checked it against
+the base himself: the same 20 exports, no `process.env` or CKAN in `safe-http.ts`, read timing as before, defaults
+that fail closed, messages unchanged, tests and both builds green.
+
+- **Path B upstream is done** as far as he wants it: `safe-http.ts` is a backend-free module in ondata's server.
+- **Open, optional, his call:** a nit (the redundant `const raw = privateHosts;` in `isPrivateHostAllowed`) and the
+  missing test that `CKAN_PRIVATE_HOSTS` reaches the axios agents' lookup ("can come separately if you feel like
+  it"). Either would be one small PR; not started.

@@ -1,4 +1,5 @@
 <!--
+MERGED 2026-11-12 13:49 UTC (approved by aborruso, review 5875531397; nit: redundant `const raw = privateHosts;` in isPrivateHostAllowed; the CKAN_PRIVATE_HOSTS agent-lookup test may come separately).
 OPENED 2026-11-12 as https://github.com/ondata/ckan-mcp-server/pull/594 (commit cb9464f, lines unwrapped, Claude Code attribution line).
 Was: DRAFT PR. Target: ondata/ckan-mcp-server, branch refactor/inject-safe-http-settings from the fork
 bjornhagstrom/ckan-mcp-server. Local clone: ~/Developer/ondata-ckan-pr, commit cb9464f on main 205ba4a (amended from 83621d5 after the Codex review).
