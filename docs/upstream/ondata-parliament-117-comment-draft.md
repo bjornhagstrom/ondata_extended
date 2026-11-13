@@ -6,7 +6,7 @@ parity.test.ts, cases.ts; 133 recordings, 514,494 bytes gzipped) and italianparl
 Post only with Björn's ok, after mcp-reviewer. Post with lines unwrapped. No Claude Code line.
 -->
 
-I saw this issue while working on the parity tests for my port of your tools, and I built something close to it there, so here is what I learned, in case it helps. If you would rather do it yourself, or not at all, that is completely fine.
+I saw this issue while working on the parity tests for my port of your tools, and I built something close to it there, so here is what I learned, in case it helps.
 
 **What I have.** A record/replay harness that runs your server (`fd46810`) and my port side by side on 133 cases ([`tests/parity/`](https://github.com/bjornhagstrom/ondata_extended/tree/main/packages/profile-parliament/tests/parity)). It works at the `fetch` level, not inside `sparqlRequest`, because it also covers the Camera HTML pages. One difference matters here: **it has never sent a request to any senato.it host.** Every Senato answer in it is synthetic: the successful ones in the shape of Virtuoso's SPARQL JSON, the failures as HTTP errors. That is enough to compare two implementations, but not to test against the real Senato, which is what this issue needs. So the recording at release time, with real Senato requests, would stay yours.
 
