@@ -20,6 +20,4 @@ I saw this issue while working on the parity tests for my port of your tools, an
 
 **What I can offer:** your design as a PR, done as you describe it (`SPARQL_FIXTURES=record|replay` in `src/core/client.ts`, a file per `sha256(query)`, no network in replay), without bringing my harness in. Your proposal covers SPARQL only; if you want `camera-amendments` replayed too, the same idea works for its HTML pages from www.camera.it and documenti.camera.it, which my harness already records live. Or nothing beyond this comment, if you prefer.
 
-Being open about my side: if the fixtures land in your repo, I would like to read them in my parity tests, so that my port is checked against real Senato answers without ever contacting the Senato myself.
-
 AI assistance: prepared with Claude (Anthropic) under my direction and review.
