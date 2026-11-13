@@ -1,5 +1,6 @@
 <!--
-DRAFT comment, not posted. Target: ondata/italianparliament-mcp#117 (Andrea's own issue: record SPARQL answers once,
+POSTED 2026-11-14: https://github.com/ondata/italianparliament-mcp/issues/117#issuecomment-6867661585 (lines unwrapped).
+Was: DRAFT comment. Target: ondata/italianparliament-mcp#117 (Andrea's own issue: record SPARQL answers once,
 replay them offline). Purpose: share what we built for the same tools, offer his design as a PR, easy to decline.
 Facts checked 2026-11-14 against packages/profile-parliament/tests/parity/ (record.test.ts, replay.ts,
 parity.test.ts, cases.ts; 133 recordings, 514,494 bytes gzipped) and italianparliament-mcp fd46810 (MIT).
