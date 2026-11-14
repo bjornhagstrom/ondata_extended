@@ -1,4 +1,5 @@
-# The CKAN ecosystem proof of concept (docs/ckan-ecosystem-profile.md). Not deployed; deploying needs Björn's ok.
+# The CKAN ecosystem proof of concept (docs/ckan-ecosystem-profile.md): a test Worker on workers.dev (2026-11-14).
+# Deploy: npm run deploy:ecosystem (Björn's ok each time); check: SMOKE_URL=https://<worker>/mcp node scripts/smoke-ecosystem.mjs
 name = "ondata-extended-ckan-ecosystem"
 main = "dist/worker.js"
 compatibility_date = "2026-10-01"

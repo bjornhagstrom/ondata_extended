@@ -1,6 +1,6 @@
 # The CKAN ecosystem profile (proof of concept)
 
-Status: built 2026-11-14, not deployed. Decision and review: `docs/DECISIONS.md`, 2026-11-14.
+Status: built 2026-11-14; a test Worker on workers.dev since 2026-11-14 (`npm run deploy:ecosystem`). Decision and review: `docs/DECISIONS.md`, 2026-11-14.
 
 ## Purpose
 
@@ -52,7 +52,8 @@ catalog's hand-entered fields are missing.
   `ECOSYSTEM_ALLOWED_DOMAINS=raw.githubusercontent.com`, or as a connector in Claude Code:
   `claude mcp add ecosystem -e ECOSYSTEM_ALLOWED_DOMAINS=raw.githubusercontent.com -- node <repo>/packages/host-ckan-ecosystem/dist/index.js`.
 - Checks: `npm run check`; `npm run smoke:ecosystem` (known answers, live README reads).
-- A Worker is prepared (`packages/host-ckan-ecosystem/wrangler.toml`), not deployed; that needs Björn's ok.
+- The test Worker: `npm run deploy:ecosystem` (Björn's ok each time), then
+  `SMOKE_URL=https://<worker>/mcp node scripts/smoke-ecosystem.mjs`.
 - Refreshing the data: rebuild the index, run the tests and the smoke file, commit the index with the commit message
   naming datHere's commit.
 

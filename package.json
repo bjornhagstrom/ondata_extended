@@ -25,7 +25,8 @@
     "deploy:vocab": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml",
     "deploy:vocab:production": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml --env production",
     "smoke:ecosystem": "npm run build && node scripts/smoke-ecosystem.mjs",
-    "build:ecosystem-index": "node scripts/build-ckan-ecosystem-index.mjs"
+    "build:ecosystem-index": "node scripts/build-ckan-ecosystem-index.mjs",
+    "deploy:ecosystem": "npm run build:worker -w @ondata-extended/host-ckan-ecosystem && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-ckan-ecosystem/wrangler.toml"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
