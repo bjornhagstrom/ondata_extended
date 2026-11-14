@@ -1,0 +1,16 @@
+{
+  "name": "@ondata-extended/profile-ckan-ecosystem",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CKAN ecosystem profile: search CKAN extensions and the portals running them (datHere's POSE crawl data and GitHub).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ondata-extended/core": "0.1.0",
+    "@ondata-extended/profile-contract": "0.1.0",
+    "zod": "^3.25.76"
+  }
+}

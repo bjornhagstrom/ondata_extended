@@ -1,0 +1,12 @@
+{
+  "about": "Known-answer cases for the CKAN ecosystem server (checked 2026-11-14). Stable facts, not counts: the index changes weekly. Only the get_extension cases read GitHub (a README each).",
+  "cases": [
+    { "name": "search 'harvest dcat' finds ckanext-dcat", "tool": "ecosystem_search_extensions", "args": { "query": "harvest dcat", "limit": 5 }, "expect": { "textContains": "\"repo\":\"ckan/ckanext-dcat\"" } },
+    { "name": "search by the plugin name scheming_datasets puts ckanext-scheming first", "tool": "ecosystem_search_extensions", "args": { "query": "scheming_datasets", "limit": 1 }, "expect": { "textContains": "\"repo\":\"ckan/ckanext-scheming\"" } },
+    { "name": "ckanext-dcat's card has its README opening", "tool": "ecosystem_get_extension", "args": { "extension": "ckan/ckanext-dcat" }, "expect": { "textContains": "serialized RDF documents" } },
+    { "name": "ckanext-qa's README is read from README.rst", "tool": "ecosystem_get_extension", "args": { "extension": "ckan/ckanext-qa" }, "expect": { "textContains": "openness score" } },
+    { "name": "portals running xloader include data.virginia.gov", "tool": "ecosystem_portals_using", "args": { "plugin": "xloader", "limit": 500 }, "expect": { "textContains": "https://data.virginia.gov" } },
+    { "name": "the overview names the ckanext-dcat family", "tool": "ecosystem_overview", "args": {}, "expect": { "textContains": "ckanext-dcat" } },
+    { "name": "an unknown extension is an error with a hint", "tool": "ecosystem_get_extension", "args": { "extension": "nope/nothing" }, "expect": { "isError": true, "textContains": "Use ecosystem_search_extensions" } }
+  ]
+}

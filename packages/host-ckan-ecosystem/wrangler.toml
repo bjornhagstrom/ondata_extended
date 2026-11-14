@@ -1,0 +1,12 @@
+# The CKAN ecosystem proof of concept (docs/ckan-ecosystem-profile.md). Not deployed; deploying needs Björn's ok.
+name = "ondata-extended-ckan-ecosystem"
+main = "dist/worker.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+send_metrics = false
+
+[observability]
+enabled = true
+
+[vars]
+ECOSYSTEM_ALLOWED_DOMAINS = "raw.githubusercontent.com"

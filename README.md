@@ -22,6 +22,9 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
   `PARLIAMENT_*`. Not deployed.
 - `packages/profile-example` and `packages/host-example`: the worked example of `docs/writing-a-profile.md`, two
   `akn_*` tools over the Italian Senate's Akoma Ntoso bulk data on GitHub. Not deployed.
+- `packages/profile-ckan-ecosystem` and `packages/host-ckan-ecosystem`: a proof of concept for the CKAN Ecosystem
+  Catalog, four `ecosystem_*` tools that search CKAN extensions and the portals running them, from datHere's open
+  crawl data and GitHub (`docs/ckan-ecosystem-profile.md`). Not deployed.
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 

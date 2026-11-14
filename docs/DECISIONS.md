@@ -439,3 +439,29 @@ Andrea set for revisiting a shared core (the core in production with two profile
   annotation hints, checked against `packages/profile-skos/tests/frozen-tools.json` (fails on any change; tested by
   renaming a tool in the file). Titles and descriptions are not frozen. A breaking change needs a decision and migration help.
 - Operating guide for users and for deploys, rollback, logs and adding a vocabulary: `docs/vocab-service.md`.
+
+## 2026-11-14: a CKAN ecosystem profile, a proof of concept for datHere
+
+- **Why**: CKAN's extension registry, the CKAN Ecosystem Catalog (`ecosystem.ckan.org`, run by datHere in the POSE
+  project), has no MCP server, and its CKAN API sits behind a Cloudflare bot challenge that datHere's own pipeline
+  passes with a secret token. Björn wants a proof of concept for datHere, read-only search only. We do not scrape the
+  catalog or route around the challenge.
+- **What**: `packages/profile-ckan-ecosystem` (tools `ecosystem_search_extensions`, `ecosystem_get_extension`,
+  `ecosystem_portals_using`, `ecosystem_overview`) and `packages/host-ckan-ecosystem`. Prefix `ecosystem_` (Björn),
+  not `ckanext_`, to stay clear of the CKAN profile's `ckan_`. Not deployed.
+- **Data**: a committed index, `data/index.json`, built by `npm run build:ecosystem-index` from datHere's open
+  pipeline files (`dathere/pose-ckanext-metadata`, MIT) at one pinned commit, plus each repository's GitHub
+  description and topics. Rebuilt by hand, weekly at most. The build fails when a field it reads is missing. README
+  openings are not in the index: `ecosystem_get_extension` reads them at call time, attributed, wrapped as untrusted.
+- **Changed after Fable's review of the proposal** (2026-11-14, verdict "go with changes"): no run-time read of
+  `dashboard.json` (1.7 MB; above the core cache's 1 MB entry cap, and a wire format datHere change often); the index
+  committed, not git-ignored, so a clone builds and the bundle is traceable; README text kept out of the bundle
+  (licences, prompt injection); datHere's own push-recency buckets (`active`, `recent`, `quiet`, `still`,
+  `archived`) instead of an invented maintenance status; co-installation folded into the extension card with a note
+  that datHere compute it for the most used plugins only; four tools instead of six (no portal card, no separate
+  used-with tool).
+- **Exception to rule 6** (all outbound traffic via the core HTTP client): the index build script calls GitHub
+  directly. It is a maintainer's build tool run by hand with a local token, not part of any server; the token is read
+  from the environment and never written out (the index test checks for token patterns).
+- **Open**: Fable also proposed making first contact a small PR to datHere's pipeline adding repository descriptions
+  and topics, so the profile could read them from datHere's own files. That is outward-facing and Björn's call.

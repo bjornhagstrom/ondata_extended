@@ -31,6 +31,14 @@ The test recordings in `packages/profile-example/tests/fixtures/github` are file
 https://github.com/SenatoDellaRepubblica/AkomaNtosoBulkData, licensed CC BY 4.0
 (https://creativecommons.org/licenses/by/4.0/), recorded unchanged on 2026-11-10.
 
+The CKAN ecosystem index `packages/profile-ckan-ecosystem/data/index.json` is derived from the CKAN ecosystem
+crawl data of **pose-ckanext-metadata** by datHere, https://github.com/dathere/pose-ckanext-metadata, MIT License
+(the commit is named in the file), with each extension repository's GitHub description and topics (short texts by
+the repositories' authors, quoted for search and attributed by repository). The test recordings in
+`packages/profile-ckan-ecosystem/tests/fixtures/github` are the README of `ckan/ckanext-qa` (its LICENSE: MIT,
+Copyright (c) 2015 Open Knowledge & Crown Copyright; the README states no other licence) and that repository's
+404 answer for README.md, recorded unchanged on 2026-11-14 as test input; they are not part of the built servers.
+
 ## Third-party dependencies
 
 | Package | License | Copyright |

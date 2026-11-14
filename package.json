@@ -16,14 +16,16 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check": "npm run typecheck && npm run check:boundaries && npm run check:worker-bundle && npm test",
     "check:worker-bundle": "node scripts/check-worker-bundle.mjs",
-    "build": "npm run build -w @ondata-extended/host-vocab && npm run build:worker -w @ondata-extended/host-vocab && npm run build -w @ondata-extended/host-ckan && npm run build:worker -w @ondata-extended/host-ckan && npm run build -w @ondata-extended/host-parliament && npm run build:worker -w @ondata-extended/host-parliament && npm run build -w @ondata-extended/host-example && npm run build:worker -w @ondata-extended/host-example",
+    "build": "npm run build -w @ondata-extended/host-vocab && npm run build:worker -w @ondata-extended/host-vocab && npm run build -w @ondata-extended/host-ckan && npm run build:worker -w @ondata-extended/host-ckan && npm run build -w @ondata-extended/host-parliament && npm run build:worker -w @ondata-extended/host-parliament && npm run build -w @ondata-extended/host-example && npm run build:worker -w @ondata-extended/host-example && npm run build -w @ondata-extended/host-ckan-ecosystem && npm run build:worker -w @ondata-extended/host-ckan-ecosystem",
     "smoke:vocab": "npm run build && node scripts/smoke-vocab.mjs",
     "smoke:example": "npm run build -w @ondata-extended/host-example && node scripts/smoke-example.mjs",
     "smoke:ckan": "npm run build -w @ondata-extended/host-ckan && node scripts/smoke-ckan.mjs",
     "deploy:ckan": "npm run build:worker -w @ondata-extended/host-ckan && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-ckan/wrangler.toml",
     "deploy:parliament": "npm run build:worker -w @ondata-extended/host-parliament && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-parliament/wrangler.toml",
     "deploy:vocab": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml",
-    "deploy:vocab:production": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml --env production"
+    "deploy:vocab:production": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml --env production",
+    "smoke:ecosystem": "npm run build && node scripts/smoke-ecosystem.mjs",
+    "build:ecosystem-index": "node scripts/build-ckan-ecosystem-index.mjs"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
