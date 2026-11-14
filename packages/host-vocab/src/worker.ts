@@ -11,7 +11,7 @@ import type { Engine } from "@ondata-extended/core";
 import en from "./i18n/en.json";
 import sv from "./i18n/sv.json";
 
-type Env = ConfigSource & { ANALYTICS?: AnalyticsEngineDataset };
+type Env = ConfigSource & { ANALYTICS?: AnalyticsEngineDataset; VOCAB_SERVICE_STATUS?: string };
 type Strings = typeof en;
 const LANGS: Record<string, Strings> = { en, sv };
 
@@ -23,7 +23,15 @@ function pickLang(request: Request): "en" | "sv" {
   return /^sv\b/i.test(request.headers.get("accept-language") ?? "") ? "sv" : "en";
 }
 
-export function landingPage(request: Request): Response {
+/**
+ * Which status line the landing page shows: `VOCAB_SERVICE_STATUS=service` for the production
+ * Worker, anything else (or unset) for a test instance, so a test deployment never claims more.
+ */
+function statusText(t: Strings, env?: Env): string {
+  return env?.VOCAB_SERVICE_STATUS === "service" ? t.statusService : t.statusTest;
+}
+
+export function landingPage(request: Request, env?: Env): Response {
   const lang = pickLang(request);
   const t = LANGS[lang];
   const other = lang === "sv" ? "en" : "sv";
@@ -34,7 +42,7 @@ export function landingPage(request: Request): Response {
 <title>${esc(t.title)}</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#1a1a1a;background:#fff}code{background:#f2f2f2;padding:0 .25rem;border-radius:3px}@media (prefers-color-scheme:dark){body{color:#eee;background:#141414}code{background:#2a2a2a}}</style></head>
 <body><p><a href="?lang=${other}">${esc(t.language)}</a></p><h1>${esc(t.title)}</h1><p>${esc(t.intro)}</p>
 <h2>${esc(t.endpoint)}</h2><p><code>${esc(endpoint)}</code></p><h2>${esc(t.tools)}</h2><ul>${tools}</ul>
-<h2>${esc(t.vocabularies)}</h2><ul>${vocabs}</ul><p><small>${esc(t.status)} ${esc(SERVER_NAME)} ${esc(SERVER_VERSION)}</small></p></body></html>`;
+<h2>${esc(t.vocabularies)}</h2><ul>${vocabs}</ul><p><small>${esc(statusText(t, env))} ${esc(SERVER_NAME)} ${esc(SERVER_VERSION)}</small></p></body></html>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Language": lang } });
 }
 
@@ -54,7 +62,7 @@ export default createWorkerHandler<Env>({
     prompts: profile.prompts?.length ?? 0,
     runtime: "cloudflare-workers"
   }),
-  landing: (request) => landingPage(request),
+  landing: (request, env) => landingPage(request, env),
   logEntry: (tool, args) => pickTelemetryFields(tool, args, profile.telemetryFields),
   analytics: (env) => env.ANALYTICS,
   dataPoint: (entry) => ({

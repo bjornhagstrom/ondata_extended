@@ -7,6 +7,7 @@
  *
  *   npm run smoke:vocab            all cases
  *   npm run smoke:vocab -- broader only cases whose name matches
+ *   SMOKE_URL=https://<worker>/mcp node scripts/smoke-vocab.mjs   against a deployed server (after a deploy)
  */
 import { readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -20,24 +21,30 @@ const FILTER = process.argv[2]?.toLowerCase();
 const { cases } = JSON.parse(readFileSync(join(HOST, "tests/smoke/cases.json"), "utf8"));
 const selected = FILTER ? cases.filter((c) => c.name.toLowerCase().includes(FILTER)) : cases;
 
+// SMOKE_URL: run against a deployed server instead of starting the local binary.
+const REMOTE = process.env.SMOKE_URL;
+const MCP_URL = REMOTE ?? `http://127.0.0.1:${PORT}/mcp`;
 let stderr = "";
 let exited = null;
-const server = spawn("node", [join(HOST, "dist/index.js")], {
+const server = REMOTE ? null : spawn("node", [join(HOST, "dist/index.js")], {
   env: { ...process.env, TRANSPORT: "http", PORT: String(PORT), VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu" },
   stdio: ["ignore", "ignore", "pipe"]
 });
-server.stderr.on("data", (c) => { stderr += c; });
-server.on("exit", (code, signal) => { exited = signal ?? `code ${code}`; });
-process.on("exit", () => server.kill());
+server?.stderr.on("data", (c) => { stderr += c; });
+server?.on("exit", (code, signal) => { exited = signal ?? `code ${code}`; });
+process.on("exit", () => server?.kill());
 
 let id = 0;
 async function rpc(method, params) {
-  const res = await fetch(`http://127.0.0.1:${PORT}/mcp`, {
+  const res = await fetch(MCP_URL, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params })
   });
-  return res.json();
+  const body = await res.text();
+  // A JSON answer, or an SSE stream whose last `data:` line holds it.
+  const sse = (res.headers.get("content-type") ?? "").includes("text/event-stream");
+  return JSON.parse(sse ? body.split("\n").filter((l) => l.startsWith("data: ")).at(-1)?.slice(6) ?? "" : body);
 }
 
 async function waitReady(ms = 15000) {

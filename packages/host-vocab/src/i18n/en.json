@@ -4,6 +4,7 @@
   "endpoint": "MCP endpoint",
   "tools": "Tools",
   "vocabularies": "Vocabularies",
-  "status": "Status: test service. Not affiliated with the onData association; the engine is derived from their ckan-mcp-server (MIT).",
+  "statusTest": "Status: test service. Not affiliated with the onData association; the engine is derived from their ckan-mcp-server (MIT).",
+  "statusService": "Status: a private service for invited users. Not affiliated with the onData association; the engine is derived from their ckan-mcp-server (MIT).",
   "language": "Svenska"
 }

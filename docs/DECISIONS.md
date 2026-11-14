@@ -418,3 +418,24 @@ that fail closed, messages unchanged, tests and both builds green.
 - **Open, optional, his call:** a nit (the redundant `const raw = privateHosts;` in `isPrivateHostAllowed`) and the
   missing test that `CKAN_PRIVATE_HOSTS` reaches the axios agents' lookup ("can come separately if you feel like
   it"). Either would be one small PR; not started.
+
+## 2026-11-14: the vocabulary service goes to production
+
+Björn: build on the core with the TemaTres profile as a production service. This is also the path to the condition
+Andrea set for revisiting a shared core (the core in production with two profiles). Björn's decisions:
+
+- **Vocabularies: an approved list only.** The production Worker reaches only the vocabularies in
+  `KNOWN_VOCABULARIES` and `VOCAB_ALLOWED_DOMAINS` (today `begrepp.hagstrom.nu`); others are added one at a time,
+  each with fixtures and a smoke case. Not an open proxy to any TemaTres, unlike ondata's open CKAN Worker.
+- **Hosting: a Cloudflare Worker on an own domain.** `[env.production]` in `packages/host-vocab/wrangler.toml`,
+  Worker `vocab-mcp`, deployed with `npm run deploy:vocab:production`; the test Worker `ondata-extended-vocab` stays
+  for trying changes. The own domain needs its DNS zone on the Cloudflare account; `hagstrom.nu` is on Loopia
+  (checked 2026-11-14), so the route is prepared but commented out until the domain is settled. Until then the
+  Worker answers on workers.dev.
+- **Users: Björn and invited users.** The URL is shared, not announced; no access control (public vocabulary
+  content; the allowlist and the core's upstream rate limit bound what a caller can do). The landing page says
+  "a private service for invited users" when `VOCAB_SERVICE_STATUS=service`, and "test service" otherwise.
+- **The eight `vocab_` tools are frozen**: names, arguments, types, ranges, defaults, required arguments and
+  annotation hints, checked against `packages/profile-skos/tests/frozen-tools.json` (fails on any change; tested by
+  renaming a tool in the file). Titles and descriptions are not frozen. A breaking change needs a decision and migration help.
+- Operating guide for users and for deploys, rollback, logs and adding a vocabulary: `docs/vocab-service.md`.

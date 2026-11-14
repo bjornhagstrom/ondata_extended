@@ -22,7 +22,8 @@
     "smoke:ckan": "npm run build -w @ondata-extended/host-ckan && node scripts/smoke-ckan.mjs",
     "deploy:ckan": "npm run build:worker -w @ondata-extended/host-ckan && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-ckan/wrangler.toml",
     "deploy:parliament": "npm run build:worker -w @ondata-extended/host-parliament && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-parliament/wrangler.toml",
-    "deploy:vocab": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml"
+    "deploy:vocab": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml",
+    "deploy:vocab:production": "npm run build:worker -w @ondata-extended/host-vocab && WRANGLER_SEND_METRICS=false wrangler deploy -c packages/host-vocab/wrangler.toml --env production"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

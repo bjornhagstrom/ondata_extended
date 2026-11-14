@@ -4,6 +4,7 @@
   "endpoint": "MCP-adress",
   "tools": "Verktyg",
   "vocabularies": "Vokabulärer",
-  "status": "Status: testtjänst. Inte knuten till föreningen onData; motorn bygger på deras ckan-mcp-server (MIT).",
+  "statusTest": "Status: testtjänst. Inte knuten till föreningen onData; motorn bygger på deras ckan-mcp-server (MIT).",
+  "statusService": "Status: privat tjänst för inbjudna användare. Inte knuten till föreningen onData; motorn bygger på deras ckan-mcp-server (MIT).",
   "language": "English"
 }

@@ -25,6 +25,14 @@ describe("landing page", () => {
     expect(svHeader).toContain(`<html lang="sv">`);
   });
 
+  it("says test service unless the deployment declares itself the production service", async () => {
+    expect(await landingPage(new Request("https://v.example/")).text()).toContain(en.statusTest);
+    expect(await landingPage(new Request("https://v.example/"), { VOCAB_SERVICE_STATUS: "other" }).text()).toContain(en.statusTest);
+    const service = await landingPage(new Request("https://v.example/?lang=sv"), { VOCAB_SERVICE_STATUS: "service" }).text();
+    expect(service).toContain(sv.statusService);
+    expect(service).not.toContain(sv.statusTest);
+  });
+
   it("lists every registered tool and the endpoint, generated from the profile", async () => {
     const page = await landingPage(new Request("https://v.example/")).text();
     for (const t of profile.tools) expect(page).toContain(`<code>${t.name}</code>`);
@@ -36,6 +44,13 @@ describe("worker routes", () => {
   it("/health reports counts taken from the profile", async () => {
     const res = await worker.fetch(new Request("https://v.example/health"), {});
     expect(await res.json()).toMatchObject({ status: "ok", name: SERVER_NAME, tools: profile.tools.length, prompts: 0, resources: 0 });
+  });
+
+  it("/ passes the deployment's env to the landing page, so production says it is the service", async () => {
+    const service = await (await worker.fetch(new Request("https://v.example/"), { VOCAB_SERVICE_STATUS: "service" })).text();
+    expect(service).toContain(en.statusService);
+    const test = await (await worker.fetch(new Request("https://v.example/"), {})).text();
+    expect(test).toContain(en.statusTest);
   });
 
   it("/mcp lists the eight vocab_ tools", async () => {

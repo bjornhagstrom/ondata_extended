@@ -1,4 +1,5 @@
-# The vocabulary Worker of ondata-extended, a test deployment (docs/DECISIONS.md, 2026-11-09).
+# The vocabulary Workers of ondata-extended: the test Worker (top level, docs/DECISIONS.md 2026-11-09) and the
+# production Worker ([env.production], 2026-11-14).
 # Deploy: npm run deploy:vocab (needs `npx wrangler login` once; the script builds dist/worker.js first).
 name = "ondata-extended-vocab"
 main = "dist/worker.js"
@@ -12,3 +13,21 @@ enabled = true
 
 [vars]
 VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
+
+# The production Worker (docs/DECISIONS.md, 2026-11-14): a private service for invited users, only the
+# vocabularies listed below, frozen vocab_ tools. Deploy: npm run deploy:vocab:production (Björn's ok each time).
+# `wrangler deploy --env production` deploys this section as its own Worker; the test Worker above is untouched.
+[env.production]
+name = "vocab-mcp"
+# Own domain: needs the domain's DNS zone on this Cloudflare account (hagstrom.nu is on Loopia today, see the
+# decision). When it is, uncomment and deploy; Cloudflare then creates the DNS record and the certificate.
+# routes = [{ pattern = "mcp.example.org", custom_domain = true }]
+workers_dev = true
+
+[env.production.observability]
+enabled = true
+
+[env.production.vars]
+# Every vocabulary the service may reach; add a host here and to KNOWN_VOCABULARIES together.
+VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
+VOCAB_SERVICE_STATUS = "service"

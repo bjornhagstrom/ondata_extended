@@ -8,7 +8,8 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
   [ondata/ckan-mcp-server](https://github.com/ondata/ckan-mcp-server) (MIT); see `NOTICE.md`.
 - `packages/profile-contract`: the types between core and profiles.
 - `packages/profile-skos`: a general SKOS vocabulary profile (`vocab_*` tools) with backend adapters; TemaTres first.
-- `packages/host-vocab`: the vocabulary deployment (stdio binary `vocab-mcp-server`, Node HTTP, Cloudflare Worker).
+- `packages/host-vocab`: the vocabulary deployment (stdio binary `vocab-mcp-server`, Node HTTP, Cloudflare Worker);
+  being made a private production service with frozen tools (`docs/vocab-service.md`).
 - `packages/profile-ckan`: the CKAN profile, behaving as ondata/ckan-mcp-server 0.4.138 (commit `09e8cdc`): the same
   20 tools, 7 resource templates and 6 prompts, checked case by case against ondata's server (`docs/test-parity.md`).
 - `packages/host-ckan`: the CKAN deployment as a drop-in for ondata's server (binary `ckan-mcp-server`, stdio or
