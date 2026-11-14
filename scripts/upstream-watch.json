@@ -1,0 +1,34 @@
+{
+  "about": "Upstream baselines for scripts/upstream-watch.mjs. Move a baseline only after the changes since it are reviewed (ported, noted or dismissed). First matching area wins; a changed file that matches no area and no ignore entry is reported as unmapped.",
+  "repos": [
+    {
+      "key": "ckan",
+      "repo": "ondata/ckan-mcp-server",
+      "baseline": "09e8cdc",
+      "ignoreSubjects": ["^chore\\(data\\):", "^docs\\(log\\):"],
+      "ignorePaths": ["data/", "docs/", "openspec/", "evals/", "examples/", "docker/", ".claude/", ".devin/", ".greptile/", ".opencode/", ".github/", "LOG.md", "README.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "RELEASING.md", ".gitignore", ".gitattributes", "package-lock.json"],
+      "areas": [
+        { "paths": ["src/utils/http.ts", "src/utils/safe-http.ts"], "ours": "packages/core (HTTP safety)" },
+        { "paths": ["src/tools/", "src/prompts/", "src/resources/", "src/utils/"], "ours": "packages/profile-ckan" },
+        { "paths": ["src/server.ts", "src/worker.ts", "src/index.ts", "src/transport/", "manifest.json", "server.json", "package.json"], "ours": "packages/host-ckan" },
+        { "paths": ["tests/"], "ours": "parity tests (docs/test-parity.md)" },
+        { "paths": ["src/"], "ours": "profile-ckan or host-ckan (unmapped src file)" }
+      ]
+    },
+    {
+      "key": "parliament",
+      "repo": "ondata/italianparliament-mcp",
+      "baseline": "fd46810",
+      "ignoreSubjects": [],
+      "ignorePaths": ["docs/", "openspec/", "site/", "skills/", "scripts/", ".claude/", ".pi/", ".github/", "LOG.md", "README.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "RELEASING.md", ".gitignore", ".gitattributes", "package-lock.json"],
+      "areas": [
+        { "paths": ["src/core/"], "ours": "packages/profile-parliament (core helpers)" },
+        { "paths": ["src/tools/deputies", "src/tools/search", "src/tools/legislatures", "src/tools/bill-progress", "src/tools/camera-amendments", "src/tools/sparql", "src/tools/types.ts", "src/tools/tools.test.ts"], "ours": "packages/profile-parliament (ported tools)" },
+        { "paths": ["src/server.ts", "src/worker.ts", "src/node.ts", "src/index.ts", "package.json", "manifest.json", "server.json"], "ours": "packages/host-parliament" },
+        { "paths": ["test/fixtures/", "src/test-setup.ts"], "ours": "parity recordings (docs/parliament-port.md)" },
+        { "paths": ["src/tools/"], "ours": "not ported yet (other tools): note only" },
+        { "paths": ["src/", "test/"], "ours": "profile-parliament (unmapped file)" }
+      ]
+    }
+  ]
+}

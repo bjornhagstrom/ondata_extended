@@ -1,0 +1,30 @@
+# Daily check of ondata's servers against the baselines in scripts/upstream-watch.json. Keeps one issue in this
+# repository up to date: opened when there are upstream commits to review, a comment when new ones appear, closed
+# when nothing is left. Decides nothing; the review happens in a session, which then moves the baseline.
+name: upstream-watch
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/upstream-watch.mjs --issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
