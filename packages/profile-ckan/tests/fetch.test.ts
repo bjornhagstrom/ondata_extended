@@ -106,7 +106,9 @@ describe("sparql_query failures read as in ondata (its own DNS check, its AbortC
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("a stalled endpoint: This operation was aborted", async () => {
+  // ondata's AbortController timer still gives an AbortError, which querySparqlEndpoint now rewords
+  // as ondata 3369eac does, keeping the AbortError as the cause (docs/test-parity.md, D14).
+  it("a stalled endpoint: the timeout text of 3369eac, the AbortError as its cause", async () => {
     mockFetch((_input, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
     }));
@@ -118,7 +120,9 @@ describe("sparql_query failures read as in ondata (its own DNS check, its AbortC
     await vi.advanceTimersByTimeAsync(15000);
     vi.useRealTimers();
     const error = await pending;
-    expect((error as Error).name).toBe("AbortError");
-    expect((error as Error).message).toBe("This operation was aborted");
+    expect((error as Error).message).toBe("The endpoint did not answer within 15 seconds (timeout). Simplify the query (fewer VALUES, a LIMIT, no OPTIONAL over large sets) or retry later.");
+    const cause = (error as Error).cause as Error;
+    expect(cause.name).toBe("AbortError");
+    expect(cause.message).toBe("This operation was aborted");
   });
 });

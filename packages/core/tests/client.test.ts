@@ -100,6 +100,24 @@ beforeAll(async () => {
         res.write("partial");
         // headers and a first chunk, then nothing
         return;
+      case "/err-head-then-stall":
+        // a reason, more than 4 KB after it, then nothing
+        res.statusCode = 400;
+        res.write(`the reason\n${"x".repeat(6000)}`);
+        return;
+      case "/err-partial-then-stall":
+        res.statusCode = 400;
+        res.write("a partial reason");
+        return;
+      case "/err-huge":
+        res.statusCode = 500;
+        res.setHeader("content-length", String(7 + 100 * 1024));
+        res.end(`reason\n${"e".repeat(100 * 1024)}`);
+        return;
+      case "/err-utf8":
+        res.statusCode = 400;
+        res.end("ééé");
+        return;
       case "/err-small":
         res.statusCode = 409;
         res.setHeader("content-type", "application/json");
@@ -208,6 +226,61 @@ describe("HttpClient against a live server", () => {
     expect(String(error.message)).toContain("timeout");
     expect(error.kind).toBe("timeout");
     expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
+  describe("errorBodyPrefixBytes: the head of an error body", () => {
+    const HEAD = { ...PRIVATE, errorBodyPrefixBytes: 4096 } as const;
+    // The engine's error cap (64 KiB); the prefix is never larger than it.
+    const ENGINE_CAP = { maxErrorBodyBytes: 64 * 1024 };
+
+    it("keeps the first bytes of an error body larger than the error cap, which is otherwise dropped", async () => {
+      const client = new HttpClient(settings(ENGINE_CAP));
+      const whole = await client.request(`${base}/err-huge`, {}, PRIVATE);
+      expect(whole.text).toBeNull();
+      const head = await client.request(`${base}/err-huge`, {}, HEAD);
+      expect(head.status).toBe(500);
+      expect(head.text).toBe(`reason\n${"e".repeat(4096 - 7)}`);
+    });
+
+    it("stops at the prefix and answers at once when the body stalls after it", async () => {
+      const client = new HttpClient(settings({ ...ENGINE_CAP, timeoutMs: 5000 }));
+      const t0 = Date.now();
+      const res = await client.request(`${base}/err-head-then-stall`, {}, HEAD);
+      expect(Date.now() - t0).toBeLessThan(2000);
+      expect(res.status).toBe(400);
+      expect(res.text!.length).toBe(4096);
+      expect(res.text!.startsWith("the reason\n")).toBe(true);
+    });
+
+    it("gives what had arrived when the body stalls before the prefix is full", async () => {
+      const client = new HttpClient(settings({ ...ENGINE_CAP, timeoutMs: 300 }));
+      const res = await client.request(`${base}/err-partial-then-stall`, {}, HEAD);
+      expect(res.status).toBe(400);
+      expect(res.text).toBe("a partial reason");
+    });
+
+    it("never reads more than the engine's error cap, and only whole bytes", async () => {
+      const capped = await new HttpClient(settings()).request(`${base}/err-huge`, {}, HEAD);
+      expect(capped.text!.length).toBe(1024); // settings(): error cap 1 KiB, asked for 4096
+      const t0 = Date.now();
+      const odd = await new HttpClient(settings({ ...ENGINE_CAP, timeoutMs: 5000 })).request(`${base}/err-head-then-stall`, {}, { ...PRIVATE, errorBodyPrefixBytes: 10.5 });
+      expect(Date.now() - t0).toBeLessThan(2000);
+      expect(odd.text).toBe("the reason");
+      const none = await new HttpClient(settings(ENGINE_CAP)).request(`${base}/err-huge`, {}, { ...PRIVATE, errorBodyPrefixBytes: Number.NaN });
+      expect(none.text).toBe("");
+    });
+
+    it("drops a multi-byte character cut at the end of the prefix", async () => {
+      const res = await new HttpClient(settings(ENGINE_CAP)).request(`${base}/err-utf8`, {}, { ...PRIVATE, errorBodyPrefixBytes: 5 });
+      expect(res.text).toBe("éé"); // 5 bytes: two 2-byte "é" and half of the third
+    });
+
+    it("without the option, a stalled error body arrives empty at the deadline", async () => {
+      const client = new HttpClient(settings({ ...ENGINE_CAP, timeoutMs: 300 }));
+      const res = await client.request(`${base}/err-partial-then-stall`, {}, PRIVATE);
+      expect(res.status).toBe(400);
+      expect(res.text).toBeNull();
+    });
   });
 
   it("returns a small error body as text and json() throws HttpStatusError carrying it parsed", async () => {

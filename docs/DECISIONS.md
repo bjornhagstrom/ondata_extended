@@ -504,3 +504,24 @@ Andrea set for revisiting a shared core (the core in production with two profile
   taken down, that search text is logged, and what data it does not cover.
 - **If it goes wrong**: a secret MCP path for `vocab-mcp`, a token header, or the demo on a separate Cloudflare
   account (options weighed in the session of 2026-11-14).
+
+## 2026-11-14: ondata's CKAN changes since 09e8cdc reviewed (upstream watch, issue #1)
+
+29 commits on ondata/ckan-mcp-server between `09e8cdc` and `cb2119d`: nine code and release commits, reviewed below, and twenty data and docs commits, which the watch ignores. The watch baseline moves to `cb2119d`. The
+parity reference stays at `09e8cdc` (the recordings and the clone are unchanged).
+
+- **Ported: `3369eac`** (#593, SPARQL: a `#` in an IRI is not a comment, the endpoint's reason in errors, a clear
+  timeout, `"col"::float` in the SQL hint, "endpoint error" classified as `upstream_http`). Deviation D14 in
+  `docs/test-parity.md`, checked case by case in the parity test; it leaves the list when the parity baseline moves
+  past it. To read only the head of an error body as ondata does, the core's request options gain
+  `errorBodyPrefixBytes` (generic: the first N bytes of a non-2xx body, the rest never downloaded; what had arrived
+  if it stalls). A change to the profile contract, allowed while it is 0.x.
+- **Dismissed: `15517e5`** (#587, CKAN_PRIVATE_HOSTS): its source and test files are byte-identical to `09e8cdc`, which
+  was the head of the same pull request branch (only AGENTS.md, CONTRIBUTING.md, LOG.md and a data file differ). Already
+  ported.
+- **Dismissed: `205ba4a`, `2667613`, `c6ab095`** (#591, #594, #596, ours): refactors with no behaviour change, and a test
+  of ondata's axios agents, which our core does not have (it pins connections in its own dispatcher).
+- **Dismissed: `d504359`, `3fbc431`, `c58817f`, `48b9003`**: releases v0.4.139 to v0.4.142: version bumps plus release
+  notes in LOG.md, no other runtime change. The new baseline `cb2119d` changes only download data.
+- **Not reviewed: italianparliament-mcp** (`5ebcc84`, `3699753`). Björn, 2026-11-14: nothing more on the parliament
+  or the Senate for now; its watch baseline stays at `fd46810`, so the issue keeps listing them.

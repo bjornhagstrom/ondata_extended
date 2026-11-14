@@ -77,6 +77,24 @@ for (const caseId of ["offline-unknown-arg", "offline-bad-url", "offline-limit-r
   };
 }
 
+/**
+ * D14: ondata's SPARQL fix 3369eac (#593), ported ahead of the baseline, appends the endpoint's own
+ * reason to "SPARQL endpoint error (<status>): <statusText>". Everything else is ondata's.
+ */
+for (const caseId of ["sparql-bad-query-md", "sparql-bad-query-json"]) {
+  DEVIATIONS[caseId] = {
+    id: "D14",
+    check(ours, theirs) {
+      const reason = ": Virtuoso 37000 Error SP030: SPARQL compiler, line 2: syntax error at '}' before 'LIMIT'";
+      const base = "SPARQL endpoint error (400): Bad Request";
+      expect(theirs.text).toContain(base);
+      expect(ours.isError).toBe(theirs.isError);
+      expect(ours.extra).toEqual(theirs.extra);
+      expect(ours.text).toBe(theirs.text.replace(base, base + reason));
+    }
+  };
+}
+
 describe.runIf(ondataAvailable() && recordings.length > 0)("parity with ondata/ckan-mcp-server 09e8cdc", () => {
   describe("ondata replays its own recording exactly (harness determinism)", () => {
     for (const rec of recordings) {

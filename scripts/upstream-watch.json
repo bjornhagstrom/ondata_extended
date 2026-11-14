@@ -4,7 +4,7 @@
     {
       "key": "ckan",
       "repo": "ondata/ckan-mcp-server",
-      "baseline": "09e8cdc",
+      "baseline": "cb2119d",
       "ignoreSubjects": ["^chore\\(data\\):", "^docs\\(log\\):"],
       "ignorePaths": ["data/", "docs/", "openspec/", "evals/", "examples/", "docker/", ".claude/", ".devin/", ".greptile/", ".opencode/", ".github/", "LOG.md", "README.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "RELEASING.md", ".gitignore", ".gitattributes", "package-lock.json"],
       "areas": [

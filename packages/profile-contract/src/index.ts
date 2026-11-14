@@ -84,6 +84,15 @@ export interface FetchOptions {
    * may send requests, does not apply to its first hop. Redirects and the literal guards apply.
    */
   fixedUpstream?: boolean;
+  /**
+   * For a non-2xx answer: keep only the first N bytes of the body (a whole number, at most the
+   * engine's error cap, 64 KiB by default), read as they arrive, and stop there: the rest is never
+   * downloaded. If the body stalls, the read ends at the request's deadline (`timeoutMs`) with what
+   * had arrived. `text` is then never null: empty when nothing arrived. A multi-byte character cut
+   * at the end is dropped. Default: the whole error body when it is small, none when it is larger
+   * than the error cap. For a caller that reads a reason from the head of a long error page.
+   */
+  errorBodyPrefixBytes?: number;
 }
 
 /**
@@ -120,7 +129,8 @@ export interface HttpResponse {
   headers: Record<string, string>;
   /**
    * The body as UTF-8 text. For a non-2xx answer only small bodies are read (default
-   * 64 KiB) and `text` is null when the body was larger or unreadable.
+   * 64 KiB) and `text` is null when the body was larger or unreadable; with
+   * `errorBodyPrefixBytes` it is the head of the body instead, never null.
    */
   text: string | null;
   fromCache: boolean;

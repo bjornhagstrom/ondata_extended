@@ -1,7 +1,9 @@
 /**
  * Generic SPARQL query tool for any public HTTPS SPARQL endpoint
  *
- * Ported from ondata/ckan-mcp-server src/tools/sparql.ts at 09e8cdc (MIT, see NOTICE.md).
+ * Ported from ondata/ckan-mcp-server src/tools/sparql.ts at 09e8cdc (MIT, see NOTICE.md), with ondata's
+ * fix 3369eac (#593, 2026-11-12) ported ahead of the baseline: a `#` inside an IRI or string is not a
+ * comment, a failed query carries the endpoint's own reason, a timeout says so (docs/test-parity.md, D14).
  */
 
 import { z } from "zod";
@@ -13,6 +15,9 @@ import { fetchAsResponse } from "../utils/fetch.js";
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 1000;
+const TIMEOUT_MS = 15000;
+const ERROR_HEAD_BYTES = 4 * 1024;
+const MAX_REASON_LENGTH = 300;
 
 interface SparqlBinding {
   type: string;
@@ -31,7 +36,12 @@ interface SparqlResults {
  * Throws if it contains write operations or no SELECT keyword.
  */
 export function validateSelectQuery(query: string): void {
-  const stripped = query.replace(/#[^\n]*/g, "");
+  // A `#` starts a comment only outside IRIs and string literals: namespace IRIs such as
+  // rdf-schema# end in one, and a PREFIX on the same line as SELECT must not hide it.
+  const stripped = query.replace(
+    /<[^<>"{}|^`\\\s]*>|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|#[^\n]*/g,
+    match => (match.startsWith("#") ? "" : match)
+  );
   if (!/\bSELECT\b/i.test(stripped)) {
     throw new Error(
       "Only SELECT queries are supported (not CONSTRUCT, ASK, DESCRIBE, or write operations)."
@@ -63,38 +73,80 @@ export async function querySparqlEndpoint(ctx: EngineContext, endpointUrl: strin
     "Accept": "application/sparql-results+json"
   };
   // ondata ran one 15 s timer across the POST and its GET fallback; here each request has 15 s (D11)
-  const opts = { timeoutMs: 15000, userAgent: { fixed: "Mozilla/5.0 (compatible; CKAN-MCP-Server/1.0)" }, httpsOnly: true, timeoutStyle: "controller" as const, checksDnsFirst: true };
+  const opts = { timeoutMs: TIMEOUT_MS, userAgent: { fixed: "Mozilla/5.0 (compatible; CKAN-MCP-Server/1.0)" }, httpsOnly: true, timeoutStyle: "controller" as const, checksDnsFirst: true, errorBodyPrefixBytes: ERROR_HEAD_BYTES };
 
-  let response: Response;
-  if (method === "GET") {
-    const getUrl = new URL(endpointUrl);
-    getUrl.searchParams.set("query", query);
-    response = await fetchAsResponse(ctx, getUrl.toString(), {
-      method: "GET",
-      headers: commonHeaders
-    }, opts);
-  } else {
-    response = await fetchAsResponse(ctx, endpointUrl, {
-      method: "POST",
-      headers: { ...commonHeaders, "Content-Type": "application/sparql-query; charset=utf-8" },
-      body: query
-    }, opts);
-    // Fallback to GET if POST is rejected
-    if (response.status === 403 || response.status === 405) {
+  try {
+    let response: Response;
+    if (method === "GET") {
       const getUrl = new URL(endpointUrl);
       getUrl.searchParams.set("query", query);
       response = await fetchAsResponse(ctx, getUrl.toString(), {
         method: "GET",
         headers: commonHeaders
       }, opts);
+    } else {
+      response = await fetchAsResponse(ctx, endpointUrl, {
+        method: "POST",
+        headers: { ...commonHeaders, "Content-Type": "application/sparql-query; charset=utf-8" },
+        body: query
+      }, opts);
+      // Fallback to GET if POST is rejected
+      if (response.status === 403 || response.status === 405) {
+        const getUrl = new URL(endpointUrl);
+        getUrl.searchParams.set("query", query);
+        response = await fetchAsResponse(ctx, getUrl.toString(), {
+          method: "GET",
+          headers: commonHeaders
+        }, opts);
+      }
     }
-  }
 
-  if (!response.ok) {
-    throw new Error(`SPARQL endpoint error (${response.status}): ${response.statusText}`);
-  }
+    if (!response.ok) {
+      const reason = await readErrorReason(response);
+      throw new Error(
+        `SPARQL endpoint error (${response.status}): ${response.statusText}${reason ? `: ${reason}` : ""}`
+      );
+    }
 
-  return response.json() as Promise<SparqlResults>;
+    return (await response.json()) as SparqlResults;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(
+        `The endpoint did not answer within ${TIMEOUT_MS / 1000} seconds (timeout). Simplify the query (fewer VALUES, a LIMIT, no OPTIONAL over large sets) or retry later.`,
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * The endpoint's own explanation of a failed query, as one short line (ondata 3369eac). Wikidata
+ * answers a parse error with an echo of the (possibly multiline) query and a Java stack trace;
+ * Virtuoso puts the message first. HTML pages (gateways, proxies) carry nothing useful and are left
+ * out. The core reads only the first 4 KB of an error body (`errorBodyPrefixBytes`), as ondata's
+ * readHead does: the rest is never downloaded, and a body that stalls gives what had arrived by the
+ * deadline, so no timer is needed here (D14).
+ */
+async function readErrorReason(response: Response): Promise<string> {
+  try {
+    if (/html/i.test(response.headers.get("content-type") ?? "")) return "";
+    // Already cut to ERROR_HEAD_BYTES by the core; cutting the re-encoded text again could split a character.
+    const text = await response.text();
+    if (!text || /^\s*</.test(text)) return "";
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    // Wikidata echoes the query first, one line per query line, then the exception.
+    const line = lines[0]?.startsWith("SPARQL-QUERY:")
+      ? lines.find(l => /^[\w$.]+(?:Exception|Error): /.test(l))
+      : lines[0];
+    if (!line) return "";
+    const reason = line
+      .replace(/^(?:[\w$.]+(?:Exception|Error): )+/, "")
+      .replace(/[\u0000-\u001f\u007f]/g, "");
+    return reason.length > MAX_REASON_LENGTH ? `${reason.slice(0, MAX_REASON_LENGTH)}…` : reason;
+  } catch {
+    return "";
+  }
 }
 
 export function formatSparqlMarkdown(data: SparqlResults, endpointUrl: string): string {

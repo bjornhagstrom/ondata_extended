@@ -30,6 +30,8 @@ export interface DirectFetchOptions {
    * "<host>" for SSRF validation (failing closed).`; otherwise the connection failed inside fetch.
    */
   checksDnsFirst?: boolean;
+  /** Keep only the head of an error body (the core's `errorBodyPrefixBytes`). */
+  errorBodyPrefixBytes?: number;
 }
 
 export async function fetchAsResponse(ctx: EngineContext, url: string, init: RequestInit, opts: DirectFetchOptions): Promise<Response> {
@@ -45,7 +47,8 @@ export async function fetchAsResponse(ctx: EngineContext, url: string, init: Req
       rateLimit: false,
       maxHops: 3,
       ...(opts.httpsOnly ? { httpsOnly: true } : {}),
-      ...(opts.fixedUpstream ? { fixedUpstream: true } : {})
+      ...(opts.fixedUpstream ? { fixedUpstream: true } : {}),
+      ...(opts.errorBodyPrefixBytes !== undefined ? { errorBodyPrefixBytes: opts.errorBodyPrefixBytes } : {})
     });
   } catch (error) {
     throw asFetchError(error, url, opts);

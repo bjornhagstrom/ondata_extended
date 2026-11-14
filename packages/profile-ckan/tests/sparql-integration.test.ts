@@ -7,7 +7,7 @@
 // expected values are ondata's.
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { formatSparqlMarkdown, formatSparqlJson, querySparqlEndpoint as querySparqlEndpointWithCtx, validateSelectQuery, injectLimit } from '../src/tools/sparql.js';
-import { __setDnsResolverForTests } from '@ondata-extended/core';
+import { __setDnsResolverForTests, summarizeToolError } from '@ondata-extended/core';
 import { ckanContext, fetchedHeaders } from './helpers.js';
 
 const querySparqlEndpoint = (endpointUrl: string, query: string) => querySparqlEndpointWithCtx(ckanContext(), endpointUrl, query);
@@ -127,6 +127,118 @@ describe('sparql_query', () => {
       ).rejects.toThrow('SPARQL endpoint error (400)');
     });
 
+    // From ondata 3369eac (#593), ported ahead of the baseline (docs/test-parity.md, D14).
+    const answer = (body: BodyInit, status = 400, statusText = 'Bad Request', headers: Record<string, string> = {}) =>
+      (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation(async () => new Response(body, { status, statusText, headers }));
+
+    it('includes the endpoint\'s own reason for a 400', async () => {
+      answer('SPARQL-QUERY: queryStr=SELECT ?a WHERE {VALUES ?a {(<x>)}}\n'
+        + 'java.util.concurrent.ExecutionException: org.openrdf.query.MalformedQueryException: Encountered " "(" "( "" at line 1, column 65.\n'
+        + 'Was expecting one of:\n    "}" ...');
+      const err = await querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT ?a WHERE {VALUES ?a {(<x>)}}').catch(e => e);
+      expect(err.message).toBe('SPARQL endpoint error (400): Bad Request: Encountered " "(" "( "" at line 1, column 65.');
+    });
+
+    it('reads the reason from the head of a large error body', async () => {
+      // Wikidata's parse errors run to ~9 KB of stack trace after the message.
+      answer('SPARQL-QUERY: queryStr=SELECT\njava.util.concurrent.ExecutionException: MalformedQueryException: Encountered "(" at line 1, column 65.\n'
+        + '    at x.y.z\n'.repeat(2000));
+      const err = await querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT * WHERE { }').catch(e => e);
+      expect(err.message).toBe('SPARQL endpoint error (400): Bad Request: Encountered "(" at line 1, column 65.');
+    });
+
+    it('skips a multiline query echo to reach the exception', async () => {
+      answer('SPARQL-QUERY: queryStr=PREFIX schema: <http://schema.org/>\nSELECT ?a WHERE {\n  VALUES ?a {(<x>)}\n}\nLIMIT 25\n'
+        + 'java.util.concurrent.ExecutionException: org.openrdf.query.MalformedQueryException: Encountered " "(" "( "" at line 3, column 14.\n'
+        + 'Was expecting one of:');
+      const err = await querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT * WHERE { }').catch(e => e);
+      expect(err.message).toBe('SPARQL endpoint error (400): Bad Request: Encountered " "(" "( "" at line 3, column 14.');
+    });
+
+    it('takes the first line of a Virtuoso error body', async () => {
+      answer("Virtuoso 37000 Error SP030: SPARQL compiler, line 2: syntax error at '(' before '<x>'\n\nSPARQL query:\nSELECT ...");
+      const err = await querySparqlEndpoint('https://lod.dati.gov.it/sparql', 'SELECT ?a WHERE {}').catch(e => e);
+      expect(err.message).toBe("SPARQL endpoint error (400): Bad Request: Virtuoso 37000 Error SP030: SPARQL compiler, line 2: syntax error at '(' before '<x>'");
+    });
+
+    it('leaves out an HTML error page', async () => {
+      answer('<html><body>502 Bad Gateway</body></html>', 502, 'Bad Gateway', { 'content-type': 'text/html' });
+      const err = await querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT * WHERE { }').catch(e => e);
+      expect(err.message).toBe('SPARQL endpoint error (502): Bad Gateway');
+    });
+
+    it('caps a long reason', async () => {
+      answer('x'.repeat(5000));
+      const err = await querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT * WHERE { }').catch(e => e);
+      expect(err.message.length).toBeLessThan(400);
+      // sharper than ondata's check, which an implementation without a reason also passes
+      expect(err.message).toBe(`SPARQL endpoint error (400): Bad Request: ${'x'.repeat(300)}…`);
+    });
+
+    it('reads only the first 4 KB: an exception after them is not seen', async () => {
+      answer('SPARQL-QUERY: queryStr=SELECT\n' + 'WHERE { ?s ?p ?o }\n'.repeat(250)
+        + 'java.util.concurrent.ExecutionException: MalformedQueryException: too late\n');
+      const err = await querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT * WHERE { }').catch(e => e);
+      expect(err.message).toBe('SPARQL endpoint error (400): Bad Request');
+    });
+
+    it('keeps the reason of an error body larger than the 64 KiB error cap', async () => {
+      answer("Virtuoso 37000 Error SP030: syntax error\n" + 'x'.repeat(100 * 1024));
+      const err = await querySparqlEndpoint('https://lod.dati.gov.it/sparql', 'SELECT * WHERE { }').catch(e => e);
+      expect(err.message).toBe('SPARQL endpoint error (400): Bad Request: Virtuoso 37000 Error SP030: syntax error');
+    });
+
+    it('answers with the reason at once when the body stalls after the first 4 KB', async () => {
+      (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation(async () => new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode("Virtuoso 37000 Error SP030: syntax error\n" + 'x'.repeat(5000))); /* then nothing */ }
+      }), { status: 400, statusText: 'Bad Request' }));
+      const err = await querySparqlEndpoint('https://lod.dati.gov.it/sparql', 'SELECT * WHERE { }').catch(e => e);
+      expect(err.message).toBe('SPARQL endpoint error (400): Bad Request: Virtuoso 37000 Error SP030: syntax error');
+    });
+
+    // ondata mocks fetch rejecting with an AbortError; here the core's own 15 s deadline fires on a
+    // fetch that never answers. That the deadline also covers a body stalling after the headers
+    // (ondata's separate case) is shown in packages/core/tests/client.test.ts ("stall-body").
+    it('reports a timeout as such', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation((_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')))));
+        const pending = querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT * WHERE { }').catch(e => e);
+        await vi.advanceTimersByTimeAsync(15000);
+        const err = await pending;
+        expect(err.message).toBe('The endpoint did not answer within 15 seconds (timeout). Simplify the query (fewer VALUES, a LIMIT, no OPTIONAL over large sets) or retry later.');
+        expect(err.cause).toBeInstanceOf(DOMException);
+        expect(summarizeToolError(`SPARQL query failed:\n${err.message}`).error_kind).toBe('timeout');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // ondata's stalled-body case: the headers of a 400 arrive, the body never does. The core ends the
+    // read at its deadline and the error has the status without a reason, as in ondata.
+    it('stops waiting for an error body that stalls past the timeout', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (_url: string, init?: RequestInit) => {
+          const stalled = new ReadableStream<Uint8Array>({
+            start(controller) { init?.signal?.addEventListener('abort', () => controller.error(new DOMException('This operation was aborted', 'AbortError'))); }
+          });
+          return new Response(stalled, { status: 400, statusText: 'Bad Request' });
+        });
+        const pending = querySparqlEndpoint('https://query.wikidata.org/sparql', 'SELECT * WHERE { }').catch(e => e);
+        await vi.advanceTimersByTimeAsync(15000);
+        const err = await pending;
+        expect(err.message).toBe('SPARQL endpoint error (400): Bad Request');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('classifies an endpoint HTTP error as upstream_http', () => {
+      expect(summarizeToolError('SPARQL query failed:\nSPARQL endpoint error (400): Bad Request').error_kind).toBe('upstream_http');
+    });
+
     it('throws on network error', async () => {
       (fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network failure'));
 
@@ -204,6 +316,25 @@ describe('sparql_query', () => {
 
     it('ignores SELECT in a comment', () => {
       expect(() => validateSelectQuery('# SELECT ?s WHERE { }\nCONSTRUCT { } WHERE { }')).toThrow('Only SELECT queries are supported');
+    });
+
+    // From ondata 3369eac: ten Wikidata SELECTs were rejected because the `#` closing the rdfs:
+    // namespace IRI was read as a comment, taking the SELECT on the same line with it.
+    it('accepts SELECT after a namespace IRI ending in # on the same line', () => {
+      expect(() => validateSelectQuery(
+        'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> SELECT ?s WHERE { ?s ?p ?o }'
+      )).not.toThrow();
+    });
+
+    it('does not read a # inside a string literal as a comment', () => {
+      expect(() => validateSelectQuery('PREFIX x: <http://x/> SELECT ?s WHERE { ?s ?p "a#b" }')).not.toThrow();
+      // ondata's case above passes the old regex too (SELECT comes before the "#"); here it follows it.
+      expect(() => validateSelectQuery('PREFIX x: <http://x/> BASE <http://y/> ASK { ?s ?p "a#" } SELECT ?s WHERE { }')).not.toThrow();
+      expect(() => validateSelectQuery("PREFIX x: <http://x/> ASK { ?s ?p 'a#' } SELECT ?s WHERE { }")).not.toThrow();
+    });
+
+    it('still ignores SELECT in a comment that follows an IRI', () => {
+      expect(() => validateSelectQuery('PREFIX x: <http://x/#> # SELECT\nCONSTRUCT { } WHERE { }')).toThrow('Only SELECT queries are supported');
     });
   });
 

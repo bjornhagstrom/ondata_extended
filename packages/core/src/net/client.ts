@@ -159,6 +159,37 @@ export async function readBoundedBytes(response: Response, maxBytes: number, url
 }
 
 /**
+ * The first `maxBytes` of a body, read as it arrives; the rest is never downloaded. A read that
+ * fails or is aborted (the request's deadline) ends with what had arrived.
+ */
+export async function readPrefixBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value.subarray(0, maxBytes - total);
+      chunks.push(chunk);
+      total += chunk.byteLength;
+    }
+  } catch {
+    // stalled past the deadline or broken: keep what arrived
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+/**
  * Fetch that does NOT blindly follow redirects: each hop is re-validated (literal guards,
  * allowlist, private-host exemption, DNS) before it is followed, closing redirect-based
  * SSRF (a public host 302-ing to 169.254.169.254). The caller validates the first URL.
@@ -393,10 +424,16 @@ export class HttpClient {
       const ok = response.status >= 200 && response.status < 300;
 
       if (!ok) {
-        // Read the error body only when small; it may carry the upstream's reason.
+        // Read the error body only when small; it may carry the upstream's reason. A caller that
+        // asks for a prefix gets the head of any error body instead.
         let text: string | null = null;
         const declared = Number(response.headers.get("content-length"));
-        if (!(Number.isFinite(declared) && declared > s.maxErrorBodyBytes)) {
+        if (opts.errorBodyPrefixBytes !== undefined) {
+          // A whole number of bytes, never above the error cap (NaN and negatives read nothing).
+          const limit = Math.max(0, Math.floor(Math.min(opts.errorBodyPrefixBytes, s.maxErrorBodyBytes))) || 0;
+          // `stream: true` without a final flush drops a multi-byte character cut at the end.
+          text = new TextDecoder().decode(await readPrefixBytes(response, limit), { stream: true });
+        } else if (!(Number.isFinite(declared) && declared > s.maxErrorBodyBytes)) {
           try {
             text = new TextDecoder().decode(await readBoundedBytes(response, s.maxErrorBodyBytes, url));
           } catch {
