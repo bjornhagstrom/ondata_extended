@@ -12,6 +12,10 @@ worked on, and which portals run it. A proof of concept for datHere, who run the
 pipeline passes it with a secret token. We do not scrape the catalog or route around the challenge. If datHere open
 the read API, the CKAN profile can read the catalog directly; this profile shows what the usage data adds.
 
+The server runs on this repository's core, which is derived from onData's
+[ckan-mcp-server](https://github.com/ondata/ckan-mcp-server) (MIT). This is my project; it is not affiliated with or
+endorsed by onData.
+
 ## Try it
 
 A test instance runs at `https://ondata-extended-ckan-ecosystem.ondata-extended.workers.dev/mcp` (Streamable HTTP,
