@@ -17,8 +17,8 @@ the read API, the CKAN profile can read the catalog directly; this profile shows
 A test instance runs at `https://ondata-extended-ckan-ecosystem.ondata-extended.workers.dev/mcp` (Streamable HTTP,
 no sign-in). The URL answers MCP clients only (a browser gets an error); `/health` shows the status. It is a proof
 of concept: no availability promise, it may be rate-limited or taken down, and the arguments of each call (the search
-text, for example) are logged by the Worker. Tried with the MCP TypeScript SDK client against this URL and locally in
-Claude Desktop, not yet as a claude.ai connector.
+text, for example) are logged by the Worker. Tried against this URL with Codex and the MCP TypeScript SDK client, and
+locally in Claude Desktop; not yet as a claude.ai connector.
 
 **Connect**
 
