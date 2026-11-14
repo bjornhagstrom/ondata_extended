@@ -1,4 +1,8 @@
 <!--
+OUTCOME 2026-11-14: Andrea closed #117 with #120 (v0.38.1) and adopted three points from this comment: the frozen
+date, failing on recorded requests never replayed, no Senato throttle in replay. His reply:
+https://github.com/ondata/italianparliament-mcp/issues/117#issuecomment-6874299441 (Björn reacted +1). The PR offer
+is moot: he built it himself; the camera-amendments HTML stays live-only in his suite (9 tests skipped in replay).
 POSTED 2026-11-14: https://github.com/ondata/italianparliament-mcp/issues/117#issuecomment-6867661585 (lines unwrapped).
 Was: DRAFT comment. Target: ondata/italianparliament-mcp#117 (Andrea's own issue: record SPARQL answers once,
 replay them offline). Purpose: share what we built for the same tools, offer his design as a PR, easy to decline.

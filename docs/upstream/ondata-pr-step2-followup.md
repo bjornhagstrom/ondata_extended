@@ -1,5 +1,5 @@
 <!--
-OPENED 2026-11-12 as https://github.com/ondata/ckan-mcp-server/pull/596 (commit a569f6e, lines unwrapped, no Claude Code line).
+MERGED 2026-11-12 21:16 UTC. OPENED 2026-11-12 as https://github.com/ondata/ckan-mcp-server/pull/596 (commit a569f6e, lines unwrapped, no Claude Code line).
 Was: DRAFT PR. Target: ondata/ckan-mcp-server, branch test/private-hosts-agent-lookup from the fork
 bjornhagstrom/ckan-mcp-server. Local clone: ~/Developer/ondata-ckan-pr, on main c58817f.
 The two optional items from Andrea's #594 review (5875531397). Nothing is pushed or opened without Björn's ok.
