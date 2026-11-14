@@ -12,6 +12,40 @@ worked on, and which portals run it. A proof of concept for datHere, who run the
 pipeline passes it with a secret token. We do not scrape the catalog or route around the challenge. If datHere open
 the read API, the CKAN profile can read the catalog directly; this profile shows what the usage data adds.
 
+## Try it
+
+A test instance runs at `https://ondata-extended-ckan-ecosystem.ondata-extended.workers.dev/mcp` (Streamable HTTP,
+no sign-in). The URL answers MCP clients only (a browser gets an error); `/health` shows the status. It is a proof
+of concept: no availability promise, it may be rate-limited or taken down, and the arguments of each call (the search
+text, for example) are logged by the Worker. Tried with the MCP TypeScript SDK client against this URL and locally in
+Claude Desktop, not yet as a claude.ai connector.
+
+**Connect**
+
+- Claude (claude.ai or Claude Desktop): Settings, Connectors, Add custom connector, with the URL above.
+- Claude Code: `claude mcp add --transport http ckan-ecosystem https://ondata-extended-ckan-ecosystem.ondata-extended.workers.dev/mcp`
+- Any other MCP client that speaks Streamable HTTP, with the same URL.
+- Or locally from this repository: `npm install`, `npm run build`, then run
+  `node packages/host-ckan-ecosystem/dist/index.js` (stdio) with `ECOSYSTEM_ALLOWED_DOMAINS=raw.githubusercontent.com`.
+
+**Check that it works**: ask for an overview of the CKAN ecosystem (`ecosystem_overview`); ask which extensions
+harvest DCAT (`ckan/ckanext-dcat` should come first); ask which portals run `xloader`.
+
+**An example.** Asked "I need to harvest DCAT-AP into CKAN; what exists, and what is actually used and still worked
+on?", a model calls `ecosystem_search_extensions` with `{"query": "harvest dcat-ap", "upkeep": "active"}`. The
+first rows of the answer (extensions week 2026-11-08, portals week 2026-11-09; the notes in parentheses are mine):
+
+| Repository | Portals running it | Last push |
+|---|---|---|
+| ckan/ckanext-dcat | 506 | 2026-11-03 |
+| geosolutions-it/ckanext-dcatapit (Italian profile) | 32 | 2026-06-25 |
+| GovDataOfficial/ckanext-dcatde (German profile) | 25 | 2026-11-06 |
+| opendata-swiss/ckanext-geocat (Swiss harvester) | 1 | 2026-05-19 |
+
+It can then show `ckanext-dcat`'s card (`ecosystem_get_extension`: its harvester plugins, README opening, the
+plugins most often installed with it) and the largest portals running `dcat_rdf_harvester`
+(`ecosystem_portals_using`). The answer it gives is grounded in what portals run, not only in what exists.
+
 ## Tools (prefix `ecosystem_`)
 
 | Tool | Arguments | Answers | Requests |
