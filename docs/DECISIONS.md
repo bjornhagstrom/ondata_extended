@@ -465,3 +465,11 @@ Andrea set for revisiting a shared core (the core in production with two profile
   from the environment and never written out (the index test checks for token patterns).
 - **Open**: Fable also proposed making first contact a small PR to datHere's pipeline adding repository descriptions
   and topics, so the profile could read them from datHere's own files. That is outward-facing and Björn's call.
+- **Backlog (Björn, 2026-11-14): outreach to datHere.** datHere opened
+  https://github.com/ckan/ckanext-pose_ecosystem_catalog/issues/222 ("Add MCP server so AI assistants can search the
+  Ecosystem Catalog") after Björn's comment in https://github.com/ckan/ckan/discussions/9542; it proposes evaluating
+  ckanext-mcp. The plan when it is picked up: a "Try it" guide with a real example, then a comment on #222 that offers
+  the test Worker to try, what the usage data adds, what only the catalog has, and design advice (a small read-only
+  tool set for an anonymous endpoint), with no demand. The test Worker runs on workers.dev since 2026-11-14.
+- **Backlog (Björn, 2026-11-14): several services on one MCP server without mixing them.** To be discussed before
+  anything is built (the core's Worker handler serves one `/mcp` with one set of profiles today).
