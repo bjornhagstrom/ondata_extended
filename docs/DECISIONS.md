@@ -440,6 +440,19 @@ Andrea set for revisiting a shared core (the core in production with two profile
   renaming a tool in the file). Titles and descriptions are not frozen. A breaking change needs a decision and migration help.
 - Operating guide for users and for deploys, rollback, logs and adding a vocabulary: `docs/vocab-service.md`.
 
+## 2026-11-14: watching ondata's servers for changes to follow
+
+- **Why**: `profile-ckan`/`host-ckan` behave as ckan-mcp-server at `09e8cdc` and `profile-parliament` as
+  italianparliament-mcp at `fd46810`; both have moved on (v0.4.142 and v0.38.1 on 2026-11-14), and nothing told us.
+- **How**: `scripts/upstream-watch.mjs` lists the upstream commits since the baselines in
+  `scripts/upstream-watch.json` and maps the files each touches to our packages; bot data updates, docs and other
+  ignored paths are counted, not listed. A daily GitHub Action (`.github/workflows/upstream-watch.yml`) keeps one
+  issue in this repository up to date: opened when there is something to review, a comment when new commits appear
+  (the notification), closed when nothing is left. It decides nothing and uses no model.
+- **Follow-up**: each listed commit is reviewed in a session (port, note in the deviation list, or dismiss), then the
+  baseline is moved by hand. Our own upstream PRs (#591, #594, #596) appear too; they only move the baseline.
+- Run by hand: `GH_TOKEN=$(gh auth token) node scripts/upstream-watch.mjs` (report only, writes nothing).
+
 ## 2026-11-14: a CKAN ecosystem profile, a proof of concept for datHere
 
 - **Why**: CKAN's extension registry, the CKAN Ecosystem Catalog (`ecosystem.ckan.org`, run by datHere in the POSE
