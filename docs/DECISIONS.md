@@ -484,6 +484,9 @@ Andrea set for revisiting a shared core (the core in production with two profile
   ckanext-mcp. The plan when it is picked up: a "Try it" guide with a real example, then a comment on #222 that offers
   the test Worker to try, what the usage data adds, what only the catalog has, and design advice (a small read-only
   tool set for an anonymous endpoint), with no demand. The test Worker runs on workers.dev since 2026-11-14.
+- **Posted (Björn's ok, 2026-11-14)**: the comment on #222,
+  https://github.com/ckan/ckanext-pose_ecosystem_catalog/issues/222#issuecomment-6877656547, after the "Try it"
+  guide was pushed.
 - **Backlog (Björn, 2026-11-14): several services on one MCP server without mixing them.** To be discussed before
   anything is built (the core's Worker handler serves one `/mcp` with one set of profiles today).
 

@@ -1,5 +1,7 @@
 <!--
-DRAFT comment. Target: ckan/ckanext-pose_ecosystem_catalog#222 ("Add MCP server so AI assistants can search the
+POSTED 2026-11-14: https://github.com/ckan/ckanext-pose_ecosystem_catalog/issues/222#issuecomment-6877656547 (header stripped).
+Was: DRAFT comment.
+Target: ckan/ckanext-pose_ecosystem_catalog#222 ("Add MCP server so AI assistants can search the
 Ecosystem Catalog", opened by a5dur of datHere 2026-10-19 after Björn's comment in ckan/ckan discussion #9542).
 Purpose: offer a working proof of concept to try, what datHere's usage data adds, what only the catalog has, and
 design notes for the issue; no demand. Facts checked 2026-11-14 against the deployed test Worker, the repository and
