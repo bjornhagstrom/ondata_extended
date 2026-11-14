@@ -486,3 +486,18 @@ Andrea set for revisiting a shared core (the core in production with two profile
   tool set for an anonymous endpoint), with no demand. The test Worker runs on workers.dev since 2026-11-14.
 - **Backlog (Björn, 2026-11-14): several services on one MCP server without mixing them.** To be discussed before
   anything is built (the core's Worker handler serves one `/mcp` with one set of profiles today).
+
+## 2026-11-14: no authentication on the deployed services, for now
+
+- **What**: `vocab-mcp` and the CKAN ecosystem test Worker stay open: anyone with the URL can call their read-only
+  tools. Björn's call: take the risk and state the limits clearly wherever a service is published.
+- **Why acceptable**: public data only, read-only tools, no secret in either Worker, outbound requests limited to
+  one host each (`begrepp.hagstrom.nu`, `raw.githubusercontent.com`). For the ecosystem service anonymity is the
+  point (ckanext-pose_ecosystem_catalog#222 asks for an anonymous read-only endpoint).
+- **The risk taken**: both Workers share one Cloudflare account and its request quota, so heavy use of one can stop
+  the other for the rest of the day; the per-isolate rate limit does not cap total traffic to an upstream; repeated
+  README reads could get Cloudflare's addresses limited by GitHub.
+- **When publishing**: say that it is a proof of concept with no availability promise, that it may be rate-limited or
+  taken down, that search text is logged, and what data it does not cover.
+- **If it goes wrong**: a secret MCP path for `vocab-mcp`, a token header, or the demo on a separate Cloudflare
+  account (options weighed in the session of 2026-11-14).
