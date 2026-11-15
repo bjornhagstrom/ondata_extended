@@ -16,6 +16,7 @@ VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
 
 # The production Worker (docs/DECISIONS.md, 2026-11-14): a private service for invited users, only the
 # vocabularies listed below, frozen vocab_ tools. Deploy: npm run deploy:vocab:production (Björn's ok each time).
+# Not deployed since 2026-11-15: the service runs in packages/host-services at a secret path; kept to redeploy.
 # `wrangler deploy --env production` deploys this section as its own Worker; the test Worker above is untouched.
 [env.production]
 name = "vocab-mcp"

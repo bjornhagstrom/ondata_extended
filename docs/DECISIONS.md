@@ -555,8 +555,10 @@ find.
 - **What a secret path is**: a capability URL, like a shared link. It keeps a service out of sight; it is not
   authentication, and anyone given the URL can use it. It sits in the client's settings (a claude.ai connector, for
   example), so treat it like a password and rotate it (set a new secret, update the connectors) if it spreads.
-- **Migration, when deployed**: Björn's connector "Begrepp svada" moves to the new private URL; `vocab-mcp` can then be
-  taken down. The ecosystem test Worker stays, because ckanext-pose_ecosystem_catalog#222 links its URL.
+- **Migration (done 2026-11-15)**: Björn's connector "Begrepp svada" moved to the private URL (a call seen arriving
+  there with `wrangler tail`); the Worker `vocab-mcp` was then deleted (Björn's ok; it had not been shared). Its
+  `[env.production]` section stays in `packages/host-vocab/wrangler.toml`, so it can be redeployed. The ecosystem
+  test Worker stays, because ckanext-pose_ecosystem_catalog#222 links its URL.
 - **Not built**: a combined endpoint with the tools of several services; authentication (decision of 2026-11-14).
 - **Also**: `scripts/smoke-vocab.mjs` paces its cases against a deployed server (`SMOKE_PAUSE_MS`, default 1500 ms), so a
   cold cache no longer makes the last case fail on the rate limit.

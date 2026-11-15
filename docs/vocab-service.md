@@ -4,6 +4,11 @@ The SKOS profile with the TemaTres adapter, run as a service: a Cloudflare Worke
 Decided 2026-11-14 (`docs/DECISIONS.md`). The test Worker (`ondata-extended-vocab`) stays as it is, for trying
 changes before they reach the service.
 
+**Since 2026-11-15 the service runs as the private service of the several-service Worker** (`packages/host-services`,
+`npm run deploy:services`), at a secret path, not in the Worker `vocab-mcp`, which was deleted. There `/<secret>/health`
+is the status and there is no landing page for it. Smoke: `SMOKE_URL=https://<worker>/<secret>/mcp node
+scripts/smoke-vocab.mjs`. The rest of this page describes the one-service Worker, kept so it can be redeployed.
+
 ## What it offers
 
 - **Endpoint:** `https://<service host>/mcp` (Streamable HTTP). `/` is a landing page (English, Swedish with
