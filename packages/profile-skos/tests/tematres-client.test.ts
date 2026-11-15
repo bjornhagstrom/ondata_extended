@@ -130,10 +130,11 @@ describe("servicesUrl and callTask", () => {
 
   it("goes through the engine's HTTP client with a cache TTL and parses the answer", async () => {
     const f = fixture("term-2");
-    const seen: { url?: string; opts?: { cache?: { ttlSeconds: number } } } = {};
+    const seen: { url?: string; opts?: { cache?: { ttlSeconds: number }; userAgent?: string } } = {};
     const a = await callTask(fakeCtx({ text: f.text, headers: { "content-type": f.contentType } }, seen), "https://begrepp.hagstrom.nu", "fetchTerm", "2");
     expect(seen.url).toBe("https://begrepp.hagstrom.nu/services.php?task=fetchTerm&arg=2&output=json");
     expect(seen.opts?.cache?.ttlSeconds).toBe(300);
+    expect(seen.opts?.userAgent).toBe("honest"); // the profile's own name, not a browser's
     expect(a.rows[0].string).toBe("Dataområde");
   });
 

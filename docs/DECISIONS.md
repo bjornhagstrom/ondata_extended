@@ -591,7 +591,21 @@ find.
   instances (TemaTres 3.6.1 for UNESCO, 3.3 for an older glossary). His HTML pages and SKOS export sit behind a
   Cloudflare challenge; `services.php` answered, also from the Worker.
 - **Live test through the Worker, 2026-11-15** (six calls): UNESCO scheme info, search "libraries" (32 hits), the
-  concept Libraries with path, 9 narrower, related and en/es/fr mappings; the ISO 25964 definition of "thesaurus"; a
+  concept Libraries with path, 9 narrower, related and en/es/fr mappings; the ISO 25964 scope note for "thesaurus"; a
   Spanish UNESCO concept URI resolved to `unesco-es` without `vocab`. A cold `vocab_get_concept` took about 3.5 s.
 - **Contact**: test first, keep tests short; then a short note with a couple of concrete examples (Björn's ok before
   anything is posted).
+
+## 2026-11-15: the SKOS profile calls vocabulary servers under its own name
+
+- **What**: the TemaTres adapter's requests (the web service and the SKOS export probe) send the profile's honest user
+  agent, `Vocab-MCP-Server/<version>`, instead of the core's default browser identity, which the adapter had used since
+  the first version with no recorded reason (inherited from the CKAN side, where some portals block non-browsers). A
+  vocabulary server should see who calls it, and the TemaTres maintainer is about to be asked about the demo.
+- **Checked**: vocabularyserver.com and begrepp.hagstrom.nu answer `services.php` with 200 to that identity (curl,
+  2026-11-15); through the Worker after the deploy (pending). Consequence: a TemaTres behind a browser-only firewall
+  now gets no browser attempt; such a deployment would need the identity as a setting.
+- **The draft** `docs/upstream/tematres-mcp-demo-issue-draft.md`: first contact as a public issue (Björn), so the demo
+  becomes public at `/tematres/mcp` when it is posted; its landing texts (en, sv) are ready. Observation in it, from the
+  raw web service: `fetchNotes` on The Dictionary of Knowledge Organization gave `cant_result` 0 for ids 129, 132, 407
+  and 737.

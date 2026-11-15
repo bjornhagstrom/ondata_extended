@@ -112,7 +112,8 @@ export async function callTask(
     throw new TemaTresProtocolError(`Task "${task}" is not used by this adapter.`, task);
   }
   const url = servicesUrl(baseUrl, task, arg);
-  const res = await ctx.http.request(url, { method: "GET" }, { cache: { ttlSeconds }, userAgent: "browser" });
+  // The profile's own name (Vocab-MCP-Server/<version>), not a browser's: a vocabulary server should see who calls it.
+  const res = await ctx.http.request(url, { method: "GET" }, { cache: { ttlSeconds }, userAgent: "honest" });
   if (res.status < 200 || res.status >= 300) {
     // An edge answering for an origin it could not reach: no answer from the service (as the core's json()).
     if ((res.status >= 520 && res.status <= 527) || res.status === 530) {

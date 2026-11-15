@@ -102,4 +102,4 @@ export const SERVICES = [
 ];
 
 /** What the landing page says about a public service. */
-export const PUBLIC_SETUPS: Record<string, ServiceSetup> = { ecosystem: ECOSYSTEM };
+export const PUBLIC_SETUPS: Record<string, ServiceSetup> = { ecosystem: ECOSYSTEM, tematres: TEMATRES };

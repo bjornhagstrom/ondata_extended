@@ -22,7 +22,8 @@ function pickLang(request: Request): "en" | "sv" {
 
 /** Titles and intros of the public services, by service id; a public service without one is listed by its id. */
 const TEXTS: Record<string, { title: keyof Strings; intro: keyof Strings }> = {
-  ecosystem: { title: "ecosystemTitle", intro: "ecosystemIntro" }
+  ecosystem: { title: "ecosystemTitle", intro: "ecosystemIntro" },
+  tematres: { title: "tematresTitle", intro: "tematresIntro" }
 };
 
 export function landingPage(request: Request, publicServices: readonly WorkerService<Env>[]): Response {

@@ -27,13 +27,17 @@ const S = "https://begrepp.hagstrom.nu/services.php";
 const envelope = (task: string, arg: string, result: unknown) =>
   JSON.stringify({ ...(result === undefined ? {} : { result }), resume: { status: "available", param: { task, arg }, web_service_version: "2.1", version: "TemaTres 3.6.1", cant_result: result ? Object.keys(result as object).length : 0 } });
 const jsonAnswer = (body: string, status = 200) => () => new Response(body, { status, headers: { "content-type": "application/json" } });
+/** The User-Agent header of each request, in order. */
+let agents: (string | null)[] = [];
 beforeEach(() => {
   requested = [];
+  agents = [];
   overrides.clear();
   __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
-  vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     requested.push(url);
+    agents.push(new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get("user-agent"));
     const override = overrides.get(url);
     if (override) return override();
     const hit = recorded.get(url);
@@ -393,6 +397,10 @@ describe("concept URIs", () => {
     overrides.set(`${B}services.php?task=fetchTopTerms&output=json`, jsonAnswer(envelope("fetchTopTerms", "", { "7": { term_id: "7", string: "Top", isMetaTerm: "0" } })));
     const out = await json(await client(), "vocab_top_concepts", { vocab: B });
     expect(out.concepts[0].uri).toBe(`${B}xml.php?schema=skos&term_id=7`);
+    // Both the SKOS export and the web service are asked under the profile's own name, never a browser's.
+    expect(requested).toContain(`${B}xml.php?skosMeta=1`);
+    expect(agents).toHaveLength(requested.length);
+    for (const a of agents) expect(a).toMatch(/^Vocab-MCP-Server\/\d/);
   });
 
   it("falls back to TemaTres' default URI pattern when the export gives none", async () => {

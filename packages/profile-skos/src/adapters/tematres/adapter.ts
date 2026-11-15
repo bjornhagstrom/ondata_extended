@@ -39,7 +39,7 @@ export async function conceptUriBase(ctx: EngineContext, instance: VocabularyIns
   if (instance.conceptUriBase) return instance.conceptUriBase;
   const base = withSlash(instance.baseUrl);
   try {
-    const res = await ctx.http.request(`${base}xml.php?skosMeta=1`, { method: "GET" }, { cache: { ttlSeconds: TTL.scheme } });
+    const res = await ctx.http.request(`${base}xml.php?skosMeta=1`, { method: "GET" }, { cache: { ttlSeconds: TTL.scheme }, userAgent: "honest" });
     const m = res.status === 200 && res.text ? res.text.match(/hasTopConcept\s+rdf:resource="([^"]*?)(\d+)"/) : null;
     if (m) return m[1].replace(/&amp;/g, "&");
   } catch { /* fall through to the default */ }
