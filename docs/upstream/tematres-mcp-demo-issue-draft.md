@@ -9,8 +9,8 @@ Before posting (Björn's ok, after mcp-reviewer):
   2. Make the demo public at /tematres/mcp (packages/host-services/src/services.ts: path "tematres" instead of the
      secretPath) and raise its rate limit to 5 a second (TEMATRES_RATE_LIMIT_RPS = "5" in wrangler.toml; Björn: 2 until
      he is told, 5 when this is posted; the text below says 5), deploy, check / and /health and one call.
-  3. Done: clients tried filled in. Screenshot: Björn's project chat of the four-step conversation (questions 1-4),
-     with the project renamed (it read "Temetrest_demo"). Data checked against services.php on 2026-11-16: NA of 4562;
+  3. Done: clients tried filled in. Screenshot: taken 2026-11-16 in the project "TemaTres demo", questions 1-4 with
+     "Short" added; answers checked against the data below (question 2 answered from the first answer, no lookup). Data checked against services.php on 2026-11-16: NA of 4562;
      narrower of 4562 (4563, 4567, 4570, 4571); their target terms (es: Biblioteca móvil, municipal, regional, rural);
      4573 under 4572 Special libraries, NA of 4572; related 4524, 4574.
   4. Post with lines unwrapped.
@@ -44,12 +44,12 @@ screenshots.
 
 I have built a small open-source server that lets AI assistants such as Claude look things up in TemaTres vocabularies. It only reads, through TemaTres's web service. To show what that gives a vocabulary, I pointed a demo at a few of the vocabularies on vocabularyserver.com. **Is that all right with you?** If you would rather it did not read from your server, I will take it down straight away.
 
-**What it gives.** A person asks a question in ordinary language; the assistant looks it up in the vocabulary and answers from what it finds, with the vocabulary's own terms and structure, instead of from memory. And it is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. A conversation with the UNESCO Thesaurus on your server, each answer from the tools:
+**What it gives.** A person asks a question in ordinary language; the assistant looks it up in the vocabulary and answers from what it finds, with the vocabulary's own terms and structure, instead of from memory. And it is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. A conversation with the UNESCO Thesaurus on your server (in the screenshot I asked for short answers, only to keep the picture small); every answer comes from the vocabulary, looked up or already returned earlier in the conversation:
 
 1. *What does the UNESCO Thesaurus mean by a public library?* The scope note of *Public libraries*: "A library which serves the population of a community or region free of charge or for a nominal fee.", with its place: Information and communication › Documentary information systems › Libraries › Public libraries.
-2. *Which kinds of public library does it list?* Four narrower concepts: *Mobile*, *Municipal*, *Regional* and *Rural libraries*.
+2. *Which kinds of public library does it list?* Four narrower concepts: *Mobile*, *Municipal*, *Regional* and *Rural libraries*. (No new lookup: they came with the first answer.)
 3. *What are they called in Spanish?* From the thesaurus's own mappings to the Spanish edition: *Biblioteca móvil*, *Biblioteca municipal*, *Biblioteca regional* and *Biblioteca rural*.
-4. *And agricultural libraries? They are not among them.* The thesaurus puts *Agricultural libraries* under *Special libraries* ("A library primarily serving one discipline or particular field."), not under public libraries, and relates it to *Agricultural information systems* and *Research libraries*: the thesaurus's own structure, not a guess.
+4. *And agricultural libraries? They are not among them.* The thesaurus puts *Agricultural libraries* (*Biblioteca agrícola*) under *Special libraries* ("A library primarily serving one discipline or particular field."), not under public libraries, and relates it to *Agricultural information systems* and *Research libraries*: the thesaurus's own structure, not a guess.
 
 The same works for a glossary. *How does ISO 25964 describe a thesaurus?* gives the glossary's scope note for *thesaurus*: "controlled vocabulary in which concepts are represented primarily by preferred terms, formally organized so that paradigmatic relationships between the concepts are made explicit, and the preferred terms are accompanied by lead-in entries for synonyms or quasi-synonyms".
 
