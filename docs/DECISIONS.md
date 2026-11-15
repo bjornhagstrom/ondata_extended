@@ -587,7 +587,11 @@ find.
   Spanish; French) and the ISO 25964-1 and Z39.19 glossaries. Others are reachable by their base URL. Rate limit 2
   requests a second with no burst (Björn: at most 2 a second before we tell him), one hostname only, since the limit
   is per hostname; a request waits up to 10 s for its turn. A cold `vocab_get_concept` takes about 7 requests, so
-  about 3.5 s. Our tools worked against his TemaTres 3.3
-  unchanged (tried locally). His HTML pages and SKOS export sit behind a Cloudflare challenge; `services.php` answered.
+  about 3.5 s. Our tools worked unchanged against his
+  instances (TemaTres 3.6.1 for UNESCO, 3.3 for an older glossary). His HTML pages and SKOS export sit behind a
+  Cloudflare challenge; `services.php` answered, also from the Worker.
+- **Live test through the Worker, 2026-11-15** (six calls): UNESCO scheme info, search "libraries" (32 hits), the
+  concept Libraries with path, 9 narrower, related and en/es/fr mappings; the ISO 25964 definition of "thesaurus"; a
+  Spanish UNESCO concept URI resolved to `unesco-es` without `vocab`. A cold `vocab_get_concept` took about 3.5 s.
 - **Contact**: test first, keep tests short; then a short note with a couple of concrete examples (Björn's ok before
   anything is posted).
