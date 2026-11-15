@@ -29,6 +29,6 @@ workers_dev = true
 enabled = true
 
 [env.production.vars]
-# Every vocabulary the service may reach; add a host here and to KNOWN_VOCABULARIES together.
+# Every vocabulary the service may reach; add a host here and to src/vocabularies.ts together.
 VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
 VOCAB_SERVICE_STATUS = "service"

@@ -5,7 +5,7 @@
  */
 
 import { createWorkerHandler, pickTelemetryFields, type AnalyticsEngineDataset, type ConfigSource } from "@ondata-extended/core";
-import { KNOWN_VOCABULARIES } from "@ondata-extended/profile-skos";
+import { VOCABULARIES } from "./vocabularies.js";
 import { buildServer, createVocabEngine, profile, SERVER_NAME, SERVER_VERSION } from "./server.js";
 import type { Engine } from "@ondata-extended/core";
 import en from "./i18n/en.json";
@@ -37,7 +37,7 @@ export function landingPage(request: Request, env?: Env): Response {
   const other = lang === "sv" ? "en" : "sv";
   const endpoint = new URL("/mcp", request.url).toString();
   const tools = profile.tools.map((tool) => `<li><code>${esc(tool.name)}</code> ${esc(tool.title ?? "")}</li>`).join("");
-  const vocabs = KNOWN_VOCABULARIES.map((v) => `<li><code>${esc(v.id)}</code> ${esc(v.ext.title ?? v.baseUrl)}</li>`).join("");
+  const vocabs = VOCABULARIES.map((v) => `<li><code>${esc(v.id)}</code> ${esc(v.ext.title ?? v.baseUrl)}</li>`).join("");
   const html = `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(t.title)}</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#1a1a1a;background:#fff}code{background:#f2f2f2;padding:0 .25rem;border-radius:3px}@media (prefers-color-scheme:dark){body{color:#eee;background:#141414}code{background:#2a2a2a}}</style></head>
 <body><p><a href="?lang=${other}">${esc(t.language)}</a></p><h1>${esc(t.title)}</h1><p>${esc(t.intro)}</p>

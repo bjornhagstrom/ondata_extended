@@ -17,8 +17,8 @@ scripts/smoke-vocab.mjs`. The rest of this page describes the one-service Worker
   `vocab_related`, `vocab_top_concepts`, `vocab_suggest`, `vocab_scheme_info`. All read-only. Their names,
   arguments, types, ranges, defaults and annotation hints (read-only, idempotent and so on) are fixed by `packages/profile-skos/tests/frozen-tools.test.ts`;
   titles and descriptions may still be improved.
-- **Vocabularies:** only those approved for the service, listed in `KNOWN_VOCABULARIES`
-  (`packages/profile-skos/src/vocabularies.ts`) and allowed in `VOCAB_ALLOWED_DOMAINS` (`[env.production.vars]` in
+- **Vocabularies:** only those approved for the service, listed in the deployment's own list (`packages/host-vocab/src/vocabularies.ts`; `packages/host-services/src/services.ts` for the several-service Worker)
+  and allowed in `VOCAB_ALLOWED_DOMAINS` (`[env.production.vars]` in
   `packages/host-vocab/wrangler.toml`). Today: `svada`, `https://begrepp.hagstrom.nu/`. A tool call naming any
   other host is refused before a request is sent.
 
@@ -61,7 +61,7 @@ Every deploy needs Björn's ok, each time.
 
 ## Adding a vocabulary
 
-1. An entry in `KNOWN_VOCABULARIES` (id, base URL, adapter, default language, title, concept URI base as the
+1. An entry in the deployment's list of vocabularies (id, base URL, adapter, default language, title, concept URI base as the
    instance's SKOS export writes it).
 2. Its host in `VOCAB_ALLOWED_DOMAINS` of `[env.production.vars]` (comma-separated) and, to try it first, of the
    test Worker's `[vars]`.

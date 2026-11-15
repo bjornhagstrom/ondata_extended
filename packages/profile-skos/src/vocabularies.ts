@@ -1,13 +1,13 @@
 /**
  * Known vocabularies and how a tool argument becomes one.
  *
- * `vocab` may be a registry id ("svada"), the base URL of a known instance, or the base URL
- * of any other TemaTres installation (then the TemaTres adapter is assumed). Every request
- * still goes through the core's guards, so a deployment's allowlist decides what is
- * reachable.
+ * The profile knows no vocabulary itself: a deployment passes its own list (`createSkosProfile({ vocabularies })`).
+ * `vocab` may be an id from that list, the base URL of a listed instance, or the base URL of any other TemaTres
+ * installation (then the TemaTres adapter is assumed). Every request still goes through the core's guards, so a
+ * deployment's allowlist decides what is reachable.
  */
 
-import type { EngineConfig, InstanceEntry } from "@ondata-extended/profile-contract";
+import type { InstanceEntry } from "@ondata-extended/profile-contract";
 import { createInstanceRegistry } from "@ondata-extended/core";
 import type { VocabularyAdapter, VocabularyInstance } from "./model.js";
 import { temaTresAdapter } from "./adapters/tematres/adapter.js";
@@ -20,26 +20,25 @@ export interface VocabExt {
   conceptUriBase?: string;
 }
 
-export const KNOWN_VOCABULARIES: InstanceEntry<VocabExt>[] = [
-  {
-    id: "svada",
-    baseUrl: "https://begrepp.hagstrom.nu/",
-    ext: { adapter: "tematres", defaultLang: "sv", title: "Svada - termer och begrepp", conceptUriBase: "https://begrepp.hagstrom.nu/skos/" }
-  }
-];
-
 export const ADAPTERS: Record<string, VocabularyAdapter> = { [temaTresAdapter.id]: temaTresAdapter };
 
 export class UnknownVocabularyError extends Error {
+  /** True when no vocabulary was given and the deployment has no default. */
+  readonly noDefault: boolean;
   constructor(value: string) {
-    super(`Unknown vocabulary "${value}". Use a known id or the base URL of a vocabulary service.`);
+    super(value
+      ? `Unknown vocabulary "${value}". Use a known id or the base URL of a vocabulary service.`
+      : "No vocabulary given, and this server has no default vocabulary. Pass the base URL of a vocabulary service as `vocab`.");
     this.name = "UnknownVocabularyError";
+    this.noDefault = value === "";
   }
 }
 
-export function createResolver(config: EngineConfig, entries: InstanceEntry<VocabExt>[] = KNOWN_VOCABULARIES) {
+export function createResolver(entries: readonly InstanceEntry<VocabExt>[] = []) {
   const registry = createInstanceRegistry(entries);
-  const defaultId = config.get("DEFAULT_VOCAB") ?? entries[0]?.id;
+  // The deployment's first vocabulary is the default; the order of its list is the setting (no config override, so
+  // the `vocab` argument's description, written from the same list, always names the right default).
+  const defaultId = entries[0]?.id;
 
   return {
     registry,

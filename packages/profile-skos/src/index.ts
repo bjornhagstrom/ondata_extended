@@ -5,26 +5,31 @@
  * MVP: eight tools (src/tools.ts) over one adapter (TemaTres).
  */
 
-import type { Profile } from "@ondata-extended/profile-contract";
+import type { InstanceEntry, Profile } from "@ondata-extended/profile-contract";
 import { TemaTresProtocolError } from "./adapters/tematres/client.js";
-import { ConceptNotFoundError, ForeignConceptUriError, SKOS_TOOLS } from "./tools.js";
-import { UnknownVocabularyError } from "./vocabularies.js";
+import { ConceptNotFoundError, ForeignConceptUriError, createSkosTools } from "./tools.js";
+import { UnknownVocabularyError, type VocabExt } from "./vocabularies.js";
 
 export const PROFILE_ID = "skos";
 export const TOOL_PREFIX = "vocab_";
 export const PROFILE_VERSION = "0.1.0";
 
 export * from "./model.js";
-export { KNOWN_VOCABULARIES, createResolver } from "./vocabularies.js";
-export { SKOS_TOOLS, localId } from "./tools.js";
+export { createResolver, type VocabExt } from "./vocabularies.js";
+export { createSkosTools, localId, vocabArgDescription } from "./tools.js";
 export { htmlToText } from "./text.js";
 
-export function createSkosProfile(): Profile {
+export interface SkosProfileOptions {
+  /** The deployment's known vocabularies: ids usable as `vocab`; the first is the default. */
+  vocabularies?: readonly InstanceEntry<VocabExt>[];
+}
+
+export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
   return {
     id: PROFILE_ID,
     version: PROFILE_VERSION,
     toolPrefix: TOOL_PREFIX,
-    tools: SKOS_TOOLS,
+    tools: createSkosTools(options.vocabularies ?? []),
     shrinkableKeys: ["concepts", "results", "narrower", "related", "broader", "altLabels", "notes", "mappings"],
     telemetryFields: ["vocab", "query", "prefix", "id", "limit", "response_format"],
     untrustedSourceLabel: "the vocabulary service",
@@ -36,7 +41,11 @@ export function createSkosProfile(): Profile {
       if (error instanceof ConceptNotFoundError) {
         return "→ Find the concept's id with vocab_search_concepts or vocab_suggest; ids are local to one vocabulary.";
       }
-      if (error instanceof UnknownVocabularyError) return "→ Omit `vocab` to use the default vocabulary.";
+      if (error instanceof UnknownVocabularyError) {
+        return error.noDefault
+          ? "→ Pass a vocabulary service's base URL as `vocab`."
+          : "→ Use one of the ids listed in the `vocab` argument's description, or a vocabulary service's base URL.";
+      }
       if (error instanceof TemaTresProtocolError) {
         // TemaTres answers a search text shorter than its minimum (CFG_MIN_SEARCH_SIZE) with the same XML page.
         if (error.task === "search" || error.task === "suggestDetails") {

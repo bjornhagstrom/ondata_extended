@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { __setDnsResolverForTests, createEngine, createMcpServer, registerProfiles } from "@ondata-extended/core";
-import { createSkosProfile, htmlToText, localId } from "../src/index.js";
+import type { InstanceEntry } from "@ondata-extended/profile-contract";
+import { createSkosProfile, htmlToText, localId, vocabArgDescription, type VocabExt } from "../src/index.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -45,10 +46,16 @@ afterEach(() => {
   __setDnsResolverForTests(null);
 });
 
-async function client(source: Record<string, string> = {}) {
+/** The deployment's list, as host-vocab passes it: the profile itself knows no vocabulary. */
+const SVADA: InstanceEntry<VocabExt>[] = [{
+  id: "svada", baseUrl: "https://begrepp.hagstrom.nu/",
+  ext: { adapter: "tematres", defaultLang: "sv", title: "Svada - termer och begrepp", conceptUriBase: "https://begrepp.hagstrom.nu/skos/" }
+}];
+
+async function client(source: Record<string, string> = {}, vocabularies: readonly InstanceEntry<VocabExt>[] = SVADA) {
   const engine = createEngine({ configPrefixes: ["VOCAB"], configSource: source, cacheOrigin: "https://t.internal" });
   const server = createMcpServer({ name: "t", version: "0" });
-  registerProfiles(server, [createSkosProfile()], engine);
+  registerProfiles(server, [createSkosProfile({ vocabularies })], engine);
   const [a, b] = InMemoryTransport.createLinkedPair();
   const c = new Client({ name: "t", version: "0" });
   await Promise.all([server.connect(a), c.connect(b)]);
@@ -301,6 +308,75 @@ describe("concept URIs", () => {
     const m = await md(await client(), "vocab_get_concept", { id: "https://other.example/skos/10" });
     expect(m.isError).toBe(true);
     expect(m.text).toContain('does not belong to vocabulary "svada"');
+    expect(requested).toEqual([]);
+  });
+
+  it("tells vocabularies on the same host apart by path: a URI picks its own, and is refused by another", async () => {
+    const H = "https://shared.example";
+    const two: InstanceEntry<VocabExt>[] = [
+      { id: "first", baseUrl: `${H}/first/en/`, ext: { adapter: "tematres" } },
+      { id: "second", baseUrl: `${H}/second/`, ext: { adapter: "tematres" } }
+    ];
+    overrides.set(`${H}/second/services.php?task=fetchTerm&arg=5&output=json`, jsonAnswer(envelope("fetchTerm", "5", undefined)));
+    const uri = `${H}//second/xml.php?schema=skos&term_id=5`; // TemaTres writes some mapping URIs with a double slash
+    const picked = await md(await client({ VOCAB_ALLOWED_DOMAINS: "shared.example" }, two), "vocab_get_concept", { id: uri });
+    expect(picked.text).toContain('No concept with id "5" in vocabulary "second"');
+    expect(requested.length).toBeGreaterThan(0);
+    for (const url of requested) expect(url.startsWith(`${H}/second/`), url).toBe(true);
+    requested.length = 0;
+    const refused = await md(await client({ VOCAB_ALLOWED_DOMAINS: "shared.example" }, two), "vocab_get_concept", { id: uri, vocab: "first" });
+    expect(refused.text).toContain('does not belong to vocabulary "first"');
+    expect(requested).toEqual([]);
+  });
+
+  it("picks the longest matching base among nested vocabularies on one host", async () => {
+    const H = "https://nest.example";
+    const nested: InstanceEntry<VocabExt>[] = [
+      { id: "outer", baseUrl: `${H}/a/`, ext: { adapter: "tematres", conceptUriBase: `${H}/a/xml.php?schema=skos&term_id=` } },
+      { id: "inner", baseUrl: `${H}/a/b/`, ext: { adapter: "tematres", conceptUriBase: `${H}/a/b/xml.php?schema=skos&term_id=` } }
+    ];
+    const r = await md(await client({ VOCAB_ALLOWED_DOMAINS: "nest.example" }, nested), "vocab_get_concept", { id: `${H}/a/b/xml.php?schema=skos&term_id=7` });
+    expect(r.text).not.toContain("does not belong");
+    expect(requested.length).toBeGreaterThan(0);
+    for (const url of requested) expect(url.startsWith(`${H}/a/b/`), url).toBe(true);
+  });
+
+  it("matches a concept URI base on another host exactly as given (a ?tema= form), whatever the scheme", async () => {
+    const own: InstanceEntry<VocabExt>[] = [
+      { id: "plain", baseUrl: "https://plain.example/v/", ext: { adapter: "tematres" } },
+      { id: "ided", baseUrl: "https://t.example/v/", ext: { adapter: "tematres", conceptUriBase: "https://id.example/?tema=" } }
+    ];
+    const r = await md(await client({ VOCAB_ALLOWED_DOMAINS: "t.example" }, own), "vocab_get_concept", { id: "http://id.example/?tema=10" });
+    expect(r.text).not.toContain("does not belong");
+    expect(requested.length).toBeGreaterThan(0);
+    for (const url of requested) expect(url.startsWith("https://t.example/v/"), url).toBe(true);
+  });
+
+  it("accepts the http form of a Svada concept URI", async () => {
+    const r = await md(await client(), "vocab_get_concept", { id: "http://begrepp.hagstrom.nu/skos/10" });
+    expect(r.isError).toBe(false);
+  });
+
+  it("lists at most 20 ids in the vocab argument and says how many more there are", () => {
+    const many = Array.from({ length: 23 }, (_, i): InstanceEntry<VocabExt> => ({ id: `v${i}`, baseUrl: `https://m.example/${i}/`, ext: { adapter: "tematres" } }));
+    const desc = vocabArgDescription(many);
+    expect(desc).toContain("'v19'");
+    expect(desc).not.toContain("'v20'");
+    expect(desc).toContain("and 3 more");
+  });
+
+  it("describes the vocab argument with the deployment's own ids, and has no default without a list", async () => {
+    const desc = vocabArgDescription(SVADA);
+    expect(desc).toContain("'svada' (Svada - termer och begrepp)");
+    expect(desc).toContain("default vocabulary ('svada')");
+    const tools = (await (await client({}, [])).listTools()).tools;
+    const vocab = (tools[0].inputSchema.properties as Record<string, { description?: string }>).vocab;
+    expect(vocab.description).not.toMatch(/svada|default/i);
+    const r = await md(await client({}, []), "vocab_search_concepts", { query: "data" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("this server has no default vocabulary");
+    expect(r.text).toContain("Pass a vocabulary service's base URL as `vocab`.");
+    expect(r.text).not.toContain("ids listed");
     expect(requested).toEqual([]);
   });
 

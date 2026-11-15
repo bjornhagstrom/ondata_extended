@@ -562,3 +562,32 @@ find.
 - **Not built**: a combined endpoint with the tools of several services; authentication (decision of 2026-11-14).
 - **Also**: `scripts/smoke-vocab.mjs` paces its cases against a deployed server (`SMOKE_PAUSE_MS`, default 1500 ms), so a
   cold cache no longer makes the last case fail on the rate limit.
+
+## 2026-11-15: the SKOS profile knows no vocabulary; a TemaTres demo for its maintainer
+
+- **Standing constraint (Björn)**: every profile is as generic as possible, and so are the interfaces between core,
+  contract and profiles and the guides. Instance data (which vocabularies, portals, defaults) comes from the deployment.
+- **The SKOS profile**: `createSkosProfile({ vocabularies })` takes the deployment's list; the profile ships none
+  (`KNOWN_VOCABULARIES` and `SKOS_TOOLS` are gone; `createSkosTools(entries)` builds the tools). The first entry is the
+  default; the `DEFAULT_VOCAB` setting is gone (the order of the deployment's list is the setting, so the generated
+  description always names the right default; no deployment had set it). With no list and no `vocab`, a call fails
+  with a clear error.
+  The `vocab` argument's description is generated from the list (ids and titles, at most 20), so a model sees which
+  vocabularies exist; no deployment name is in the profile's text any more. Svada's entry moved to
+  `packages/host-vocab/src/vocabularies.ts` (and `host-services`). Tool names and arguments are unchanged (frozen test
+  green); only model-facing text changed.
+- **A fix found on the way**: a concept URI picked its vocabulary by host, so with several vocabularies on one host (as
+  on vocabularyserver.com) a URI of one could silently resolve in another with the same id. Now the longest matching
+  base URL (as a directory) or concept URI base (exactly as given, e.g. ending in `?tema=`) wins, and a URI must start
+  with one of the chosen vocabulary's; the scheme (http or https) and repeated slashes are ignored. Tested, with mutation
+  checks (host-only matching, first match instead of longest, and no concept URI base each fail a test).
+- **The TemaTres demo**: a third service in `packages/host-services`, private at the secret `SERVICES_TEMATRES_PATH`
+  until the maintainer (Diego Ferreyra) has seen it. It reaches only `vocabularyserver.com`, his server, which
+  publishes 391 vocabularies through TemaTres's web service; known by id: the UNESCO Thesaurus (English, the default;
+  Spanish; French) and the ISO 25964-1 and Z39.19 glossaries. Others are reachable by their base URL. Rate limit 2
+  requests a second with no burst (Björn: at most 2 a second before we tell him), one hostname only, since the limit
+  is per hostname; a request waits up to 10 s for its turn. A cold `vocab_get_concept` takes about 7 requests, so
+  about 3.5 s. Our tools worked against his TemaTres 3.3
+  unchanged (tried locally). His HTML pages and SKOS export sit behind a Cloudflare challenge; `services.php` answered.
+- **Contact**: test first, keep tests short; then a short note with a couple of concrete examples (Björn's ok before
+  anything is posted).

@@ -199,7 +199,7 @@ export interface EngineOutput {
 export interface EngineConfig {
   /** A setting by its unprefixed name ("ALLOWED_DOMAINS"), from the first prefix that has it. */
   get(name: string): string | undefined;
-  /** The primary variable name for a setting, for messages ("VOCAB_ALLOWED_DOMAINS"). */
+  /** The primary variable name for a setting, for messages ("EXAMPLE_ALLOWED_DOMAINS"). */
   nameOf(name: string): string;
 }
 
@@ -320,7 +320,7 @@ export interface Profile {
    * across the deployment's profiles.
    */
   toolPrefix?: string;
-  /** Per-host request policy, keyed by hostname ("dati.senato.it"). */
+  /** Per-host request policy, keyed by hostname ("data.example.org"). */
   hostPolicies?: Record<string, HostPolicy>;
   tools: ToolSpec<any>[];
   resources?: ResourceSpec[];
@@ -333,7 +333,7 @@ export interface Profile {
   untrustedSourceLabel: string;
   /** Default text for a row-level tool with no rows: tells the model not to invent the missing value. */
   emptyText?: string;
-  /** The honest user agent for this profile's requests ("Vocab-MCP-Server/0.1"). */
+  /** The honest user agent for this profile's requests ("Example-MCP-Server/0.1"). */
   honestUserAgent: string;
   /** A hint for the model about an error from this profile's tools, or null for the generic text. */
   describeError?(error: unknown, toolName: string): string | null;
