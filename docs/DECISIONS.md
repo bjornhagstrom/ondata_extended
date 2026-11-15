@@ -646,3 +646,5 @@ find.
   are not remembered (so a transient error does not stick, and one service's allow-list does not reach another); the
   memory is capped at 200 entries. Tested, with a mutation check.
 - **README**: how to run the vocabulary server against one's own TemaTres (checked locally).
+- **Posted** 2026-11-16 as tematres/TemaTres-Vocabulary-Server#137, after the deploy (version 5e3a82ec) and a check of
+  `/`, `/health` and the conversation's calls at `/tematres/mcp`.

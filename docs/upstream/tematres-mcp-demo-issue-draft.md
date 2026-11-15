@@ -1,5 +1,6 @@
 <!--
-DRAFT issue for tematres/TemaTres-Vocabulary-Server (Discussions are off; proposals go in issues, as #118).
+POSTED 2026-11-16: https://github.com/tematres/TemaTres-Vocabulary-Server/issues/137 (title and body as below; the
+screenshot to be dragged in by Björn at [screenshot]). Was: DRAFT issue for tematres/TemaTres-Vocabulary-Server (Discussions are off; proposals go in issues, as #118).
 Reader: Diego Ferreyra, TemaTres's maintainer: a vocabulary expert and researcher, probably not an AI-tools user. So:
 the question first, then what it gives a vocabulary with real answers from his own server, then how to try it, step by
 step (Björn: complete enough that a reader new to AI tools does not get lost); no demand.
