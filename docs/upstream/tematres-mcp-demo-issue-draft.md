@@ -9,12 +9,16 @@ Before posting (Björn's ok, after mcp-reviewer):
   2. Make the demo public at /tematres/mcp (packages/host-services/src/services.ts: path "tematres" instead of the
      secretPath) and raise its rate limit to 5 a second (TEMATRES_RATE_LIMIT_RPS = "5" in wrangler.toml; Björn: 2 until
      he is told, 5 when this is posted; the text below says 5), deploy, check / and /health and one call.
-  3. Done: clients tried filled in. Screenshot: Björn's project chat (example 1 and the public-library follow-up), retaken
-     with the project renamed (it read "Temetrest_demo"); the answers checked against the tools on 2026-11-16 (nine types
-     and Spanish names as the Spanish edition; scope note of 4562 verbatim; four narrower; exact match Biblioteca pública).
+  3. Done: clients tried filled in. Screenshot: Björn's project chat of the four-step conversation (questions 1-4),
+     with the project renamed (it read "Temetrest_demo"). Data checked against services.php on 2026-11-16: NA of 4562;
+     narrower of 4562 (4563, 4567, 4570, 4571); their target terms (es: Biblioteca móvil, municipal, regional, rural);
+     4573 under 4572 Special libraries, NA of 4572; related 4524, 4574.
   4. Post with lines unwrapped.
 Facts: the example answers are the tools' output through the Worker on 2026-11-15 (DECISIONS); the fetchNotes check is
 the raw web-service answer (cant_result 0 for ids 129, 132, 407 and 737).
+Projects (checked 2026-11-16): "+ New Project", "Set project instructions", instructions apply to every chat in the
+project, free plan up to five projects (support.claude.com/en/articles/9519177; an older cached copy said paid plans
+only: Björn checks the label and the limit when he retakes the screenshot).
 Connecting (checked 2026-11-15 against vendor docs): claude.ai "Customize > Connectors", "+ Add", "Add custom
 connector", "No sign in"; Free allows one custom connector; connectors sync to Desktop and mobile; per chat "+" >
 Connectors; Claude picks tools itself and asks for approval
@@ -40,16 +44,14 @@ screenshots.
 
 I have built a small open-source server that lets AI assistants such as Claude look things up in TemaTres vocabularies. It only reads, through TemaTres's web service. To show what that gives a vocabulary, I pointed a demo at a few of the vocabularies on vocabularyserver.com. **Is that all right with you?** If you would rather it did not read from your server, I will take it down straight away.
 
-**What it gives.** A person asks a question in ordinary language; the assistant looks it up in the vocabulary and answers from what it finds, with the vocabulary's own terms and structure, instead of from memory. Two answers the tools gave from your server:
+**What it gives.** A person asks a question in ordinary language; the assistant looks it up in the vocabulary and answers from what it finds, with the vocabulary's own terms and structure, instead of from memory. And it is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. A conversation with the UNESCO Thesaurus on your server, each answer from the tools:
 
-1. *Which kinds of libraries does the UNESCO Thesaurus distinguish, and what are they called in Spanish?* The concept *Libraries* comes back with its path (Information and communication › Documentary information systems › Libraries), nine narrower concepts (Academic, Childrens, Digital, Government, Institutional, International, National, Public and School libraries), its related concepts, and its mapping to *Biblioteca* in the Spanish edition, whose narrower concepts include *Biblioteca pública* and *Biblioteca escolar*.
-2. *How does ISO 25964 describe a thesaurus?* The glossary's scope note for *thesaurus*: "controlled vocabulary in which concepts are represented primarily by preferred terms, formally organized so that paradigmatic relationships between the concepts are made explicit, and the preferred terms are accompanied by lead-in entries for synonyms or quasi-synonyms".
+1. *What does the UNESCO Thesaurus mean by a public library?* The scope note of *Public libraries*: "A library which serves the population of a community or region free of charge or for a nominal fee.", with its place: Information and communication › Documentary information systems › Libraries › Public libraries.
+2. *Which kinds of public library does it list?* Four narrower concepts: *Mobile*, *Municipal*, *Regional* and *Rural libraries*.
+3. *What are they called in Spanish?* From the thesaurus's own mappings to the Spanish edition: *Biblioteca móvil*, *Biblioteca municipal*, *Biblioteca regional* and *Biblioteca rural*.
+4. *And agricultural libraries? They are not among them.* The thesaurus puts *Agricultural libraries* under *Special libraries* ("A library primarily serving one discipline or particular field."), not under public libraries, and relates it to *Agricultural information systems* and *Research libraries*: the thesaurus's own structure, not a guess.
 
-It is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. Continuing the first example (the screenshot shows the first question and the first follow-up; I asked for short answers there, only to keep the picture small):
-
-- *What exactly counts as a public library?* The assistant opens *Public libraries* and gives UNESCO's scope note: "A library which serves the population of a community or region free of charge or for a nominal fee."
-- *And what is "libraries" in French and Russian?* From the thesaurus's own mappings: *Bibliothèque* and *Библиотеки*, with the Spanish *Biblioteca* already given.
-- *Where do agricultural libraries fit, then? They were not in the list.* The assistant looks *Agricultural libraries* up and finds it under *Special libraries*, not under *Libraries*, related to *Agricultural information systems* and *Research libraries*: the thesaurus's own structure, not a guess.
+The same works for a glossary. *How does ISO 25964 describe a thesaurus?* gives the glossary's scope note for *thesaurus*: "controlled vocabulary in which concepts are represented primarily by preferred terms, formally organized so that paradigmatic relationships between the concepts are made explicit, and the preferred terms are accompanied by lead-in entries for synonyms or quasi-synonyms".
 
 **How it works.** MCP (Model Context Protocol) is a common way for AI assistants to call outside tools. The server offers eight read-only tools in SKOS terms (search, suggest, concept, broader, narrower, related, top concepts, vocabulary information), each built on `services.php` tasks such as `search`, `fetchTerm`, `fetchUp`, `fetchDown`, `fetchDirectTerms`, `fetchNotes` and `fetchTargetTerms`. Nothing in TemaTres has to change. I have tried it with TemaTres 3.6.1 and 3.3.
 
@@ -67,12 +69,25 @@ It is a conversation, not single questions: the assistant keeps the context, so 
 **Try it.** The address of the demo is `https://ondata-extended-services.ondata-extended.workers.dev/tematres/mcp`.
 
 - *Claude, on the web (claude.ai) or in the Claude Desktop app:* Customize > Connectors > "+ Add" > Add custom connector. Give it a name, paste the address, choose "No sign in" under Authentication, then Add. It works on the free plan, which allows one custom connector. A connector added on the web also appears in the Desktop app and, at the next login, on the phone.
-- *In a chat:* make sure the connector is switched on (the "+" button > Connectors), then ask, for example the libraries question above. You do not need to name the tools, and the assistant asks your permission the first time it uses one. The assistant decides for itself which source to use. With web search on, a question about the UNESCO Thesaurus may go to UNESCO's own web pages instead, since the thesaurus is also published there. Two ways to make it use the vocabulary:
-  - *In a single chat,* name the connector: "Use the Tematres demo connector: which kinds of libraries …".
-  - *In a Claude project,* put it in the project's instructions once; then every question in the project uses it without being told. For example: "In this project, check every subject term against the UNESCO Thesaurus with the Tematres demo connector (vocab_ tools) before using it. Use the thesaurus's preferred terms, quote its scope notes when you define a term, and say when a term is not in the thesaurus instead of inventing one. Prefer the connector to web search for anything the thesaurus covers." This is what I would recommend for real work.
+- *In a chat:* make sure the connector is switched on (the "+" button > Connectors), then ask, for example the public-library questions above. You do not need to name the tools, and the assistant asks your permission the first time it uses one. The assistant decides for itself which source to use. With web search on, a question about the UNESCO Thesaurus may go to UNESCO's own web pages instead, since the thesaurus is also published there. Two ways to make it use the vocabulary:
+  - *In a single chat,* name the connector: "Use the Tematres demo connector: what does the UNESCO Thesaurus mean by a public library?".
+  - *In a Claude project,* write it once in the project's instructions; then every question in the project uses the vocabulary without being told (steps below). This is what I would recommend for real work.
 - *The difference is the point:* from memory or the web, the assistant paraphrases; from the vocabulary, it quotes the scope note and follows the thesaurus's own structure.
 - *Other assistants:* ChatGPT, VS Code and others can add an MCP server by address too; the menus differ.
 - *If something does not work,* ask the assistant itself ("how do I add a custom MCP connector here?"); it usually knows its own menus better than any instructions I could write.
+
+**Working in a Claude project.** A project keeps its own instructions and chats together, so the vocabulary is used in every chat of that piece of work. It works the same on claude.ai and in the Claude Desktop app:
+
+1. Open *Projects* in the left sidebar (or go to claude.ai/projects) and click *+ New Project*. Give it a name, for example "Library report".
+2. In the project, click *Set project instructions*, paste an instruction like the one below, and save. It applies to every chat in the project.
+3. Start a chat in the project and check that the connector is switched on ("+" > Connectors).
+4. Ask as you normally would; there is no need to name the connector. The screenshot shows such a chat: the assistant says "Used Tematres demo" and quotes the scope note.
+
+An instruction to start from, to adapt to the vocabulary and the work:
+
+> In this project, check every subject term against the UNESCO Thesaurus with the Tematres demo connector (vocab_ tools) before using it. Use the thesaurus's preferred terms, quote its scope notes when you define a term, and say when a term is not in the thesaurus instead of inventing one. For terms in other languages, use the thesaurus's own mappings. Prefer the connector to web search for anything the thesaurus covers.
+
+Projects are available on the free plan too (up to five projects).
 
 Tried with: Claude Desktop on macOS (in a project, as above) and the Claude app on iOS (by voice); the server also answers any other MCP client that speaks Streamable HTTP. Code (MIT): [packages/profile-skos](https://github.com/bjornhagstrom/ondata_extended/tree/main/packages/profile-skos). The server is my project, built on an engine derived from onData's [ckan-mcp-server](https://github.com/ondata/ckan-mcp-server) (MIT), and not affiliated with onData.
 
