@@ -5,7 +5,7 @@ vocabulary, with real answers from his own server, before protocol talk; short; 
 Decision (Björn, 2026-11-15): first contact as a public issue, so the demo becomes public when this is posted (it was
 private until then). The secret path must never appear here.
 Before posting (Björn's ok, after mcp-reviewer):
-  1. Deploy the honest user agent and repeat the live calls through the Worker; record them in docs/DECISIONS.md.
+  1. Done 2026-11-15: honest user agent deployed (version 78ea66f2), live calls repeated and recorded in DECISIONS.
   2. Make the demo public at /tematres/mcp (packages/host-services/src/services.ts: path "tematres" instead of the
      secretPath) and raise its rate limit to 5 a second (TEMATRES_RATE_LIMIT_RPS = "5" in wrangler.toml; Björn: 2 until
      he is told, 5 when this is posted; the text below says 5), deploy, check / and /health and one call.
@@ -21,8 +21,9 @@ Use cases: the LC precedent is lc-vocabularies-mcp (May Chan, DCMI 2026, Seoul, 
 dcpapers.dublincore.org/article/952633234); the others follow from the tools, no published example found.
 Voice: secondary sources say Claude's voice mode supports connectors since 2026-07-23; a report of 2026-07-13 says custom
 MCP connector tools failed in voice mode. Not in the text until Björn has tried it with the demo.
-Follow-up example: data from services.php on 2026-11-15 (NA note of 4562; target terms of 4543: es, fr, ru). The third
-follow-up (agricultural libraries) is not yet run through the tools: check its answer before posting, or drop it. Björn checks the Claude menu labels once more when he takes the
+Follow-up example: the tools' output through the Worker on 2026-11-15, 22:20 UTC, with the honest user agent (Public
+libraries 4562 and its NA note; target terms of 4543: es, fr, ru; Agricultural libraries 4573 under Special libraries
+4572). AGROVOC "irrigation": 30 hits through the Worker. Björn checks the Claude menu labels once more when he takes the
 screenshots.
 -->
 
@@ -39,7 +40,7 @@ It is a conversation, not single questions: the assistant keeps the context, so 
 
 - *What exactly counts as a public library?* The assistant opens *Public libraries* and gives UNESCO's scope note: "A library which serves the population of a community or region free of charge or for a nominal fee."
 - *And what is "libraries" in French and Russian?* From the thesaurus's own mappings: *Bibliothèque* and *Библиотеки*, with the Spanish *Biblioteca* already given.
-- *Where do agricultural libraries fit, then? They were not in the list.* The assistant looks *Agricultural libraries* up and shows where the thesaurus actually places it, instead of guessing.
+- *Where do agricultural libraries fit, then? They were not in the list.* The assistant looks *Agricultural libraries* up and finds it under *Special libraries*, not under *Libraries*, related to *Agricultural information systems* and *Research libraries*: the thesaurus's own structure, not a guess.
 
 **How it works.** MCP (Model Context Protocol) is a common way for AI assistants to call outside tools. The server offers eight read-only tools in SKOS terms (search, suggest, concept, broader, narrower, related, top concepts, vocabulary information), each built on `services.php` tasks such as `search`, `fetchTerm`, `fetchUp`, `fetchDown`, `fetchDirectTerms`, `fetchNotes` and `fetchTargetTerms`. Nothing in TemaTres has to change. I have tried it with TemaTres 3.6.1 and 3.3.
 

@@ -603,7 +603,8 @@ find.
   the first version with no recorded reason (inherited from the CKAN side, where some portals block non-browsers). A
   vocabulary server should see who calls it, and the TemaTres maintainer is about to be asked about the demo.
 - **Checked**: vocabularyserver.com and begrepp.hagstrom.nu answer `services.php` with 200 to that identity (curl,
-  2026-11-15); through the Worker after the deploy (pending). Consequence: a TemaTres behind a browser-only firewall
+  2026-11-15); through the Worker after the deploy (version 78ea66f2, 22:18 UTC): four calls answered, among them
+  Public libraries with its scope note, Agricultural libraries under Special libraries, and AGROVOC by its address. Consequence: a TemaTres behind a browser-only firewall
   now gets no browser attempt; such a deployment would need the identity as a setting.
 - **The draft** `docs/upstream/tematres-mcp-demo-issue-draft.md`: first contact as a public issue (Björn), so the demo
   becomes public at `/tematres/mcp` when it is posted; its landing texts (en, sv) are ready. Observation in it, from the
