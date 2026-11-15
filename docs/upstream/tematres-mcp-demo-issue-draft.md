@@ -11,8 +11,9 @@ Steps:
      comments and README line, tests. Push (Björn's ok, 2026-11-16: "kör när du är redo"), deploy, then check / and
      /health and re-run the four-step conversation at the public address.
   3. Done 2026-11-16: screenshot taken in the Claude Desktop project "TemaTres demo", questions 1-4 with "Short" added.
-  4. Post: `gh issue create` with this body (lines unwrapped), then Björn drags the screenshot into the issue on
-     GitHub where it says [screenshot] (gh cannot attach images) and removes the marker.
+  4. Post: `gh issue create --title` with the text of the **Title:** line (without the label) and `--body` with
+     everything after that line (lines unwrapped); then Björn drags the screenshot into the issue on GitHub where it
+     says [screenshot] (gh cannot attach images) and removes the marker.
 Facts behind the body:
   - Conversation (checked against services.php on 2026-11-16): NA of 4562 Public libraries; its narrower 4563, 4567,
     4570, 4571; their es target terms Biblioteca móvil, municipal, regional, rural; 4573 Agricultural libraries under
@@ -22,7 +23,9 @@ Facts behind the body:
     created the project in Desktop). The free-plan project limit is not stated (sources disagree).
   - Connecting: claude.ai "Customize > Connectors", "+ Add", "Add custom connector", "No sign in"; Free allows one
     custom connector; connectors added on the web appear in Desktop and mobile; per chat "+" > Connectors; Claude asks
-    approval before using a tool (support.claude.com/en/articles/11175166 and 11176164, 2026-11-15).
+    approval before using a tool (support.claude.com/en/articles/11175166 and 11176164, 2026-11-15). Other clients:
+    ChatGPT adds a custom MCP server by URL (developers.openai.com/api/docs/guides/custom-mcp-server), plans not
+    confirmed, hence "depending on the plan"; VS Code "MCP: Add Server" (code.visualstudio.com, 2026-11-11).
   - Tool choice (2026-11-15/16): in plain chats with web search on, Claude used the web or memory, also after the
     server sent instructions; naming the connector worked; a project instruction worked without naming it. Björn's
     connector is named "Tematres demo".
@@ -30,8 +33,8 @@ Facts behind the body:
     "authority file lookups alone were insufficient to ensure defensible output for every stage of the subject
     cataloguing workflow"; the paper pairs them with the Subject Headings Manual for retrieval.
   - Voice: Björn, iOS app, 2026-11-15. fetchNotes: raw cant_result 0 for ids 129, 132, 407, 737.
-  - xml.php: for a vocabulary given by address, one request to xml.php?skosMeta=1; a refusal is remembered for an
-    hour (adapter.ts exportRefusedUntil), so it is not repeated on every call.
+  - xml.php: for a vocabulary given by address, a request to xml.php?skosMeta=1; a 4xx refusal is remembered for an
+    hour per vocabulary in each running copy (adapter.ts exportRefusedUntil), so it is not repeated on every call.
 -->
 
 **Title:** A demo: an AI assistant answering from vocabularies on vocabularyserver.com, through `services.php`
@@ -51,7 +54,7 @@ The same works for a glossary. *How does ISO 25964 describe a thesaurus?* gives 
 
 **How it works.** MCP (Model Context Protocol) is a common way for AI assistants to call outside tools. The server offers eight read-only tools in SKOS terms (search, suggest, concept, broader, narrower, related, top concepts, vocabulary information), each built on `services.php` tasks such as `search`, `fetchTerm`, `fetchUp`, `fetchDown`, `fetchDirectTerms`, `fetchNotes` and `fetchTargetTerms`. Nothing in TemaTres has to change. I have tried it with TemaTres 3.6.1 and 3.3.
 
-**On your server.** The demo knows five vocabularies by name (the UNESCO Thesaurus in English, Spanish and French, and the ISO 25964-1 and Z39.19 glossaries); any other vocabulary there can be reached by its address, for example *AGROVOC* by asking for "irrigation" in `https://vocabularyserver.com/agrovoc/en/`. It identifies itself as `Vocab-MCP-Server/0.1.0` and sends at most five requests a second from each running copy; if that is too much for your server, tell me and I will lower it. Answers are kept for five minutes (vocabulary information for an hour). It reads `services.php`; for a vocabulary given by its address it also asks `xml.php?skosMeta=1` once, to learn the concept URI pattern. Your browser check refuses that request, so it uses TemaTres's default pattern and does not ask again for an hour. It does not try to get past the browser check.
+**On your server.** The demo knows five vocabularies by name (the UNESCO Thesaurus in English, Spanish and French, and the ISO 25964-1 and Z39.19 glossaries); any other vocabulary there can be reached by its address, for example *AGROVOC* by asking for "irrigation" in `https://vocabularyserver.com/agrovoc/en/`. It identifies itself as `Vocab-MCP-Server/0.1.0` and sends at most five requests a second from each running copy; if that is too much for your server, tell me and I will lower it. Answers are kept for five minutes (vocabulary information for an hour). It reads `services.php`; for a vocabulary given by its address it also asks `xml.php?skosMeta=1`, to learn the concept URI pattern. Your browser check refuses that request; the server then uses TemaTres's default pattern, and each running copy asks at most about once an hour per vocabulary. It does not try to get past the browser check.
 
 **Other uses.** Besides answering questions:
 
@@ -86,7 +89,7 @@ An instruction to start from, to adapt to the vocabulary, the work and the name 
 
 **Code and credit.** Tried with Claude Desktop on macOS (in a project, as above) and the Claude app on iOS (by voice); the server answers any MCP client that speaks Streamable HTTP. The code is MIT and public, in [bjornhagstrom/ondata_extended](https://github.com/bjornhagstrom/ondata_extended) (the vocabulary part is `packages/profile-skos`; the README says how to run it locally against your own TemaTres). The server is my project, built on an engine derived from onData's [ckan-mcp-server](https://github.com/ondata/ckan-mcp-server) (MIT), and not affiliated with onData.
 
-**Limits.** A proof of concept with no availability promise: it may be rate-limited or taken down, and the arguments of each call (the search text, for example) are logged. It reads only vocabularyserver.com, and only what `services.php` publishes.
+**Limits.** A proof of concept with no availability promise: it may be rate-limited or taken down, and the arguments of each call (the search text, for example) are logged. It reads only from vocabularyserver.com, through `services.php` (and the `xml.php` request described above).
 
 **Two things I noticed**, in case they are useful:
 

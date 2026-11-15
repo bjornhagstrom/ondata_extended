@@ -641,6 +641,8 @@ find.
   `wrangler secret delete` when convenient).
 - **A refused SKOS export is remembered**: for a vocabulary given by address, the adapter asks `xml.php?skosMeta=1`
   for the concept URI pattern. On vocabularyserver.com a browser check refuses it, and the core caches only successful
-  answers, so the request was repeated on every call. The adapter now remembers a refusal for an hour per instance and
-  uses TemaTres's default pattern meanwhile (tested; mutation check: without it the test fails).
+  answers, so the request was repeated on every call. The adapter now remembers a refusal (a 4xx answer, not 429) for an
+  hour per instance and uses TemaTres's default pattern meanwhile. Timeouts, 5xx, 429 and requests our own guards stop
+  are not remembered (so a transient error does not stick, and one service's allow-list does not reach another); the
+  memory is capped at 200 entries. Tested, with a mutation check.
 - **README**: how to run the vocabulary server against one's own TemaTres (checked locally).

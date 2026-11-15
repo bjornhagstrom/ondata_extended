@@ -11,7 +11,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { __setDnsResolverForTests, createEngine, createMcpServer, registerProfiles } from "@ondata-extended/core";
 import type { InstanceEntry } from "@ondata-extended/profile-contract";
-import { __resetConceptUriBaseMemoForTests } from "../src/adapters/tematres/adapter.js";
+import { __conceptUriBaseMemoSizeForTests, __resetConceptUriBaseMemoForTests, conceptUriBase } from "../src/adapters/tematres/adapter.js";
+import type { EngineContext } from "@ondata-extended/profile-contract";
 import { createSkosProfile, htmlToText, localId, skosInstructions, vocabArgDescription, type VocabExt } from "../src/index.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "tematres");
@@ -434,6 +435,33 @@ describe("concept URIs", () => {
     expect(first.concepts[0].uri).toBe(`${B}xml.php?schema=skos&term_id=3`);
     expect(second.concepts[0].uri).toBe(`${B}xml.php?schema=skos&term_id=3`);
     expect(requested.filter((u) => u.includes("skosMeta")).length).toBe(1);
+  });
+
+  it("does not remember a 503 or a request our own guards stopped: the next call asks the export again", async () => {
+    let answers: (() => { status: number; text: string })[] = [];
+    const asked: string[] = [];
+    const ctx = { http: { request: async (url: string) => {
+      asked.push(url);
+      const next = answers.shift()!;
+      return next();
+    } } } as unknown as EngineContext;
+    const inst = { id: "x", baseUrl: "https://flaky.example/v/", adapter: "tematres" };
+    const rdf = `<skos:hasTopConcept rdf:resource="https://id.example/c/7"/>`;
+    answers = [() => ({ status: 503, text: "" }), () => ({ status: 200, text: rdf })];
+    expect(await conceptUriBase(ctx, inst)).toBe("https://flaky.example/v/xml.php?schema=skos&term_id=");
+    expect(await conceptUriBase(ctx, inst)).toBe("https://id.example/c/");
+    expect(asked).toHaveLength(2);
+    answers = [() => { throw new Error("Domain is not in the allowed list"); }, () => ({ status: 200, text: rdf })];
+    const other = { ...inst, baseUrl: "https://guarded.example/v/" };
+    await conceptUriBase(ctx, other);
+    expect(__conceptUriBaseMemoSizeForTests()).toBe(0);
+    expect(await conceptUriBase(ctx, other)).toBe("https://id.example/c/");
+  });
+
+  it("keeps at most 200 remembered refusals", async () => {
+    const ctx = { http: { request: async () => ({ status: 403, text: "" }) } } as unknown as EngineContext;
+    for (let i = 0; i < 230; i++) await conceptUriBase(ctx, { id: `v${i}`, baseUrl: `https://refusing${i}.example/`, adapter: "tematres" });
+    expect(__conceptUriBaseMemoSizeForTests()).toBe(200);
   });
 
   it("falls back to TemaTres' default URI pattern when the export gives none", async () => {

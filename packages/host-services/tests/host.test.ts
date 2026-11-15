@@ -1,6 +1,6 @@
 /**
- * The several-service Worker: two real profiles (SKOS vocabularies, private; CKAN ecosystem, public) in one Worker,
- * kept apart by path and by engine. The network is replaced by answers recorded from begrepp.hagstrom.nu (the SKOS
+ * The several-service Worker: three services from two real profiles (CKAN ecosystem and the TemaTres demo, public;
+ * SKOS vocabulary Svada, private) in one Worker, kept apart by path and by engine. The network is replaced by answers recorded from begrepp.hagstrom.nu (the SKOS
  * profile's fixtures); every request still passes the core's guards.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";

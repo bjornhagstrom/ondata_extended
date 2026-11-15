@@ -35,15 +35,32 @@ function isNumericId(id: string): boolean {
 const withSlash = (u: string) => (u.endsWith("/") ? u : `${u}/`);
 
 /**
- * Instances whose SKOS export did not answer (an error status, e.g. a browser check, or no answer), with the time until
- * which the export is not asked again. The core caches only successful answers, so without this every tool call would
- * repeat a refused request. Per process or Worker isolate, like the rest of the cache.
+ * Instances whose server refused the SKOS export (a 4xx answer, e.g. a browser check), with the time until which it is
+ * not asked again. The core caches only successful answers, so without this every tool call would repeat a refused
+ * request. Only a refusal by the server counts: a timeout, a 5xx or 429, or a request our own guards stopped (an
+ * allow-list, the rate limit) is not remembered, so it neither sticks a working server to the default pattern nor
+ * carries over between services with different allow-lists. In memory, per process or Worker isolate, at most
+ * MAX_REFUSALS entries.
  */
 const exportRefusedUntil = new Map<string, number>();
+const MAX_REFUSALS = 200;
+
+function rememberRefusal(base: string): void {
+  const now = Date.now();
+  for (const [key, until] of exportRefusedUntil) if (until <= now) exportRefusedUntil.delete(key);
+  exportRefusedUntil.delete(base);
+  while (exportRefusedUntil.size >= MAX_REFUSALS) exportRefusedUntil.delete(exportRefusedUntil.keys().next().value!);
+  exportRefusedUntil.set(base, now + TTL.scheme * 1000);
+}
 
 /** Forget remembered refusals; for tests. */
 export function __resetConceptUriBaseMemoForTests(): void {
   exportRefusedUntil.clear();
+}
+
+/** How many refusals are remembered; for tests. */
+export function __conceptUriBaseMemoSizeForTests(): number {
+  return exportRefusedUntil.size;
 }
 
 /** The text before the id in this instance's concept URIs. */
@@ -52,14 +69,15 @@ export async function conceptUriBase(ctx: EngineContext, instance: VocabularyIns
   const base = withSlash(instance.baseUrl);
   const fallback = `${base}xml.php?schema=skos&term_id=`;
   if ((exportRefusedUntil.get(base) ?? 0) > Date.now()) return fallback;
-  let answered = false;
   try {
     const res = await ctx.http.request(`${base}xml.php?skosMeta=1`, { method: "GET" }, { cache: { ttlSeconds: TTL.scheme }, userAgent: "honest" });
-    answered = res.status === 200;
-    const m = answered && res.text ? res.text.match(/hasTopConcept\s+rdf:resource="([^"]*?)(\d+)"/) : null;
-    if (m) return m[1].replace(/&amp;/g, "&");
-  } catch { /* fall through to the default */ }
-  if (!answered) exportRefusedUntil.set(base, Date.now() + TTL.scheme * 1000);
+    if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+      rememberRefusal(base);
+    } else {
+      const m = res.status === 200 && res.text ? res.text.match(/hasTopConcept\s+rdf:resource="([^"]*?)(\d+)"/) : null;
+      if (m) return m[1].replace(/&amp;/g, "&");
+    }
+  } catch { /* no answer, or stopped by our own guards: not remembered */ }
   return fallback;
 }
 

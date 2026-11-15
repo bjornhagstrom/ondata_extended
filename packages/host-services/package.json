@@ -2,7 +2,7 @@
   "name": "@ondata-extended/host-services",
   "version": "0.1.0",
   "private": true,
-  "description": "One Cloudflare Worker for several services, each at its own path: the vocabulary service (private) and the CKAN ecosystem service (public).",
+  "description": "One Cloudflare Worker for several services, each at its own path: the CKAN ecosystem service and the TemaTres demo (public), and the vocabulary service (private).",
   "license": "MIT",
   "type": "module",
   "scripts": {
