@@ -5,7 +5,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { z } from "zod";
 import type { Profile } from "@ondata-extended/profile-contract";
-import { createEngine, createMcpServer, createServicesHandler, registerProfiles, validateServices, type WorkerService } from "../src/index.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createEngine, createMcpServer, createServicesHandler, registerProfiles, serverInstructions, validateServices, type WorkerService } from "../src/index.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -142,5 +144,25 @@ describe("validateServices", () => {
     const neither = ok("a", "x");
     delete neither.path;
     expect(() => validateServices([neither])).toThrow("exactly one");
+  });
+});
+
+describe("server instructions", () => {
+  it("joins the profiles' instructions in order, skipping empty ones, and is undefined when there are none", () => {
+    expect(serverInstructions([{ ...profile("a"), instructions: "First." }, profile("b"), { ...profile("c"), instructions: "  Third.  " }])).toBe("First.\n\nThird.");
+    expect(serverInstructions([profile("a"), { ...profile("b"), instructions: "   " }])).toBeUndefined();
+  });
+
+  it("reach the client in the initialize answer, and are absent when not given", async () => {
+    const connect = async (instructions?: string) => {
+      const server = createMcpServer({ name: "t", version: "0", ...(instructions !== undefined ? { instructions } : {}) });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      const c = new Client({ name: "t", version: "0" });
+      await Promise.all([server.connect(a), c.connect(b)]);
+      return c.getInstructions();
+    };
+    expect(await connect("Use these tools for X.")).toBe("Use these tools for X.");
+    expect(await connect()).toBeUndefined();
+    expect(await connect("  ")).toBeUndefined();
   });
 });

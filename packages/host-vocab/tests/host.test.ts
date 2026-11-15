@@ -6,6 +6,7 @@ import worker, { landingPage } from "../src/worker.js";
 import en from "../src/i18n/en.json";
 import sv from "../src/i18n/sv.json";
 import { profile, SERVER_NAME } from "../src/server.js";
+import { INSTRUCTIONS } from "../src/vocabularies.js";
 
 describe("language files", () => {
   it("have the same keys in en and sv", () => {
@@ -37,6 +38,19 @@ describe("landing page", () => {
     const page = await landingPage(new Request("https://v.example/")).text();
     for (const t of profile.tools) expect(page).toContain(`<code>${t.name}</code>`);
     expect(page).toContain("https://v.example/mcp");
+  });
+});
+
+describe("server instructions", () => {
+  it("/mcp sends the profile's instructions with this deployment's sentence about Svada", async () => {
+    const res = await worker.fetch(new Request("https://v.example/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } })
+    }), {});
+    const instructions = ((await res.json()) as { result: { instructions?: string } }).result.instructions ?? "";
+    expect(instructions).toContain("'svada' (Svada - termer och begrepp)");
+    expect(instructions.endsWith(INSTRUCTIONS)).toBe(true);
   });
 });
 

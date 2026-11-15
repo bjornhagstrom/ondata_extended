@@ -5,6 +5,11 @@
 import type { InstanceEntry } from "@ondata-extended/profile-contract";
 import type { VocabExt } from "@ondata-extended/profile-skos";
 
+/** This deployment's sentence for the server instructions: what its vocabulary is for. */
+export const INSTRUCTIONS =
+  "Svada is a Swedish vocabulary of terms and concepts for the SVADA project. In work on SVADA, check terms against it " +
+  "and use its preferred terms.";
+
 export const VOCABULARIES: InstanceEntry<VocabExt>[] = [
   {
     id: "svada",

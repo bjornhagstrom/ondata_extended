@@ -335,6 +335,13 @@ export interface Profile {
   emptyText?: string;
   /** The honest user agent for this profile's requests ("Example-MCP-Server/0.1"). */
   honestUserAgent: string;
+  /**
+   * Server instructions for the model: when to use this profile's tools and how to cite their answers. They are sent in the
+   * initialize result (`instructions`); a client may pass them to the model, and decides how much weight they get. Model-facing text, so the profile
+   * owns it; build it from the deployment's own data (e.g. its list of instances), never name a deployment in code.
+   * The host joins the instructions of its profiles with `serverInstructions`.
+   */
+  instructions?: string;
   /** A hint for the model about an error from this profile's tools, or null for the generic text. */
   describeError?(error: unknown, toolName: string): string | null;
 }

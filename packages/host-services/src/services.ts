@@ -3,7 +3,7 @@
  * MCP server, so nothing one service does reaches the other. No `ENGINE_*` alias: a setting names one service.
  */
 
-import { createConfig, createEngine, createMcpServer, pickTelemetryFields, registerProfiles, type ConfigSource, type Engine, type McpServer, type WorkerService, type AnalyticsEngineDataset } from "@ondata-extended/core";
+import { createConfig, createEngine, createMcpServer, pickTelemetryFields, registerProfiles, serverInstructions, type ConfigSource, type Engine, type McpServer, type WorkerService, type AnalyticsEngineDataset } from "@ondata-extended/core";
 import { createEcosystemProfile, PROFILE_VERSION as ECOSYSTEM_VERSION } from "@ondata-extended/profile-ckan-ecosystem";
 import { createSkosProfile, PROFILE_VERSION as VOCAB_VERSION } from "@ondata-extended/profile-skos";
 import type { InstanceEntry, Profile } from "@ondata-extended/profile-contract";
@@ -42,11 +42,19 @@ export const VOCABULARYSERVER: InstanceEntry<VocabExt>[] = [
 ];
 
 export const VOCAB: ServiceSetup = {
-  id: "vocab", name: "vocab-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({ vocabularies: SVADA }), configPrefix: "VOCAB",
+  id: "vocab", name: "vocab-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
+    vocabularies: SVADA,
+    // The same sentence as packages/host-vocab/src/vocabularies.ts (INSTRUCTIONS); keep them alike.
+    instructions: "Svada is a Swedish vocabulary of terms and concepts for the SVADA project. In work on SVADA, check terms " +
+      "against it and use its preferred terms."
+  }), configPrefix: "VOCAB",
   keyArgs: ["query", "prefix", "id"]
 };
 export const TEMATRES: ServiceSetup = {
-  id: "tematres", name: "tematres-vocabularyserver-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({ vocabularies: VOCABULARYSERVER }),
+  id: "tematres", name: "tematres-vocabularyserver-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
+    vocabularies: VOCABULARYSERVER,
+    instructions: "These vocabularies are published with TemaTres on vocabularyserver.com, the server of TemaTres's maintainer."
+  }),
   configPrefix: "TEMATRES", keyArgs: ["query", "prefix", "id"]
 };
 export const ECOSYSTEM: ServiceSetup = {
@@ -59,7 +67,7 @@ export function createServiceEngine(setup: ServiceSetup, source?: ConfigSource):
 }
 
 export function buildServiceServer(setup: ServiceSetup, engine: Engine): McpServer {
-  const server = createMcpServer({ name: setup.name, version: setup.version });
+  const server = createMcpServer({ name: setup.name, version: setup.version, instructions: serverInstructions([setup.profile]) });
   registerProfiles(server, [setup.profile], engine);
   return server;
 }

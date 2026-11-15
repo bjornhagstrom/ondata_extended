@@ -15,14 +15,38 @@ type Entries = readonly InstanceEntry<VocabExt>[];
 const vocabArgBase = z.string().max(500).optional();
 const MAX_LISTED = 20;
 
+/** "'id' (Title), …" for at most MAX_LISTED entries, with the rest counted. */
+function listed(entries: Entries): string {
+  const shown = entries.slice(0, MAX_LISTED).map((e) => `'${e.id}'${e.ext.title ? ` (${e.ext.title})` : ""}`).join(", ");
+  return entries.length > MAX_LISTED ? `${shown}, and ${entries.length - MAX_LISTED} more` : shown;
+}
+
+/**
+ * Server instructions for the model, from the deployment's vocabularies: when to use these tools instead of memory or a
+ * web search, and how to cite. `extra` is the deployment's own addition (what its vocabularies are for), appended.
+ */
+export function skosInstructions(entries: Entries, extra?: string): string {
+  const where = entries.length
+    ? `the controlled vocabularies ${listed(entries)} (and other vocabulary services the server may reach, by base URL)`
+    : "controlled vocabularies on a vocabulary service, given by its base URL";
+  const text =
+    `These vocab_ tools read ${where}, live from the vocabulary service (SKOS: concepts, labels, definitions and notes, ` +
+    "broader, narrower and related concepts, mappings to other vocabularies and languages). " +
+    "When the user asks about one of these vocabularies, or the work at hand uses one (what a term means in it, its preferred " +
+    "label, its place in the hierarchy, its neighbours, its equivalent in another language), look it up with these tools " +
+    "instead of answering from memory or searching the web: vocab_search_concepts first, then vocab_get_concept. In the " +
+    "answer, use the vocabulary's preferred terms, quote definitions and scope notes as given, and say which vocabulary the " +
+    "answer comes from. If the vocabulary has no matching concept, say so rather than filling the gap from memory. For " +
+    "general questions about words that do not involve these vocabularies, the tools are not needed.";
+  return extra?.trim() ? `${text}\n\n${extra.trim()}` : text;
+}
+
 /** The `vocab` argument, described with the deployment's own vocabularies, so a model knows which ids exist. */
 export function vocabArgDescription(entries: Entries): string {
   if (entries.length === 0) {
     return "Vocabulary to use: the base URL of a vocabulary service (e.g. 'https://vocab.example.org/').";
   }
-  const listed = entries.slice(0, MAX_LISTED).map((e) => `'${e.id}'${e.ext.title ? ` (${e.ext.title})` : ""}`).join(", ");
-  const more = entries.length > MAX_LISTED ? `, and ${entries.length - MAX_LISTED} more` : "";
-  return `Vocabulary to use: a known id: ${listed}${more}; or the base URL of another vocabulary service this server may reach. ` +
+  return `Vocabulary to use: a known id: ${listed(entries)}; or the base URL of another vocabulary service this server may reach. ` +
     `Omit for the default vocabulary ('${entries[0].id}').`;
 }
 const formatArg = z.enum(["markdown", "json"]).default("markdown")
@@ -207,6 +231,7 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
       "Search a controlled vocabulary (thesaurus, SKOS concept scheme) for concepts whose preferred or alternative labels contain the query. " +
       "Use it to find the concept for a word, then call vocab_get_concept with the id for its definition and relations. " +
       "Matches on alternative labels (synonyms, other languages) say which label matched. " +
+      (entries.length ? `Vocabularies here: ${listed(entries)}. When a question is about one of them, prefer this tool to memory or a web search. ` : "") +
       "Example: { query: 'data' }.",
     inputSchema: {
       query: z.string().min(2).max(200).describe("Text to look for in labels (at least two characters; case-insensitive, substring)"),

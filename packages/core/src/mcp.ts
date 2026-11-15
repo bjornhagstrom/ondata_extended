@@ -18,10 +18,19 @@ export { McpServer };
 export interface ServerInfo {
   name: string;
   version: string;
+  /** Server instructions for the model (MCP `instructions`); see `serverInstructions`. */
+  instructions?: string;
 }
 
 export function createMcpServer(info: ServerInfo): McpServer {
-  return new McpServer({ name: info.name, version: info.version });
+  const instructions = info.instructions?.trim();
+  return new McpServer({ name: info.name, version: info.version }, instructions ? { instructions } : undefined);
+}
+
+/** The instructions of the given profiles, joined in order; undefined when none has any. */
+export function serverInstructions(profiles: readonly Profile[]): string | undefined {
+  const parts = profiles.map((p) => p.instructions?.trim()).filter((t): t is string => !!t);
+  return parts.length ? parts.join("\n\n") : undefined;
 }
 
 /** Check a set of profiles before registering: names, prefixes and prompt references. */

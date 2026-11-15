@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { __setDnsResolverForTests, createEngine, createMcpServer, registerProfiles } from "@ondata-extended/core";
 import type { InstanceEntry } from "@ondata-extended/profile-contract";
-import { createSkosProfile, htmlToText, localId, vocabArgDescription, type VocabExt } from "../src/index.js";
+import { createSkosProfile, htmlToText, localId, skosInstructions, vocabArgDescription, type VocabExt } from "../src/index.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -359,6 +359,25 @@ describe("concept URIs", () => {
   it("accepts the http form of a Svada concept URI", async () => {
     const r = await md(await client(), "vocab_get_concept", { id: "http://begrepp.hagstrom.nu/skos/10" });
     expect(r.isError).toBe(false);
+  });
+
+  it("builds server instructions from the deployment's list, with the deployment's own sentence appended", () => {
+    const text = skosInstructions(SVADA, "Svada is for project X.");
+    expect(text).toContain("'svada' (Svada - termer och begrepp)");
+    expect(text).toContain("instead of answering from memory or searching the web");
+    expect(text).toContain("say which vocabulary the answer comes from");
+    expect(text.endsWith("\n\nSvada is for project X.")).toBe(true);
+    const none = skosInstructions([]);
+    expect(none).toContain("given by its base URL");
+    expect(none).not.toMatch(/svada/i);
+    expect(createSkosProfile({ vocabularies: SVADA, instructions: "Extra." }).instructions).toBe(skosInstructions(SVADA, "Extra."));
+  });
+
+  it("names the deployment's vocabularies in vocab_search_concepts' description, and nothing without a list", async () => {
+    const withList = (await (await client()).listTools()).tools.find((t) => t.name === "vocab_search_concepts")!.description!;
+    expect(withList).toContain("Vocabularies here: 'svada' (Svada - termer och begrepp)");
+    const without = (await (await client({}, [])).listTools()).tools.find((t) => t.name === "vocab_search_concepts")!.description!;
+    expect(without).not.toContain("Vocabularies here");
   });
 
   it("lists at most 20 ids in the vocab argument and says how many more there are", () => {

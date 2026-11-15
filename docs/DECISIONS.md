@@ -610,3 +610,23 @@ find.
   becomes public at `/tematres/mcp` when it is posted; its landing texts (en, sv) are ready. Observation in it, from the
   raw web service: `fetchNotes` on The Dictionary of Knowledge Organization gave `cant_result` 0 for ids 129, 132, 407
   and 737.
+
+## 2026-11-15: server instructions, so an assistant picks the vocabulary
+
+- **Why**: Björn's first screenshots showed Claude answering the demo's questions from the web and from memory with the
+  connector switched on. An assistant decides for itself whether to use a connector.
+- **What**: the contract gains `Profile.instructions` (server instructions, sent as MCP `instructions` in the initialize
+  result; a client may pass them to the model and decides their weight). Core: `ServerInfo.instructions` and
+  `serverInstructions(profiles)`; the host passes them to `createMcpServer` (not `registerProfiles`, which runs after
+  the server exists; a host that does not pass them sends none). Contract 0.x, so allowed.
+- **The SKOS profile** builds them from the deployment's list (`skosInstructions`): when the user asks about one of
+  these vocabularies or the work uses one, look it up instead of answering from memory or the web; quote definitions;
+  name the vocabulary; say when a concept is missing; and, against over-triggering, that general word questions not
+  involving these vocabularies do not need the tools. The deployment adds one sentence of its own
+  (`SkosProfileOptions.instructions`). `vocab_search_concepts`' description names the deployment's vocabularies.
+- **Deployments' sentences**: Svada "a Swedish vocabulary of terms and concepts for the SVADA project" (kept modest:
+  the repo has no source for more); the TemaTres demo "published with TemaTres on vocabularyserver.com, the server of
+  TemaTres's maintainer". CKAN and parliament send none (their initialize answer is compared with the originals').
+- **Three levels** (README, "Steering the assistant"): tool descriptions, server instructions, and the user's project
+  instructions, which remain the dependable way for a piece of work. Whether server instructions alone change the
+  choice in claude.ai is to be seen in the retaken screenshots; there is no tool-selection eval runner (backlog).

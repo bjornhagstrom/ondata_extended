@@ -20,8 +20,9 @@ Connectors; Claude picks tools itself and asks for approval
 Use cases: the LC precedent is lc-vocabularies-mcp (May Chan, DCMI 2026, Seoul, doi 10.23106/dcmi.952633234, CC BY 4.0,
 dcpapers.dublincore.org/article/952633234); the others follow from the tools, no published example found.
 Voice: Björn tried the demo connector in Claude's voice mode in the iOS app on 2026-11-15: it works.
-Tool choice: on 2026-11-15 Björn's first Desktop screenshots show Claude answering the three example questions from the
-web and from memory, without the connector (whether it was switched on in those chats is to be checked). Hence the
+Tool choice: on 2026-11-15 Björn's first Desktop screenshots, in plain chats with the connector switched on (and three
+other connectors), show Claude answering the three example questions from the web and from memory, without the
+connector. Since then the server sends instructions (MCP `instructions`) on when to use it; retake after that deploy. Hence the
 "Try it" advice; screenshots for the issue must show the tools in use (retake), and the from-memory ones can serve as
 the contrast.
 Follow-up example: the tools' output through the Worker on 2026-11-15, 22:20 UTC, with the honest user agent (Public
@@ -39,7 +40,7 @@ I have built a small open-source server that lets AI assistants such as Claude l
 1. *Which kinds of libraries does the UNESCO Thesaurus distinguish, and what are they called in Spanish?* The concept *Libraries* comes back with its path (Information and communication › Documentary information systems › Libraries), nine narrower concepts (Academic, Childrens, Digital, Government, Institutional, International, National, Public and School libraries), its related concepts, and its mapping to *Biblioteca* in the Spanish edition, whose narrower concepts include *Biblioteca pública* and *Biblioteca escolar*.
 2. *How does ISO 25964 describe a thesaurus?* The glossary's scope note for *thesaurus*: "controlled vocabulary in which concepts are represented primarily by preferred terms, formally organized so that paradigmatic relationships between the concepts are made explicit, and the preferred terms are accompanied by lead-in entries for synonyms or quasi-synonyms".
 
-It is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague, and ask for short answers if you like. Continuing the first example:
+It is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. Continuing the first example (in the screenshots I asked for short answers, only to keep the pictures small):
 
 - *What exactly counts as a public library?* The assistant opens *Public libraries* and gives UNESCO's scope note: "A library which serves the population of a community or region free of charge or for a nominal fee."
 - *And what is "libraries" in French and Russian?* From the thesaurus's own mappings: *Bibliothèque* and *Библиотеки*, with the Spanish *Biblioteca* already given.
@@ -51,7 +52,7 @@ It is a conversation, not single questions: the assistant keeps the context, so 
 
 **Other uses.** Besides answering questions:
 
-- *Consistent terms in a project.* In a Claude project for a report or a presentation, an instruction such as "check terms against the UNESCO Thesaurus and use its preferred terms" makes the assistant look terms up as it writes, so the same concept gets the same name throughout. I use it this way with our own vocabulary.
+- *Consistent terms in a project.* In a Claude project for a report or a presentation, a project instruction (example under "Try it") makes the assistant look terms up as it writes, so the same concept gets the same name throughout. I use it this way with our own vocabulary.
 - *Checking a draft.* Paste a text and ask which terms are not the preferred ones; the assistant shows the preferred term and its scope note.
 - *Subject indexing.* Give it a document and ask for candidate descriptors; each one is confirmed in the vocabulary, with its place in the hierarchy. May Chan has studied this for Library of Congress subject headings, with an MCP server for live LC authority lookup: "Grounding AI Subject Cataloguing in Standards and Policy: An MCP Server for Live LC Authority Lookup and a DITA-Encoded SHM for RAG", DCMI 2026, [doi:10.23106/dcmi.952633234](https://doi.org/10.23106/dcmi.952633234). Her finding that authority lookups alone were not enough for defensible cataloguing, without the indexing policy as well, applies here too.
 - *By voice.* In the Claude app on the phone you can talk with the vocabulary instead of typing: ask, listen to the answer, and ask a follow-up, in a whole spoken conversation. I have tried it with this demo in the iOS app.
@@ -61,7 +62,7 @@ It is a conversation, not single questions: the assistant keeps the context, so 
 **Try it.** The address of the demo is `https://ondata-extended-services.ondata-extended.workers.dev/tematres/mcp`.
 
 - *Claude, on the web (claude.ai) or in the Claude Desktop app:* Customize > Connectors > "+ Add" > Add custom connector. Give it a name, paste the address, choose "No sign in" under Authentication, then Add. It works on the free plan, which allows one custom connector. A connector added on the web also appears in the Desktop app and, at the next login, on the phone.
-- *In a chat:* make sure the connector is switched on (the "+" button > Connectors), then ask, for example the libraries question above. You do not need to name the tools, and the assistant asks your permission the first time it uses one. It does not always choose the vocabulary by itself, though: it may answer from memory or search the web instead. If it does, say so, for example "look it up in the UNESCO Thesaurus with the TemaTres connector". The difference is the point of the demo: from memory it paraphrases, from the vocabulary it quotes the scope note and follows the thesaurus's own structure.
+- *In a chat:* make sure the connector is switched on (the "+" button > Connectors), then ask, for example the libraries question above. You do not need to name the tools, and the assistant asks your permission the first time it uses one. The server tells the assistant when its tools are the right ones, but the assistant still decides for itself and may answer from memory or search the web instead. In a single chat, name the vocabulary: "look it up in the UNESCO Thesaurus". For a piece of work, put it in the project's instructions, for example: "In this project, check every subject term against the UNESCO Thesaurus with the vocabulary connector before using it; use its preferred terms, quote its scope notes when you define a term, and say when a term is not in the thesaurus." The difference is the point of the demo: from memory it paraphrases, from the vocabulary it quotes the scope note and follows the thesaurus's own structure.
 - *Other assistants:* ChatGPT, VS Code and others can add an MCP server by address too; the menus differ.
 - *If something does not work,* ask the assistant itself ("how do I add a custom MCP connector here?"); it usually knows its own menus better than any instructions I could write.
 

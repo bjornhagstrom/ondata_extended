@@ -117,6 +117,24 @@ describe("the TemaTres demo service", () => {
   });
 });
 
+describe("server instructions", () => {
+  it("each service sends its own: the demo names UNESCO, the Svada service names Svada, the ecosystem service none", async () => {
+    const w = await worker();
+    const init = async (path: string) => ((await (await w.fetch(post(path, { jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } }), ENV)).json()) as
+      { result: { instructions?: string } }).result.instructions;
+    const demo = await init(`/${DEMO}/mcp`);
+    expect(demo).toContain("'unesco' (UNESCO Thesaurus (English))");
+    expect(demo).toContain("vocabularyserver.com");
+    expect(demo).not.toMatch(/svada/i);
+    const vocab = await init(`/${SECRET}/mcp`);
+    expect(vocab).toContain("'svada'");
+    expect(vocab).toContain("for the SVADA project");
+    expect(vocab).not.toMatch(/unesco/i);
+    expect(await init("/ecosystem/mcp")).toBeUndefined();
+  });
+});
+
 describe("visibility", () => {
   it("GET / and /health name the ecosystem service and nothing of the vocabulary service", async () => {
     const w = await worker();

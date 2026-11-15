@@ -7,7 +7,7 @@
 
 import type { InstanceEntry, Profile } from "@ondata-extended/profile-contract";
 import { TemaTresProtocolError } from "./adapters/tematres/client.js";
-import { ConceptNotFoundError, ForeignConceptUriError, createSkosTools } from "./tools.js";
+import { ConceptNotFoundError, ForeignConceptUriError, createSkosTools, skosInstructions } from "./tools.js";
 import { UnknownVocabularyError, type VocabExt } from "./vocabularies.js";
 
 export const PROFILE_ID = "skos";
@@ -16,12 +16,17 @@ export const PROFILE_VERSION = "0.1.0";
 
 export * from "./model.js";
 export { createResolver, type VocabExt } from "./vocabularies.js";
-export { createSkosTools, localId, vocabArgDescription } from "./tools.js";
+export { createSkosTools, localId, skosInstructions, vocabArgDescription } from "./tools.js";
 export { htmlToText } from "./text.js";
 
 export interface SkosProfileOptions {
   /** The deployment's known vocabularies: ids usable as `vocab`; the first is the default. */
   vocabularies?: readonly InstanceEntry<VocabExt>[];
+  /**
+   * The deployment's own sentence for the server instructions, appended to the generated ones: what its vocabularies
+   * are for (e.g. "Vocabulary X holds the terms of project Y; in work on Y, use its preferred terms").
+   */
+  instructions?: string;
 }
 
 export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
@@ -30,6 +35,7 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
     version: PROFILE_VERSION,
     toolPrefix: TOOL_PREFIX,
     tools: createSkosTools(options.vocabularies ?? []),
+    instructions: skosInstructions(options.vocabularies ?? [], options.instructions),
     shrinkableKeys: ["concepts", "results", "narrower", "related", "broader", "altLabels", "notes", "mappings"],
     telemetryFields: ["vocab", "query", "prefix", "id", "limit", "response_format"],
     untrustedSourceLabel: "the vocabulary service",

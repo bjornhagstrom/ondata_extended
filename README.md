@@ -45,6 +45,27 @@ when this core runs in production with at least two profiles, or if a third Type
 Written with AI assistance (Claude, Anthropic) under the direction and review of Björn Hagström; the claims about
 behaviour in `docs/test-parity.md` and the issue draft name the command that checks them.
 
+## Steering the assistant: server instructions and project instructions
+
+An assistant with a connector switched on still decides for itself whether to use it, and may answer from memory or
+search the web instead. Three levels steer it, weakest first:
+
+| Level | Who writes it | Where | Strength and cost |
+|---|---|---|---|
+| Tool descriptions | the profile | each tool | always present; say what a tool does, and at most a line on when to prefer it |
+| Server instructions | the profile, from the deployment's data, plus an optional sentence of the deployment's own | the MCP `instructions` the client receives when it connects | automatic for every user and client; must stay general, and the client decides how much weight they get |
+| Project instructions | the user | a Claude project's instructions, a `CLAUDE.md` or an `AGENTS.md` | strongest and most precise, because they know the purpose; each user writes their own |
+
+The vocabulary profile sends server instructions built from its list of vocabularies (`skosInstructions`): use the
+tools for these vocabularies' terms instead of memory or a web search, quote definitions as given, say where the
+answer comes from. For dependable use in a piece of work, add a project instruction, for example:
+
+> In this project, check every subject term against the UNESCO Thesaurus with the vocabulary connector (vocab_ tools)
+> before using it. Use the thesaurus's preferred terms, quote its scope notes when you define a term, and say when a
+> term is not in the thesaurus instead of inventing one.
+
+In a single chat, naming the vocabulary in the question ("look it up in the UNESCO Thesaurus …") has the same effect.
+
 ## Develop
 
 ```sh

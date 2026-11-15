@@ -55,6 +55,12 @@ export function createExampleProfile(): Profile {
   timeouts, 5xx and 429, never another 4xx.
 - **Telemetry fields** are the arguments a host may log, capped at 200 characters. Never a secret.
 - **`describeError`** adds a hint after the core's error text. The core never echoes an upstream error body.
+- **`instructions`** (optional): server instructions for the model, which MCP clients pass on when they connect: when to
+  use these tools rather than memory or a web search, and how to cite the answers. Build the text from the data the
+  deployment passes in (its list of instances, an optional sentence of its own), never name a deployment in the code.
+  The host sends them with `createMcpServer({ name, version, instructions: serverInstructions([profile]) })`. Keep them
+  scoped to what the tools cover, so the model does not call them for unrelated questions. See "Steering the assistant"
+  in the README for where server instructions end and a user's own project instructions take over.
 
 ## 2. A tool that returns rows
 

@@ -10,6 +10,7 @@ export { createConfig, processEnv, readList, readNumber, readEnabled, type Confi
 export { createEngine, type Engine, type EngineOptions } from "./engine.js";
 export {
   createMcpServer,
+  serverInstructions,
   registerProfiles,
   validateProfiles,
   genericErrorText,
