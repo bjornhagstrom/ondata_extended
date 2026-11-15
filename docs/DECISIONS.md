@@ -628,5 +628,7 @@ find.
   the repo has no source for more); the TemaTres demo "published with TemaTres on vocabularyserver.com, the server of
   TemaTres's maintainer". CKAN and parliament send none (their initialize answer is compared with the originals').
 - **Three levels** (README, "Steering the assistant"): tool descriptions, server instructions, and the user's project
-  instructions, which remain the dependable way for a piece of work. Whether server instructions alone change the
-  choice in claude.ai is to be seen in the retaken screenshots; there is no tool-selection eval runner (backlog).
+  instructions, which remain the dependable way for a piece of work. Tried in Claude Desktop after the deploy (2026-11-16): in a plain
+  chat with web search on, the server instructions alone did not make Claude use the demo (it searched UNESCO's own
+  site); naming the connector did, and so did a project instruction without naming it. So the guidance is: name the
+  connector in a single chat, a project instruction for real work. No tool-selection eval runner yet (backlog).

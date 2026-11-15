@@ -22,7 +22,10 @@ dcpapers.dublincore.org/article/952633234); the others follow from the tools, no
 Voice: Björn tried the demo connector in Claude's voice mode in the iOS app on 2026-11-15: it works.
 Tool choice: on 2026-11-15 Björn's first Desktop screenshots, in plain chats with the connector switched on (and three
 other connectors), show Claude answering the three example questions from the web and from memory, without the
-connector. Since then the server sends instructions (MCP `instructions`) on when to use it; retake after that deploy. Hence the
+connector. Since then the server sends instructions (MCP `instructions`); after that deploy (0a83f445), a plain chat with web search
+on still went to the web. Naming the connector in the question worked, and so did a Claude project with the
+instructions quoted in "Try it", asking the original question without naming the connector (Björn, 2026-11-16).
+Screenshots: from the project. Hence the
 "Try it" advice; screenshots for the issue must show the tools in use (retake), and the from-memory ones can serve as
 the contrast.
 Follow-up example: the tools' output through the Worker on 2026-11-15, 22:20 UTC, with the honest user agent (Public
@@ -62,7 +65,10 @@ It is a conversation, not single questions: the assistant keeps the context, so 
 **Try it.** The address of the demo is `https://ondata-extended-services.ondata-extended.workers.dev/tematres/mcp`.
 
 - *Claude, on the web (claude.ai) or in the Claude Desktop app:* Customize > Connectors > "+ Add" > Add custom connector. Give it a name, paste the address, choose "No sign in" under Authentication, then Add. It works on the free plan, which allows one custom connector. A connector added on the web also appears in the Desktop app and, at the next login, on the phone.
-- *In a chat:* make sure the connector is switched on (the "+" button > Connectors), then ask, for example the libraries question above. You do not need to name the tools, and the assistant asks your permission the first time it uses one. The server tells the assistant when its tools are the right ones, but the assistant still decides for itself and may answer from memory or search the web instead. In a single chat, name the vocabulary: "look it up in the UNESCO Thesaurus". For a piece of work, put it in the project's instructions, for example: "In this project, check every subject term against the UNESCO Thesaurus with the vocabulary connector before using it; use its preferred terms, quote its scope notes when you define a term, and say when a term is not in the thesaurus." The difference is the point of the demo: from memory it paraphrases, from the vocabulary it quotes the scope note and follows the thesaurus's own structure.
+- *In a chat:* make sure the connector is switched on (the "+" button > Connectors), then ask, for example the libraries question above. You do not need to name the tools, and the assistant asks your permission the first time it uses one. The assistant decides for itself which source to use. With web search on, a question about the UNESCO Thesaurus may go to UNESCO's own web pages instead, since the thesaurus is also published there. Two ways to make it use the vocabulary:
+  - *In a single chat,* name the connector: "Use the Tematres demo connector: which kinds of libraries …".
+  - *In a Claude project,* put it in the project's instructions once; then every question in the project uses it without being told. For example: "In this project, check every subject term against the UNESCO Thesaurus with the Tematres demo connector (vocab_ tools) before using it. Use the thesaurus's preferred terms, quote its scope notes when you define a term, and say when a term is not in the thesaurus instead of inventing one. Prefer the connector to web search for anything the thesaurus covers." This is what I would recommend for real work.
+- *The difference is the point:* from memory or the web, the assistant paraphrases; from the vocabulary, it quotes the scope note and follows the thesaurus's own structure.
 - *Other assistants:* ChatGPT, VS Code and others can add an MCP server by address too; the menus differ.
 - *If something does not work,* ask the assistant itself ("how do I add a custom MCP connector here?"); it usually knows its own menus better than any instructions I could write.
 
