@@ -24,7 +24,9 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
   `akn_*` tools over the Italian Senate's Akoma Ntoso bulk data on GitHub. Not deployed.
 - `packages/profile-ckan-ecosystem` and `packages/host-ckan-ecosystem`: a proof of concept for the CKAN Ecosystem
   Catalog, four `ecosystem_*` tools that search CKAN extensions and the portals running them, from datHere's open
-  crawl data and GitHub (`docs/ckan-ecosystem-profile.md`). Not deployed.
+  crawl data and GitHub (`docs/ckan-ecosystem-profile.md`). A test Worker on workers.dev.
+- `packages/host-services`: several services in one Cloudflare Worker, each at its own path: the ecosystem service public
+  at `/ecosystem/mcp`, the vocabulary service private at a secret path (`docs/DECISIONS.md`, 2026-11-15). Not deployed.
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 

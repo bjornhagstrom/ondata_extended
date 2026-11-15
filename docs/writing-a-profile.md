@@ -139,7 +139,10 @@ export function buildServer(engine: Engine) {
 
 `node.ts` is four lines around `runStdio`; `worker.ts` is `createWorkerHandler` with a health body, the fields to log
 and the Analytics data point. Keep **one engine per process or isolate**: it holds the cache, the rate limiter and the
-per-host throttles. Several profiles can share one deployment: pass them all to `registerProfiles`.
+per-host throttles. Several profiles can share one MCP server: pass them all to `registerProfiles` (they then share
+one engine, so one allow-list, cache and rate limit). To run them as separate services in one Worker instead, each
+with its own engine and path, public or private, use `createServicesHandler` (`packages/host-services` is the worked
+example).
 
 ## 7. Checks
 

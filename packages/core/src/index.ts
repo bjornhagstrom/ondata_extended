@@ -89,7 +89,16 @@ export {
 } from "./output/fields.js";
 export { formatTable, truncateTextKeeping, type FormattedTable } from "./output/table.js";
 export { noteTelemetry, takeTelemetry, summarizeToolError, type ErrorKind, type ErrorTelemetry } from "./telemetry.js";
-export { createWorkerHandler, pickTelemetryFields, type WorkerHostOptions, type AnalyticsEngineDataset } from "./worker.js";
+export {
+  createWorkerHandler,
+  createServicesHandler,
+  validateServices,
+  pickTelemetryFields,
+  type WorkerHostOptions,
+  type WorkerService,
+  type ServicesHostOptions,
+  type AnalyticsEngineDataset
+} from "./worker.js";
 export {
   validateSelectQuery,
   injectLimit,

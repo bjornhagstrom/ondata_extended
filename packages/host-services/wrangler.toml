@@ -1,0 +1,32 @@
+# One Worker for several services, each at its own path (docs/DECISIONS.md, 2026-11-15):
+#   /ecosystem/mcp            the CKAN ecosystem proof of concept, public (listed on / and /health)
+#   /<secret>/mcp             the vocabulary service, private: the path is the secret SERVICES_VOCAB_PATH
+# Set the secret (48 random characters; a Worker secret cannot be read back, so keep the value, e.g. in a password
+# manager, before it goes to Cloudflare):
+#   P=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n'); echo "$P"
+#   printf %s "$P" | npx wrangler secret put SERVICES_VOCAB_PATH -c packages/host-services/wrangler.toml
+# The private URL is then https://<worker>/$P/mcp. To rotate: the same with a new value, then update the connectors.
+# Deploy: npm run deploy:services (Björn's ok each time). Not deployed yet.
+name = "ondata-extended-services"
+main = "dist/worker.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+send_metrics = false
+
+# No stored logs or traces: Cloudflare attaches the request URL, and so the private service's secret path, to what it
+# stores for a request (docs/DECISIONS.md, 2026-11-15). Our log line per tool call can still be watched live with
+# `wrangler tail`, which shows the URL too.
+[observability]
+enabled = false
+
+[observability.logs]
+enabled = false
+invocation_logs = false
+
+[observability.traces]
+enabled = false
+
+[vars]
+# Each service has its own namespace and its own engine: allowed hosts, cache and rate limit are not shared.
+VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
+ECOSYSTEM_ALLOWED_DOMAINS = "raw.githubusercontent.com"

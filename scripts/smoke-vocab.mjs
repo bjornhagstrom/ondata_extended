@@ -3,11 +3,15 @@
  * Known-answer gate for the vocabulary server, in the style of ondata's scripts/smoke.mjs:
  * builds nothing itself; starts packages/host-vocab/dist/index.js over HTTP with the
  * allowlist set to the cases' host, calls each tool through MCP and checks *which* concept
- * comes back. Exits non-zero on the first failure.
+ * comes back. Runs every case and exits non-zero if any failed.
  *
  *   npm run smoke:vocab            all cases
  *   npm run smoke:vocab -- broader only cases whose name matches
  *   SMOKE_URL=https://<worker>/mcp node scripts/smoke-vocab.mjs   against a deployed server (after a deploy)
+ *
+ * Against a deployed server the cases are paced (SMOKE_PAUSE_MS, default 1500 ms between cases): one call can make
+ * several requests to the vocabulary, and on a cold cache back-to-back cases otherwise use up the Worker's per-host
+ * budget (5 requests a second, burst 10) and the last case fails on the rate limit, not on its answer.
  */
 import { readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -24,6 +28,7 @@ const selected = FILTER ? cases.filter((c) => c.name.toLowerCase().includes(FILT
 // SMOKE_URL: run against a deployed server instead of starting the local binary.
 const REMOTE = process.env.SMOKE_URL;
 const MCP_URL = REMOTE ?? `http://127.0.0.1:${PORT}/mcp`;
+const PAUSE_MS = Number(process.env.SMOKE_PAUSE_MS ?? (REMOTE ? 1500 : 0));
 let stderr = "";
 let exited = null;
 const server = REMOTE ? null : spawn("node", [join(HOST, "dist/index.js")], {
@@ -88,7 +93,8 @@ function check(c, result) {
 try {
   await waitReady();
   let failed = 0;
-  for (const c of selected) {
+  for (const [i, c] of selected.entries()) {
+    if (i > 0 && PAUSE_MS > 0) await new Promise((r) => setTimeout(r, PAUSE_MS));
     const r = await rpc("tools/call", { name: c.tool, arguments: { ...c.args, response_format: c.expect.isError ? "markdown" : "json" } });
     const problem = r.error ? `JSON-RPC error: ${r.error.message}` : check(c, r.result);
     console.log(`${problem ? "FAIL" : "ok  "} ${c.name}${problem ? `\n     ${problem}` : ""}`);

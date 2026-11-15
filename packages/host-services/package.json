@@ -1,0 +1,19 @@
+{
+  "name": "@ondata-extended/host-services",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One Cloudflare Worker for several services, each at its own path: the vocabulary service (private) and the CKAN ecosystem service (public).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build:worker": "esbuild src/worker.ts --bundle --platform=browser --format=esm --target=es2022 --minify --outfile=dist/worker.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@ondata-extended/core": "0.1.0",
+    "@ondata-extended/profile-contract": "0.1.0",
+    "@ondata-extended/profile-ckan-ecosystem": "0.1.0",
+    "@ondata-extended/profile-skos": "0.1.0",
+    "zod": "^3.25.76"
+  }
+}

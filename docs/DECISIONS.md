@@ -487,8 +487,8 @@ Andrea set for revisiting a shared core (the core in production with two profile
 - **Posted (Björn's ok, 2026-11-14)**: the comment on #222,
   https://github.com/ckan/ckanext-pose_ecosystem_catalog/issues/222#issuecomment-6877656547, after the "Try it"
   guide was pushed.
-- **Backlog (Björn, 2026-11-14): several services on one MCP server without mixing them.** To be discussed before
-  anything is built (the core's Worker handler serves one `/mcp` with one set of profiles today).
+- **Backlog (Björn, 2026-11-14): several services on one MCP server without mixing them.** Built 2026-11-15; see the
+  entry of that date.
 
 ## 2026-11-14: no authentication on the deployed services, for now
 
@@ -525,3 +525,37 @@ parity reference stays at `09e8cdc` (the recordings and the clone are unchanged)
   notes in LOG.md, no other runtime change. The new baseline `cb2119d` changes only download data.
 - **Not reviewed: italianparliament-mcp** (`5ebcc84`, `3699753`). Björn, 2026-11-14: nothing more on the parliament
   or the Senate for now; its watch baseline stays at `fd46810`, so the issue keeps listing them.
+
+## 2026-11-15: several services in one Worker, public and private
+
+The backlog item of 2026-11-14, on Björn's go: some services should be hidden (private), others open for anyone to
+find.
+
+- **What**: the core gains `createServicesHandler`: one Worker, several services, each at its own path
+  (`/<path>/mcp`, `/<path>/health`). A public service has a fixed path and is listed on `/` and `/health`. A private
+  service is served only at a path read from a secret of the deployment and is named nowhere a caller sees; every miss
+  (wrong secret, unknown path, the service's id as a path) is the same 404. A missing or short secret (under 32
+  characters) switches the private service off, with one warning that does not contain the value; it never falls back to
+  a guessable path. The one-service `createWorkerHandler` is unchanged in behaviour (its MCP code is now shared).
+- **Kept apart**: each service has its own MCP server and, as the host builds it, its own engine: its own config prefix
+  (no shared `ENGINE_*` alias), allowed hosts, cache and rate limit. Tested with the two real profiles in one Worker
+  (`packages/host-services/tests/host.test.ts`): each path lists only its own tools, a tool of one service is unknown on
+  the other's path, and the vocabulary service is refused a host that only the ecosystem service may reach.
+- **`packages/host-services`**: the CKAN ecosystem service public at `/ecosystem/mcp`, the vocabulary service private at
+  the secret `SERVICES_VOCAB_PATH`. Workers only (the Node hosts serve one service each, as before). Not deployed:
+  `npm run deploy:services` with Björn's ok.
+- **Logs**: Cloudflare attaches the request URL, and so the secret path, to what it stores for a request (invocation
+  logs, traces, and as far as we can tell the metadata of our own log lines too; only the query string can be
+  redacted). So Workers Logs and traces are off for this Worker (`[observability] enabled = false`): nothing is stored
+  at Cloudflare. Our log line per tool call (service, tool, arguments, never the path) is still printed and can be
+  watched live with `wrangler tail` by the account owner; tail events carry the URL too, so treat a tail session as
+  showing the secret. If stored logs are wanted later, check first on a test deployment with a throwaway secret
+  whether the stored record holds the URL.
+- **What a secret path is**: a capability URL, like a shared link. It keeps a service out of sight; it is not
+  authentication, and anyone given the URL can use it. It sits in the client's settings (a claude.ai connector, for
+  example), so treat it like a password and rotate it (set a new secret, update the connectors) if it spreads.
+- **Migration, when deployed**: Björn's connector "Begrepp svada" moves to the new private URL; `vocab-mcp` can then be
+  taken down. The ecosystem test Worker stays, because ckanext-pose_ecosystem_catalog#222 links its URL.
+- **Not built**: a combined endpoint with the tools of several services; authentication (decision of 2026-11-14).
+- **Also**: `scripts/smoke-vocab.mjs` paces its cases against a deployed server (`SMOKE_PAUSE_MS`, default 1500 ms), so a
+  cold cache no longer makes the last case fail on the rate limit.

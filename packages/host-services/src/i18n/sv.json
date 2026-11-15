@@ -1,0 +1,12 @@
+{
+  "title": "MCP-tjänster",
+  "intro": "MCP-servrar för AI-assistenter. Anslut en MCP-klient (Streamable HTTP) till en tjänsts adress nedan. Tjänsterna läser bara, de ändrar ingenting.",
+  "services": "Tjänster",
+  "endpoint": "Adress",
+  "tools": "Verktyg",
+  "ecosystemTitle": "CKAN-tillägg",
+  "ecosystemIntro": "Sök bland CKAN-tillägg och se vilka portaler som kör dem, ur den data om CKAN-ekosystemet som datHere publicerar på GitHub (MIT).",
+  "limits": "Ett konceptbevis: ingen inloggning och inget löfte om tillgänglighet; tjänsten kan begränsas eller stängas. Argumenten i varje anrop (till exempel söktexten) loggas.",
+  "status": "Inte knuten till föreningen onData; motorn bygger på deras ckan-mcp-server (MIT).",
+  "language": "English"
+}
