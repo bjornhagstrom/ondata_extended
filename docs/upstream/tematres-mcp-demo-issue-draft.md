@@ -9,7 +9,9 @@ Before posting (Björn's ok, after mcp-reviewer):
   2. Make the demo public at /tematres/mcp (packages/host-services/src/services.ts: path "tematres" instead of the
      secretPath) and raise its rate limit to 5 a second (TEMATRES_RATE_LIMIT_RPS = "5" in wrangler.toml; Björn: 2 until
      he is told, 5 when this is posted; the text below says 5), deploy, check / and /health and one call.
-  3. Fill in the clients tried (Claude Desktop once Björn has asked example 1 there); optionally attach that screenshot.
+  3. Done: clients tried filled in. Screenshot: Björn's project chat (example 1 and the public-library follow-up), retaken
+     with the project renamed (it read "Temetrest_demo"); the answers checked against the tools on 2026-11-16 (nine types
+     and Spanish names as the Spanish edition; scope note of 4562 verbatim; four narrower; exact match Biblioteca pública).
   4. Post with lines unwrapped.
 Facts: the example answers are the tools' output through the Worker on 2026-11-15 (DECISIONS); the fetchNotes check is
 the raw web-service answer (cant_result 0 for ids 129, 132, 407 and 737).
@@ -43,7 +45,7 @@ I have built a small open-source server that lets AI assistants such as Claude l
 1. *Which kinds of libraries does the UNESCO Thesaurus distinguish, and what are they called in Spanish?* The concept *Libraries* comes back with its path (Information and communication › Documentary information systems › Libraries), nine narrower concepts (Academic, Childrens, Digital, Government, Institutional, International, National, Public and School libraries), its related concepts, and its mapping to *Biblioteca* in the Spanish edition, whose narrower concepts include *Biblioteca pública* and *Biblioteca escolar*.
 2. *How does ISO 25964 describe a thesaurus?* The glossary's scope note for *thesaurus*: "controlled vocabulary in which concepts are represented primarily by preferred terms, formally organized so that paradigmatic relationships between the concepts are made explicit, and the preferred terms are accompanied by lead-in entries for synonyms or quasi-synonyms".
 
-It is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. Continuing the first example (in the screenshots I asked for short answers, only to keep the pictures small):
+It is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. Continuing the first example (the screenshot shows the first question and the first follow-up; I asked for short answers there, only to keep the picture small):
 
 - *What exactly counts as a public library?* The assistant opens *Public libraries* and gives UNESCO's scope note: "A library which serves the population of a community or region free of charge or for a nominal fee."
 - *And what is "libraries" in French and Russian?* From the thesaurus's own mappings: *Bibliothèque* and *Библиотеки*, with the Spanish *Biblioteca* already given.
@@ -72,7 +74,7 @@ It is a conversation, not single questions: the assistant keeps the context, so 
 - *Other assistants:* ChatGPT, VS Code and others can add an MCP server by address too; the menus differ.
 - *If something does not work,* ask the assistant itself ("how do I add a custom MCP connector here?"); it usually knows its own menus better than any instructions I could write.
 
-Tried with: [fill in]. Code (MIT): [packages/profile-skos](https://github.com/bjornhagstrom/ondata_extended/tree/main/packages/profile-skos). The server is my project, built on an engine derived from onData's [ckan-mcp-server](https://github.com/ondata/ckan-mcp-server) (MIT), and not affiliated with onData.
+Tried with: Claude Desktop on macOS (in a project, as above) and the Claude app on iOS (by voice); the server also answers any other MCP client that speaks Streamable HTTP. Code (MIT): [packages/profile-skos](https://github.com/bjornhagstrom/ondata_extended/tree/main/packages/profile-skos). The server is my project, built on an engine derived from onData's [ckan-mcp-server](https://github.com/ondata/ckan-mcp-server) (MIT), and not affiliated with onData.
 
 **Limits.** A proof of concept with no availability promise: it may be rate-limited or taken down, and the arguments of each call (the search text, for example) are logged.
 
