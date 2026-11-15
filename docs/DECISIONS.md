@@ -632,3 +632,15 @@ find.
   chat with web search on, the server instructions alone did not make Claude use the demo (it searched UNESCO's own
   site); naming the connector did, and so did a project instruction without naming it. So the guidance is: name the
   connector in a single chat, a project instruction for real work. No tool-selection eval runner yet (backlog).
+
+## 2026-11-16: the TemaTres demo goes public with the issue to its maintainer
+
+- **What** (Björn: "kör när du är redo"): the demo moves from its secret path to `/tematres/mcp`, listed on `/` and
+  `/health`, and its rate limit to vocabularyserver.com goes from 2 to 5 requests a second (no burst, 10 s wait), as
+  the issue says; it offers to lower it. The secret `SERVICES_TEMATRES_PATH` is no longer read (delete it with
+  `wrangler secret delete` when convenient).
+- **A refused SKOS export is remembered**: for a vocabulary given by address, the adapter asks `xml.php?skosMeta=1`
+  for the concept URI pattern. On vocabularyserver.com a browser check refuses it, and the core caches only successful
+  answers, so the request was repeated on every call. The adapter now remembers a refusal for an hour per instance and
+  uses TemaTres's default pattern meanwhile (tested; mutation check: without it the test fails).
+- **README**: how to run the vocabulary server against one's own TemaTres (checked locally).

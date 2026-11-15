@@ -1,13 +1,12 @@
 # One Worker for several services, each at its own path (docs/DECISIONS.md, 2026-11-15):
 #   /ecosystem/mcp            the CKAN ecosystem proof of concept, public (listed on / and /health)
 #   /<secret>/mcp             the vocabulary service, private: the path is the secret SERVICES_VOCAB_PATH
-#   /<secret>/mcp             the TemaTres demo (vocabularies on vocabularyserver.com), private until its maintainer has
-#                             seen it: the secret SERVICES_TEMATRES_PATH
+#   /tematres/mcp             the TemaTres demo (vocabularies on vocabularyserver.com), public since the issue to its
+#                             maintainer (listed on / and /health)
 # Set the secret (48 random characters; a Worker secret cannot be read back, so keep the value, e.g. in a password
 # manager, before it goes to Cloudflare):
 #   P=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n'); echo "$P"
 #   printf %s "$P" | npx wrangler secret put SERVICES_VOCAB_PATH -c packages/host-services/wrangler.toml
-# (SERVICES_TEMATRES_PATH the same way, with its own value.)
 # The private URL is then https://<worker>/$P/mcp. To rotate: the same with a new value, then update the connectors.
 # Deploy: npm run deploy:services (Björn's ok each time). Deployed 2026-11-15.
 name = "ondata-extended-services"
@@ -33,9 +32,10 @@ enabled = false
 # Each service has its own namespace and its own engine: allowed hosts, cache and rate limit are not shared.
 VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
 ECOSYSTEM_ALLOWED_DOMAINS = "raw.githubusercontent.com"
-# The TemaTres maintainer's server, one hostname only (the rate limit is per hostname): at most 2 requests a second
-# from one isolate, no burst (Björn, 2026-11-15). A request waits up to 10 s for its turn, then fails.
+# The TemaTres maintainer's server, one hostname only (the rate limit is per hostname): at most 5 requests a second
+# from one isolate, no burst (Björn: 2 until the maintainer was told, 5 from then; lower it if he asks). A request
+# waits up to 10 s for its turn, then fails.
 TEMATRES_ALLOWED_DOMAINS = "vocabularyserver.com"
-TEMATRES_RATE_LIMIT_RPS = "2"
+TEMATRES_RATE_LIMIT_RPS = "5"
 TEMATRES_RATE_LIMIT_BURST = "1"
 TEMATRES_RATE_LIMIT_MAX_WAIT_MS = "10000"

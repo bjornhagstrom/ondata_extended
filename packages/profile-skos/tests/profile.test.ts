@@ -11,6 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { __setDnsResolverForTests, createEngine, createMcpServer, registerProfiles } from "@ondata-extended/core";
 import type { InstanceEntry } from "@ondata-extended/profile-contract";
+import { __resetConceptUriBaseMemoForTests } from "../src/adapters/tematres/adapter.js";
 import { createSkosProfile, htmlToText, localId, skosInstructions, vocabArgDescription, type VocabExt } from "../src/index.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "tematres");
@@ -30,6 +31,7 @@ const jsonAnswer = (body: string, status = 200) => () => new Response(body, { st
 /** The User-Agent header of each request, in order. */
 let agents: (string | null)[] = [];
 beforeEach(() => {
+  __resetConceptUriBaseMemoForTests();
   requested = [];
   agents = [];
   overrides.clear();
@@ -420,6 +422,18 @@ describe("concept URIs", () => {
     expect(requested).toContain(`${B}xml.php?skosMeta=1`);
     expect(agents).toHaveLength(requested.length);
     for (const a of agents) expect(a).toMatch(/^Vocab-MCP-Server\/\d/);
+  });
+
+  it("asks a refused SKOS export once, then uses the default pattern without asking again", async () => {
+    const B = "https://checked-tematres.example/v/";
+    overrides.set(`${B}xml.php?skosMeta=1`, () => new Response("<html>Just a moment...</html>", { status: 403, headers: { "content-type": "text/html" } }));
+    overrides.set(`${B}services.php?task=fetchTopTerms&output=json`, jsonAnswer(envelope("fetchTopTerms", "", { "3": { term_id: "3", string: "Top", isMetaTerm: "0" } })));
+    const c = await client({ VOCAB_ALLOWED_DOMAINS: "checked-tematres.example" }, []);
+    const first = await json(c, "vocab_top_concepts", { vocab: B });
+    const second = await json(c, "vocab_top_concepts", { vocab: B });
+    expect(first.concepts[0].uri).toBe(`${B}xml.php?schema=skos&term_id=3`);
+    expect(second.concepts[0].uri).toBe(`${B}xml.php?schema=skos&term_id=3`);
+    expect(requested.filter((u) => u.includes("skosMeta")).length).toBe(1);
   });
 
   it("falls back to TemaTres' default URI pattern when the export gives none", async () => {

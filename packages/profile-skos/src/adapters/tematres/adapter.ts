@@ -34,16 +34,33 @@ function isNumericId(id: string): boolean {
 
 const withSlash = (u: string) => (u.endsWith("/") ? u : `${u}/`);
 
+/**
+ * Instances whose SKOS export did not answer (an error status, e.g. a browser check, or no answer), with the time until
+ * which the export is not asked again. The core caches only successful answers, so without this every tool call would
+ * repeat a refused request. Per process or Worker isolate, like the rest of the cache.
+ */
+const exportRefusedUntil = new Map<string, number>();
+
+/** Forget remembered refusals; for tests. */
+export function __resetConceptUriBaseMemoForTests(): void {
+  exportRefusedUntil.clear();
+}
+
 /** The text before the id in this instance's concept URIs. */
 export async function conceptUriBase(ctx: EngineContext, instance: VocabularyInstance): Promise<string> {
   if (instance.conceptUriBase) return instance.conceptUriBase;
   const base = withSlash(instance.baseUrl);
+  const fallback = `${base}xml.php?schema=skos&term_id=`;
+  if ((exportRefusedUntil.get(base) ?? 0) > Date.now()) return fallback;
+  let answered = false;
   try {
     const res = await ctx.http.request(`${base}xml.php?skosMeta=1`, { method: "GET" }, { cache: { ttlSeconds: TTL.scheme }, userAgent: "honest" });
-    const m = res.status === 200 && res.text ? res.text.match(/hasTopConcept\s+rdf:resource="([^"]*?)(\d+)"/) : null;
+    answered = res.status === 200;
+    const m = answered && res.text ? res.text.match(/hasTopConcept\s+rdf:resource="([^"]*?)(\d+)"/) : null;
     if (m) return m[1].replace(/&amp;/g, "&");
   } catch { /* fall through to the default */ }
-  return `${base}xml.php?schema=skos&term_id=`;
+  if (!answered) exportRefusedUntil.set(base, Date.now() + TTL.scheme * 1000);
+  return fallback;
 }
 
 function ref(row: Record<string, unknown>, base: string, idKey = "term_id"): ConceptRef {

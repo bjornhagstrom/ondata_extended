@@ -19,9 +19,8 @@ for (const f of readdirSync(FIX).filter((n) => n.endsWith(".meta.json"))) {
 }
 
 const SECRET = "k3P_9xQ-vR7tW2yZ5bN8mL4hJ6gF1dSa0cE"; // 35 characters
-const DEMO = "Tq8_vL2-nB5xR9wK3mP7hJ4gF6dS1aZ0cYe"; // 35 characters
 const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DOMAINS: "raw.githubusercontent.com", SERVICES_VOCAB_PATH: SECRET,
-  TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com", SERVICES_TEMATRES_PATH: DEMO,
+  TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com",
   VOCAB_RATE_LIMIT_ENABLED: "false", ECOSYSTEM_RATE_LIMIT_ENABLED: "false", TEMATRES_RATE_LIMIT_ENABLED: "false" };
 
 let requested: string[] = [];
@@ -94,13 +93,13 @@ describe("two profiles in one Worker", () => {
 describe("the TemaTres demo service", () => {
   it("reads the UNESCO Thesaurus by default and names its known vocabularies in the vocab argument", async () => {
     const w = await worker();
-    const list = (await (await w.fetch(post(`/${DEMO}/mcp`, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }), ENV)).json()) as
+    const list = (await (await w.fetch(post("/tematres/mcp", { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }), ENV)).json()) as
       { result: { tools: { name: string; inputSchema: { properties: Record<string, { description?: string }> } }[] } };
     const desc = list.result.tools.find((t) => t.name === "vocab_search_concepts")!.inputSchema.properties.vocab.description!;
     expect(desc).toContain("'unesco' (UNESCO Thesaurus (English))");
     expect(desc).toContain("'iso25964'");
     expect(desc).not.toContain("svada");
-    await call(w, `/${DEMO}/mcp`, "vocab_search_concepts", { query: "libraries" });
+    await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "libraries" });
     expect(requested.length).toBeGreaterThan(0);
     for (const url of requested) expect(url.startsWith("https://vocabularyserver.com/unesco/en/"), url).toBe(true);
   });
@@ -109,9 +108,9 @@ describe("the TemaTres demo service", () => {
     const w = await worker();
     const fromVocab = await call(w, `/${SECRET}/mcp`, "vocab_search_concepts", { query: "libraries", vocab: "https://vocabularyserver.com/unesco/en/" });
     expect(fromVocab.text).toContain("not in the allowed list (VOCAB_ALLOWED_DOMAINS)");
-    const fromDemo = await call(w, `/${DEMO}/mcp`, "vocab_search_concepts", { query: "data", vocab: "https://begrepp.hagstrom.nu/" });
+    const fromDemo = await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "data", vocab: "https://begrepp.hagstrom.nu/" });
     expect(fromDemo.text).toContain("not in the allowed list (TEMATRES_ALLOWED_DOMAINS)");
-    const svadaId = await call(w, `/${DEMO}/mcp`, "vocab_search_concepts", { query: "data", vocab: "svada" });
+    const svadaId = await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "data", vocab: "svada" });
     expect(svadaId.isError).toBe(true);
     expect(requested).toEqual([]);
   });
@@ -123,7 +122,7 @@ describe("server instructions", () => {
     const init = async (path: string) => ((await (await w.fetch(post(path, { jsonrpc: "2.0", id: 1, method: "initialize",
       params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } }), ENV)).json()) as
       { result: { instructions?: string } }).result.instructions;
-    const demo = await init(`/${DEMO}/mcp`);
+    const demo = await init("/tematres/mcp");
     expect(demo).toContain("'unesco' (UNESCO Thesaurus (English))");
     expect(demo).toContain("vocabularyserver.com");
     expect(demo).not.toMatch(/svada/i);
@@ -136,17 +135,18 @@ describe("server instructions", () => {
 });
 
 describe("visibility", () => {
-  it("GET / and /health name the ecosystem service and nothing of the vocabulary service", async () => {
+  it("GET / and /health name the two public services (ecosystem, TemaTres demo) and nothing of the private one", async () => {
     const w = await worker();
     const page = await (await w.fetch(new Request("https://s.example/"), ENV)).text();
     const health = await (await w.fetch(new Request("https://s.example/health"), ENV)).text();
     expect(page).toContain("https://s.example/ecosystem/mcp");
     expect(page).toContain("<code>ecosystem_search_extensions</code>");
-    expect(JSON.parse(health)).toEqual({ status: "ok", runtime: "cloudflare-workers", services: [{ id: "ecosystem", endpoint: "/ecosystem/mcp" }] });
+    expect(JSON.parse(health)).toEqual({ status: "ok", runtime: "cloudflare-workers", services: [{ id: "ecosystem", endpoint: "/ecosystem/mcp" }, { id: "tematres", endpoint: "/tematres/mcp" }] });
+    expect(page).toContain("https://s.example/tematres/mcp");
+    expect(page).toContain(en.tematresTitle);
     for (const text of [page, health]) {
       expect(text).not.toContain(SECRET);
-      expect(text).not.toContain(DEMO);
-      expect(text).not.toMatch(/vocab|tematres/i);
+      expect(text).not.toMatch(/svada|begrepp/i);
     }
   });
 

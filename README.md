@@ -26,7 +26,8 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
   Catalog, four `ecosystem_*` tools that search CKAN extensions and the portals running them, from datHere's open
   crawl data and GitHub (`docs/ckan-ecosystem-profile.md`). A test Worker on workers.dev.
 - `packages/host-services`: several services in one Cloudflare Worker, each at its own path: the ecosystem service public
-  at `/ecosystem/mcp`, the vocabulary service private at a secret path (`docs/DECISIONS.md`, 2026-11-15). On workers.dev.
+  at `/ecosystem/mcp`, a demo of TemaTres vocabularies on vocabularyserver.com public at `/tematres/mcp`, and the
+  vocabulary service private at a secret path (`docs/DECISIONS.md`, 2026-11-15). On workers.dev.
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 
@@ -81,6 +82,18 @@ Run locally: `node packages/host-vocab/dist/index.js`, `node packages/host-ckan/
 `node packages/host-parliament/dist/index.js` (stdio; the parliament one has no HTTP mode, as the original), or with
 `TRANSPORT=http` and an allowlist (`VOCAB_ALLOWED_DOMAINS=begrepp.hagstrom.nu`, `CKAN_ALLOWED_DOMAINS=...`) for
 `http://127.0.0.1:3000/mcp`.
+
+**Against your own TemaTres.** The vocabulary server reads any TemaTres whose web service (`services.php`) is on. Build
+(`npm install`, `npm run build`), allow your server's host, and pass your vocabulary's base URL as `vocab` in a call:
+
+```bash
+VOCAB_ALLOWED_DOMAINS=vocab.example.org TRANSPORT=http node packages/host-vocab/dist/index.js
+# then connect an MCP client to http://127.0.0.1:3000/mcp and ask, e.g. vocab_scheme_info with
+# { "vocab": "https://vocab.example.org/myvocab/" }
+```
+
+To give your vocabularies ids, a default and a sentence for the assistant, change the list in
+`packages/host-vocab/src/vocabularies.ts` (see "Steering the assistant" above).
 
 Test deployment (Cloudflare Workers, `docs/DECISIONS.md`): `npx wrangler login` once, then `npm run deploy:ckan` and
 `npm run deploy:vocab`. wrangler sends no usage telemetry (`send_metrics = false`). `npm run deploy:parliament`

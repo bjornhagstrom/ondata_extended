@@ -74,8 +74,6 @@ export function buildServiceServer(setup: ServiceSetup, engine: Engine): McpServ
 
 /** The private path of the vocabulary service, from the secret SERVICES_VOCAB_PATH. */
 export const vocabSecretPath = (env: Env) => createConfig(env, ["SERVICES"]).get("VOCAB_PATH");
-/** The private path of the TemaTres demo, from the secret SERVICES_TEMATRES_PATH, until its maintainer has seen it. */
-export const tematresSecretPath = (env: Env) => createConfig(env, ["SERVICES"]).get("TEMATRES_PATH");
 
 /**
  * A service of the Worker. The engine is built once per isolate, not per request: it holds the cache, the rate
@@ -106,7 +104,8 @@ export function workerService(setup: ServiceSetup, where: { path: string } | { s
 export const SERVICES = [
   workerService(ECOSYSTEM, { path: "ecosystem" }),
   workerService(VOCAB, { secretPath: vocabSecretPath }),
-  workerService(TEMATRES, { secretPath: tematresSecretPath })
+  // Public since the issue to TemaTres's maintainer (docs/DECISIONS.md); private at a secret path before that.
+  workerService(TEMATRES, { path: "tematres" })
 ];
 
 /** What the landing page says about a public service. */
