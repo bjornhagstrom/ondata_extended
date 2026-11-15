@@ -17,8 +17,12 @@ Connecting (checked 2026-11-15 against vendor docs): claude.ai "Customize > Conn
 connector", "No sign in"; Free allows one custom connector; connectors sync to Desktop and mobile; per chat "+" >
 Connectors; Claude picks tools itself and asks for approval
 (support.claude.com/en/articles/11175166 and 11176164). ChatGPT's steps and plans are not confirmed, so not detailed.
-Use cases: the LC precedent is lc-vocabularies-mcp (DCMI 2026, dcpapers.dublincore.org/article/952633234); the others
-follow from the tools, no published example found. Björn checks the Claude menu labels once more when he takes the
+Use cases: the LC precedent is lc-vocabularies-mcp (May Chan, DCMI 2026, Seoul, doi 10.23106/dcmi.952633234, CC BY 4.0,
+dcpapers.dublincore.org/article/952633234); the others follow from the tools, no published example found.
+Voice: secondary sources say Claude's voice mode supports connectors since 2026-07-23; a report of 2026-07-13 says custom
+MCP connector tools failed in voice mode. Not in the text until Björn has tried it with the demo.
+Follow-up example: data from services.php on 2026-11-15 (NA note of 4562; target terms of 4543: es, fr, ru). The third
+follow-up (agricultural libraries) is not yet run through the tools: check its answer before posting, or drop it. Björn checks the Claude menu labels once more when he takes the
 screenshots.
 -->
 
@@ -31,6 +35,12 @@ I have built a small open-source server that lets AI assistants such as Claude l
 1. *Which kinds of libraries does the UNESCO Thesaurus distinguish, and what are they called in Spanish?* The concept *Libraries* comes back with its path (Information and communication › Documentary information systems › Libraries), nine narrower concepts (Academic, Childrens, Digital, Government, Institutional, International, National, Public and School libraries), its related concepts, and its mapping to *Biblioteca* in the Spanish edition, whose narrower concepts include *Biblioteca pública* and *Biblioteca escolar*.
 2. *How does ISO 25964 describe a thesaurus?* The glossary's scope note for *thesaurus*: "controlled vocabulary in which concepts are represented primarily by preferred terms, formally organized so that paradigmatic relationships between the concepts are made explicit, and the preferred terms are accompanied by lead-in entries for synonyms or quasi-synonyms".
 
+It is a conversation, not single questions: the assistant keeps the context, so you can follow up the way you would with a colleague. Continuing the first example:
+
+- *What exactly counts as a public library?* The assistant opens *Public libraries* and gives UNESCO's scope note: "A library which serves the population of a community or region free of charge or for a nominal fee."
+- *And what is "libraries" in French and Russian?* From the thesaurus's own mappings: *Bibliothèque* and *Библиотеки*, with the Spanish *Biblioteca* already given.
+- *Where do agricultural libraries fit, then? They were not in the list.* The assistant looks *Agricultural libraries* up and shows where the thesaurus actually places it, instead of guessing.
+
 **How it works.** MCP (Model Context Protocol) is a common way for AI assistants to call outside tools. The server offers eight read-only tools in SKOS terms (search, suggest, concept, broader, narrower, related, top concepts, vocabulary information), each built on `services.php` tasks such as `search`, `fetchTerm`, `fetchUp`, `fetchDown`, `fetchDirectTerms`, `fetchNotes` and `fetchTargetTerms`. Nothing in TemaTres has to change. I have tried it with TemaTres 3.6.1 and 3.3.
 
 **On your server.** The demo knows five vocabularies by name (the UNESCO Thesaurus in English, Spanish and French, and the ISO 25964-1 and Z39.19 glossaries); any other vocabulary there can be reached by its address, for example *AGROVOC* by asking for "irrigation" in `https://vocabularyserver.com/agrovoc/en/`. It identifies itself as `Vocab-MCP-Server/0.1.0` and sends at most five requests a second from each running copy; if that is too much for your server, tell me and I will lower it; answers are kept for five minutes (vocabulary information for an hour). It uses `services.php`, and for a vocabulary not in its list one request to `xml.php?skosMeta=1` to learn the concept URI pattern; it does not try to get past the browser check on your pages.
@@ -39,7 +49,8 @@ I have built a small open-source server that lets AI assistants such as Claude l
 
 - *Consistent terms in a project.* In a Claude project for a report or a presentation, an instruction such as "check terms against the UNESCO Thesaurus and use its preferred terms" makes the assistant look terms up as it writes, so the same concept gets the same name throughout. I use it this way with our own vocabulary.
 - *Checking a draft.* Paste a text and ask which terms are not the preferred ones; the assistant shows the preferred term and its scope note.
-- *Subject indexing.* Give it a document and ask for candidate descriptors; each one is confirmed in the vocabulary, with its place in the hierarchy. (Others do the same with Library of Congress vocabularies.)
+- *Subject indexing.* Give it a document and ask for candidate descriptors; each one is confirmed in the vocabulary, with its place in the hierarchy. May Chan has studied this for Library of Congress subject headings, with an MCP server for live LC authority lookup: "Grounding AI Subject Cataloguing in Standards and Policy: An MCP Server for Live LC Authority Lookup and a DITA-Encoded SHM for RAG", DCMI 2026, [doi:10.23106/dcmi.952633234](https://doi.org/10.23106/dcmi.952633234). Her finding that authority lookups alone were not enough for defensible cataloguing, without the indexing policy as well, applies here too.
+- *By voice.* On the phone you can talk with the vocabulary instead of typing: ask, listen to the answer, and ask a follow-up, in a whole spoken conversation. [VERIFY before posting: Björn tests the demo connector in Claude's voice mode on the phone.]
 - *Search strings.* Ask for a search on a topic; the assistant adds the narrower and related terms from the vocabulary.
 - *Equivalents in other languages,* from the vocabulary's own mappings rather than machine translation.
 
