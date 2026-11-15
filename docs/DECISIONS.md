@@ -542,8 +542,9 @@ find.
   (`packages/host-services/tests/host.test.ts`): each path lists only its own tools, a tool of one service is unknown on
   the other's path, and the vocabulary service is refused a host that only the ecosystem service may reach.
 - **`packages/host-services`**: the CKAN ecosystem service public at `/ecosystem/mcp`, the vocabulary service private at
-  the secret `SERVICES_VOCAB_PATH`. Workers only (the Node hosts serve one service each, as before). Not deployed:
-  `npm run deploy:services` with Björn's ok.
+  the secret `SERVICES_VOCAB_PATH`. Workers only (the Node hosts serve one service each, as before). Deployed
+  2026-11-15 at `https://ondata-extended-services.ondata-extended.workers.dev` (`npm run deploy:services`, Björn's ok);
+  smoke: ecosystem 7/7, vocabulary 10/10 at the private path, `/health` lists the ecosystem service only.
 - **Logs**: Cloudflare attaches the request URL, and so the secret path, to what it stores for a request (invocation
   logs, traces, and as far as we can tell the metadata of our own log lines too; only the query string can be
   redacted). So Workers Logs and traces are off for this Worker (`[observability] enabled = false`): nothing is stored

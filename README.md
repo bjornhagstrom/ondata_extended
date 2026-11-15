@@ -26,7 +26,7 @@ A modular MCP server platform in TypeScript: a backend-agnostic **core** with pl
   Catalog, four `ecosystem_*` tools that search CKAN extensions and the portals running them, from datHere's open
   crawl data and GitHub (`docs/ckan-ecosystem-profile.md`). A test Worker on workers.dev.
 - `packages/host-services`: several services in one Cloudflare Worker, each at its own path: the ecosystem service public
-  at `/ecosystem/mcp`, the vocabulary service private at a secret path (`docs/DECISIONS.md`, 2026-11-15). Not deployed.
+  at `/ecosystem/mcp`, the vocabulary service private at a secret path (`docs/DECISIONS.md`, 2026-11-15). On workers.dev.
 
 Version: `0.1.0` for every package (`docs/DECISIONS.md`).
 
