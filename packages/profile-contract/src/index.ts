@@ -114,6 +114,11 @@ export interface RetryPolicy {
 export interface HostPolicy {
   /** Minimum time between the *start* of two requests to this host, across all callers in the process. */
   minIntervalMs?: number;
+  /**
+   * The longest a request waits for its turn under `minIntervalMs`; a request that would wait longer fails at once with
+   * a rate-limit error instead of joining the queue. Default: no limit (the queue is unbounded).
+   */
+  maxQueueMs?: number;
   retry?: RetryPolicy;
   /** Default timeout for this host (a request's own `timeoutMs` wins). */
   timeoutMs?: number;

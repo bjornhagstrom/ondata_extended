@@ -41,6 +41,18 @@ export const VOCABULARYSERVER: InstanceEntry<VocabExt>[] = [
   { id: "z3919", baseUrl: "https://vocabularyserver.com/glossaries/z3919/", ext: { adapter: "tematres", conceptUriBase: "https://vocabularyserver.com/glossaries/z3919/xml.php?schema=skos&term_id=", defaultLang: "en", title: "ANSI/NISO Z39.19 glossary: monolingual controlled vocabularies" } }
 ];
 
+/**
+ * A lexicon on the TemaTres server of the Faculty of Philosophy and Letters, University of Buenos Aires
+ * (terminologias.filo.uba.ar), which the maintainer pointed to in tematres/TemaTres-Vocabulary-Server#137: the
+ * lexicon his text annotator uses for the tango "Cambalache". Read live and quoted, never copied; its rights field is
+ * empty. The server asked for no limit; it gets at most two requests a second from each running copy (UBA_HOST_POLICY).
+ * The allow-list is the host, so its other TemaTres vocabularies are reachable by address too, under the same limit.
+ */
+export const UBA_LEXICONS: InstanceEntry<VocabExt>[] = [
+  { id: "lunfardo", baseUrl: "https://terminologias.filo.uba.ar/apps/dicrodriguez/", ext: { adapter: "tematres", conceptUriBase: "https://terminologias.filo.uba.ar/apps/dicrodriguez/xml.php?schema=skos&term_id=", defaultLang: "es", title: "Lexicón de 12.500 voces y locuciones lunfardas, populares, jergales y extranjeras (Adolfo Enrique Rodríguez, 1989)" } }
+];
+export const UBA_HOST_POLICY = { "terminologias.filo.uba.ar": { minIntervalMs: 500, maxQueueMs: 10_000 } } as const;
+
 export const VOCAB: ServiceSetup = {
   id: "vocab", name: "vocab-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
     vocabularies: SVADA,
@@ -52,8 +64,10 @@ export const VOCAB: ServiceSetup = {
 };
 export const TEMATRES: ServiceSetup = {
   id: "tematres", name: "tematres-vocabularyserver-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
-    vocabularies: VOCABULARYSERVER,
-    instructions: "These vocabularies are published with TemaTres on vocabularyserver.com, the server of TemaTres's maintainer."
+    vocabularies: [...VOCABULARYSERVER, ...UBA_LEXICONS],
+    instructions: "These vocabularies are published with TemaTres: most on vocabularyserver.com, the server of TemaTres's " +
+      "maintainer, and the lunfardo lexicon on terminologias.filo.uba.ar (University of Buenos Aires).",
+    hostPolicies: UBA_HOST_POLICY
   }),
   configPrefix: "TEMATRES", keyArgs: ["query", "prefix", "id"]
 };

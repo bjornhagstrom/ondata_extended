@@ -648,3 +648,36 @@ find.
 - **README**: how to run the vocabulary server against one's own TemaTres (checked locally).
 - **Posted** 2026-11-16 as tematres/TemaTres-Vocabulary-Server#137, after the deploy (version 5e3a82ec) and a check of
   `/`, `/health` and the conversation's calls at `/tematres/mcp`.
+
+## 2026-11-16: the maintainer's lunfardo lexicon in the TemaTres demo, at most two requests a second
+
+- **Why** (Björn, after the maintainer's answer on #137): build on his work rather than beside it. He pointed to his
+  lexicon-based text annotator and its demo on the tango "Cambalache"; the lexicon it uses is a TemaTres vocabulary,
+  so the demo can read it live. The plan for the reply: his annotator marks the words (deterministic, every mark tied
+  to an entry), the assistant with the vocabulary tools checks each mark against the same lexicon, rejects false
+  matches, picks the sense and adds what exact matching misses.
+- **What**: the TemaTres demo (`/tematres/mcp`) also knows `lunfardo`, the "Lexicón de 12.500 voces y locuciones
+  lunfardas, populares, jergales y extranjeras" (Adolfo Enrique Rodríguez, 1989) at
+  `https://terminologias.filo.uba.ar/apps/dicrodriguez/` (TemaTres 4.0, 14,932 terms). UNESCO stays the default.
+  `TEMATRES_ALLOWED_DOMAINS` gains `terminologias.filo.uba.ar`; the allow-list is the host, so the other TemaTres
+  vocabularies there (his annotator's other lexicons) are reachable by address too, under the same limit.
+- **Gentle use** (Björn's ok, 2026-11-16): at most two requests a second to that server from each running copy, with
+  the honest user agent, read live and quoted, never copied (its rights field is empty). Done with the contract's
+  existing `hostPolicies` (`minIntervalMs: 500`), which the SKOS profile now takes from the deployment
+  (`SkosProfileOptions.hostPolicies`, keys lower-cased); vocabularyserver.com keeps its 5 a second.
+  A concept costs about seven requests, so about 3.5 s there.
+- **Checked** live from a local Worker (`wrangler dev`): searches and concepts for chorro, merengue (five senses), su
+  ("Hipoc. de Susana") and cambalache. Tests: the lexicon is listed after UNESCO, its requests go only to its base, and
+  requests there start at least 450 ms apart while vocabularyserver.com is not throttled (mutation-checked), and a
+  search answer recorded live from the lexicon is read correctly.
+- **The core's host throttle no longer chains promises** (review, 2026-11-16). This is its first use in a deployed
+  Worker, and on Workers a timer can be dropped when the request that set it ends (a tool that fails while a sibling
+  call still waits, a client that disconnects); with a promise chain every later request to that host would then wait
+  for the rest of the isolate's life. Each caller now reserves its start time synchronously and waits only on its own
+  timer: the same spacing and order, no shared promise. A test drops one waiter's timer and checks that the next one
+  still starts (it hangs on the old code). The stall did not show in `wrangler dev`; the change removes the possibility.
+- **A bound on the queue** (second review): the throttle had no maximum wait, so on a public endpoint a burst could
+  push a host's next turn far ahead and later calls would hang without an error. `HostPolicy.maxQueueMs` (contract,
+  optional, 0.x) makes a request whose turn is further away fail at once with a rate-limit error, reserving nothing.
+  The demo sets 10 s for the lexicon host; without it the queue stays unbounded, so the parliament profile behaves as
+  before.

@@ -3,7 +3,7 @@
  * third-backend contract spike (see docs/DECISIONS.md); each test names the property it protects.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -193,6 +193,37 @@ describe("host throttle", () => {
     await client({ minIntervalMs: 100, retry: { attempts: 5, baseDelayMs: 1, maxDelayMs: 1 } }).request(`${base}/flaky`, {}, P);
     expect(hits["/flaky"]).toBe(3);
     expect(Date.now() - t0).toBeGreaterThanOrEqual(190);
+  });
+
+  it("with maxQueueMs, a request whose turn is further away fails at once and takes no turn", async () => {
+    const throttle = createHostThrottle();
+    await throttle("q.example", 100, 150); // now
+    const second = throttle("q.example", 100, 150); // +100 ms: within the bound
+    await expect(throttle("q.example", 100, 150)).rejects.toThrow(/Rate limit exceeded for q\.example/); // +200 ms: refused
+    await second;
+    const t0 = Date.now();
+    await throttle("q.example", 100, 150); // the refused one reserved nothing: this one gets the +200 ms turn
+    expect(Date.now() - t0).toBeLessThan(150);
+  });
+
+  it("a waiter whose timer never fires (a request that ended on Workers) does not hold up later ones", async () => {
+    const throttle = createHostThrottle();
+    await throttle("h.example", 100); // takes the first slot at once
+    const realSetTimeout = globalThis.setTimeout;
+    let dropped = false;
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
+      if (!dropped) { dropped = true; return 0 as unknown as ReturnType<typeof setTimeout>; } // the dropped one
+      return realSetTimeout(fn, ms);
+    }) as typeof setTimeout);
+    try {
+      void throttle("h.example", 100); // waits for the second slot; its timer never fires
+      const t0 = Date.now();
+      await throttle("h.example", 100); // the third slot: must still come, about 100 ms after the second
+      expect(Date.now() - t0).toBeLessThan(1000);
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

@@ -7,7 +7,7 @@
   "ecosystemTitle": "CKAN extensions",
   "ecosystemIntro": "Search CKAN extensions and see which portals run them, from the CKAN ecosystem data datHere publish on GitHub (MIT).",
   "tematresTitle": "TemaTres vocabularies",
-  "tematresIntro": "Search and browse controlled vocabularies published with TemaTres on vocabularyserver.com (the UNESCO Thesaurus and others), read through TemaTres's web service, at most 5 requests a second.",
+  "tematresIntro": "Search and browse controlled vocabularies published with TemaTres: on vocabularyserver.com (the UNESCO Thesaurus and others), at most 5 requests a second, and a lunfardo lexicon on terminologias.filo.uba.ar (University of Buenos Aires), at most 2 a second. Read through TemaTres's web service.",
   "limits": "A proof of concept: no sign-in, no availability promise; it may be rate-limited or taken down. The arguments of each call (the search text, for example) are logged.",
   "status": "Not affiliated with the onData association; the engine is derived from their ckan-mcp-server (MIT).",
   "language": "Svenska"

@@ -376,6 +376,12 @@ describe("concept URIs", () => {
     expect(createSkosProfile({ vocabularies: SVADA, instructions: "Extra." }).instructions).toBe(skosInstructions(SVADA, "Extra."));
   });
 
+  it("passes the deployment's host policies to the core, keyed by lower-case hostname, and none by default", () => {
+    expect(createSkosProfile().hostPolicies).toBeUndefined();
+    expect(createSkosProfile({ hostPolicies: { "Vocab.Example.ORG": { minIntervalMs: 500 } } }).hostPolicies)
+      .toEqual({ "vocab.example.org": { minIntervalMs: 500 } });
+  });
+
   it("names the deployment's vocabularies in vocab_search_concepts' description, and nothing without a list", async () => {
     const withList = (await (await client()).listTools()).tools.find((t) => t.name === "vocab_search_concepts")!.description!;
     expect(withList).toContain("Vocabularies here: 'svada' (Svada - termer och begrepp)");

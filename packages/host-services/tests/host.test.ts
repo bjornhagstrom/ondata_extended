@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { __setDnsResolverForTests } from "@ondata-extended/core";
 import en from "../src/i18n/en.json";
 import sv from "../src/i18n/sv.json";
-import { ECOSYSTEM, VOCAB } from "../src/services.js";
+import { ECOSYSTEM, TEMATRES, VOCAB } from "../src/services.js";
 
 const FIX = join(import.meta.dirname, "..", "..", "profile-skos", "tests", "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -18,18 +18,26 @@ for (const f of readdirSync(FIX).filter((n) => n.endsWith(".meta.json"))) {
   recorded.set(meta.url, { body: readFileSync(join(FIX, f.replace(".meta.json", ".body")), "utf8"), contentType: meta.contentType });
 }
 
+// One answer recorded live from the lunfardo lexicon (TemaTres 4.0, web service 2.2), 2026-11-16.
+recorded.set("https://terminologias.filo.uba.ar/apps/dicrodriguez/services.php?task=search&arg=chorro&output=json", {
+  body: readFileSync(join(import.meta.dirname, "fixtures", "lunfardo-search-chorro.json"), "utf8"), contentType: "application/json"
+});
+
 const SECRET = "k3P_9xQ-vR7tW2yZ5bN8mL4hJ6gF1dSa0cE"; // 35 characters
 const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DOMAINS: "raw.githubusercontent.com", SERVICES_VOCAB_PATH: SECRET,
-  TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com",
+  TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com,terminologias.filo.uba.ar",
   VOCAB_RATE_LIMIT_ENABLED: "false", ECOSYSTEM_RATE_LIMIT_ENABLED: "false", TEMATRES_RATE_LIMIT_ENABLED: "false" };
 
 let requested: string[] = [];
+let startedAt: { url: string; at: number }[] = [];
 beforeEach(() => {
   requested = [];
+  startedAt = [];
   __setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     requested.push(url);
+    startedAt.push({ url, at: Date.now() });
     const hit = recorded.get(url);
     if (!hit) return new Response(`no fixture for ${url}`, { status: 599 });
     return new Response(hit.body, { status: 200, headers: { "content-type": hit.contentType } });
@@ -103,6 +111,41 @@ describe("the TemaTres demo service", () => {
     expect(requested.length).toBeGreaterThan(0);
     for (const url of requested) expect(url.startsWith("https://vocabularyserver.com/unesco/en/"), url).toBe(true);
   });
+
+  it("names the lunfardo lexicon on terminologias.filo.uba.ar and keeps UNESCO the default", async () => {
+    const w = await worker();
+    const list = (await (await w.fetch(post("/tematres/mcp", { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }), ENV)).json()) as
+      { result: { tools: { name: string; inputSchema: { properties: Record<string, { description?: string }> } }[] } };
+    const desc = list.result.tools.find((t) => t.name === "vocab_search_concepts")!.inputSchema.properties.vocab.description!;
+    expect(desc).toContain("'lunfardo' (Lexicón de 12.500 voces");
+    expect(desc.indexOf("'unesco'")).toBeLessThan(desc.indexOf("'lunfardo'"));
+    const found = await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "chorro", vocab: "lunfardo" });
+    expect(found.isError).toBe(false);
+    expect(found.text).toContain("chorro (id `2753`)");
+    expect(found.text).toContain("cachorro (id `2384`)");
+    expect(requested.length).toBeGreaterThan(0);
+    for (const url of requested) expect(url.startsWith("https://terminologias.filo.uba.ar/apps/dicrodriguez/"), url).toBe(true);
+  });
+
+  it("spaces requests to terminologias.filo.uba.ar at least 500 ms apart, and leaves vocabularyserver.com unthrottled", async () => {
+    expect(TEMATRES.profile.hostPolicies).toEqual({ "terminologias.filo.uba.ar": { minIntervalMs: 500, maxQueueMs: 10_000 } });
+    const w = await worker();
+    await Promise.all([
+      call(w, "/tematres/mcp", "vocab_search_concepts", { query: "chorro", vocab: "lunfardo" }),
+      call(w, "/tematres/mcp", "vocab_search_concepts", { query: "merengue", vocab: "lunfardo" })
+    ]);
+    const uba = startedAt.filter((s) => s.url.startsWith("https://terminologias.filo.uba.ar/")).map((s) => s.at);
+    expect(uba.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < uba.length; i++) expect(uba[i] - uba[i - 1]).toBeGreaterThanOrEqual(450);
+    startedAt = [];
+    await Promise.all([
+      call(w, "/tematres/mcp", "vocab_search_concepts", { query: "libraries" }),
+      call(w, "/tematres/mcp", "vocab_search_concepts", { query: "archives" })
+    ]);
+    const vs = startedAt.filter((s) => s.url.startsWith("https://vocabularyserver.com/")).map((s) => s.at);
+    expect(vs.length).toBeGreaterThanOrEqual(2);
+    expect(vs[1] - vs[0]).toBeLessThan(300);
+  }, 20_000);
 
   it("is kept apart from the Svada service both ways", async () => {
     const w = await worker();

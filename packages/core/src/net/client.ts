@@ -21,7 +21,7 @@
 import type { FetchOptions, HostPolicy, HttpResponse, RetryPolicy } from "@ondata-extended/profile-contract";
 import type { Cache } from "../cache.js";
 import { buildCacheKey } from "../cache.js";
-import type { UpstreamRateLimiter } from "../rate-limiter.js";
+import { RateLimitError, type UpstreamRateLimiter } from "../rate-limiter.js";
 import {
   DnsResolutionError,
   SsrfGuardError,
@@ -88,27 +88,30 @@ export interface HttpClientSettings {
   /** The profile's policy for a host, if any. */
   hostPolicy?: (hostname: string) => HostPolicy | undefined;
   /** Waits until a request to `hostname` may start; shared across all clients of an engine. */
-  throttle?: (hostname: string, minIntervalMs: number) => Promise<void>;
+  throttle?: (hostname: string, minIntervalMs: number, maxQueueMs?: number) => Promise<void>;
 }
 
 /**
- * A process-wide send-to-send throttle per host: the start of two requests to the same host is
- * at least `minIntervalMs` apart, whoever sends them. Requests queue in order.
+ * A process-wide send-to-send throttle per host: the starts of two requests to the same host are scheduled at least
+ * `minIntervalMs` apart, whoever sends them, in the order they ask. With `maxQueueMs`, a request whose turn is further
+ * away than that fails at once (RateLimitError) and reserves nothing; without it the queue is unbounded.
  * (After ondata's italianparliament-mcp src/core/client.ts throttleSenato, MIT, generalized from
  * one hard-coded host to any host a profile names.)
+ *
+ * Each caller reserves its start time synchronously and waits only for its own timer; no caller
+ * waits on another's promise. On Cloudflare Workers a timer can be dropped when the request that
+ * set it ends (a tool that fails while a sibling call is still waiting, a client that disconnects);
+ * a promise chain would then stall every later request to that host for the isolate's lifetime.
+ * The spacing is scheduled against the clock: a timer that fires late can shorten the gap to the next.
  */
-export function createHostThrottle(): (hostname: string, minIntervalMs: number) => Promise<void> {
-  const state = new Map<string, { chain: Promise<void>; last: number }>();
-  return (hostname, minIntervalMs) => {
-    const s = state.get(hostname) ?? { chain: Promise.resolve(), last: 0 };
-    const next = s.chain.then(async () => {
-      const wait = s.last + minIntervalMs - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      s.last = Date.now();
-    });
-    s.chain = next;
-    state.set(hostname, s);
-    return next;
+export function createHostThrottle(): (hostname: string, minIntervalMs: number, maxQueueMs?: number) => Promise<void> {
+  const nextFree = new Map<string, number>();
+  return async (hostname, minIntervalMs, maxQueueMs) => {
+    const now = Date.now();
+    const slot = Math.max(now, nextFree.get(hostname) ?? 0);
+    if (maxQueueMs !== undefined && slot - now > maxQueueMs) throw new RateLimitError(hostname, slot - now);
+    nextFree.set(hostname, slot + minIntervalMs);
+    if (slot > now) await new Promise((r) => setTimeout(r, slot - now));
   };
 }
 
@@ -322,7 +325,7 @@ export class HttpClient {
     // retries included: that total is what the host sees.
     const beforeSend = async () => {
       if (useLimiter) await s.rateLimiter!.acquire(hostname);
-      if (policy?.minIntervalMs && s.throttle) await s.throttle(hostname, policy.minIntervalMs);
+      if (policy?.minIntervalMs && s.throttle) await s.throttle(hostname, policy.minIntervalMs, policy.maxQueueMs);
     };
     const effective: FetchOptions = { ...opts, timeoutMs: opts.timeoutMs ?? policy?.timeoutMs };
     const retry: RetryPolicy = opts.retry ?? policy?.retry ?? { attempts: 1 };

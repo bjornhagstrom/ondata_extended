@@ -5,7 +5,7 @@
  * MVP: eight tools (src/tools.ts) over one adapter (TemaTres).
  */
 
-import type { InstanceEntry, Profile } from "@ondata-extended/profile-contract";
+import type { HostPolicy, InstanceEntry, Profile } from "@ondata-extended/profile-contract";
 import { TemaTresProtocolError } from "./adapters/tematres/client.js";
 import { ConceptNotFoundError, ForeignConceptUriError, createSkosTools, skosInstructions } from "./tools.js";
 import { UnknownVocabularyError, type VocabExt } from "./vocabularies.js";
@@ -27,6 +27,11 @@ export interface SkosProfileOptions {
    * are for (e.g. "Vocabulary X holds the terms of project Y; in work on Y, use its preferred terms").
    */
   instructions?: string;
+  /**
+   * The deployment's limits per vocabulary host (hostname -> policy), e.g. a minimum interval between requests to a
+   * server that asked for gentle use. The core applies them to every request to that host.
+   */
+  hostPolicies?: Readonly<Record<string, HostPolicy>>;
 }
 
 export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
@@ -36,6 +41,9 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
     toolPrefix: TOOL_PREFIX,
     tools: createSkosTools(options.vocabularies ?? []),
     instructions: skosInstructions(options.vocabularies ?? [], options.instructions),
+    ...(options.hostPolicies
+      ? { hostPolicies: Object.fromEntries(Object.entries(options.hostPolicies).map(([host, policy]) => [host.toLowerCase(), policy])) }
+      : {}),
     shrinkableKeys: ["concepts", "results", "narrower", "related", "broader", "altLabels", "notes", "mappings"],
     telemetryFields: ["vocab", "query", "prefix", "id", "limit", "response_format"],
     untrustedSourceLabel: "the vocabulary service",
