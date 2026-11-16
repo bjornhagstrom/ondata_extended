@@ -37,7 +37,8 @@ ECOSYSTEM_ALLOWED_DOMAINS = "raw.githubusercontent.com"
 # request waits up to 10 s for a token, then fails. vocabularyserver.com, the TemaTres maintainer's server (Björn: 2
 # until the maintainer was told, 5 from then; lower it if he asks). terminologias.filo.uba.ar (University of Buenos
 # Aires) is held to 2 a second on top, by the SKOS profile's host policy in src/services.ts (UBA_HOST_POLICY); a
-# request whose turn there is more than 10 s away fails at once. Any TemaTres on these hosts is reachable by its address; the known ids are in src/services.ts.
+# request whose turn there is more than 30 s away fails at once. Any TemaTres on these hosts is reachable by its
+# address; the known ids are in src/services.ts.
 TEMATRES_ALLOWED_DOMAINS = "vocabularyserver.com,terminologias.filo.uba.ar"
 TEMATRES_RATE_LIMIT_RPS = "5"
 TEMATRES_RATE_LIMIT_BURST = "1"

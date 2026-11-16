@@ -128,7 +128,7 @@ describe("the TemaTres demo service", () => {
   });
 
   it("spaces requests to terminologias.filo.uba.ar at least 500 ms apart, and leaves vocabularyserver.com unthrottled", async () => {
-    expect(TEMATRES.profile.hostPolicies).toEqual({ "terminologias.filo.uba.ar": { minIntervalMs: 500, maxQueueMs: 10_000 } });
+    expect(TEMATRES.profile.hostPolicies).toEqual({ "terminologias.filo.uba.ar": { minIntervalMs: 500, maxQueueMs: 30_000 } });
     const w = await worker();
     await Promise.all([
       call(w, "/tematres/mcp", "vocab_search_concepts", { query: "chorro", vocab: "lunfardo" }),

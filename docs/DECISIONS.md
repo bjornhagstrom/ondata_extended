@@ -679,5 +679,7 @@ find.
 - **A bound on the queue** (second review): the throttle had no maximum wait, so on a public endpoint a burst could
   push a host's next turn far ahead and later calls would hang without an error. `HostPolicy.maxQueueMs` (contract,
   optional, 0.x) makes a request whose turn is further away fail at once with a rate-limit error, reserving nothing.
-  The demo sets 10 s for the lexicon host; without it the queue stays unbounded, so the parliament profile behaves as
+  The demo sets 30 s for the lexicon host (10 s at first; raised 2026-11-17, Björn, after a test conversation left two
+  lookups unchecked: the assistant fired a batch of searches at once and the later ones were refused; the server still
+  sees at most two requests a second); without it the queue stays unbounded, so the parliament profile behaves as
   before.

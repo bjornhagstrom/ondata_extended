@@ -51,7 +51,7 @@ export const VOCABULARYSERVER: InstanceEntry<VocabExt>[] = [
 export const UBA_LEXICONS: InstanceEntry<VocabExt>[] = [
   { id: "lunfardo", baseUrl: "https://terminologias.filo.uba.ar/apps/dicrodriguez/", ext: { adapter: "tematres", conceptUriBase: "https://terminologias.filo.uba.ar/apps/dicrodriguez/xml.php?schema=skos&term_id=", defaultLang: "es", title: "Lexicón de 12.500 voces y locuciones lunfardas, populares, jergales y extranjeras (Adolfo Enrique Rodríguez, 1989)" } }
 ];
-export const UBA_HOST_POLICY = { "terminologias.filo.uba.ar": { minIntervalMs: 500, maxQueueMs: 10_000 } } as const;
+export const UBA_HOST_POLICY = { "terminologias.filo.uba.ar": { minIntervalMs: 500, maxQueueMs: 30_000 } } as const;
 
 export const VOCAB: ServiceSetup = {
   id: "vocab", name: "vocab-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
