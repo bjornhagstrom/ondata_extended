@@ -683,3 +683,5 @@ find.
   lookups unchecked: the assistant fired a batch of searches at once and the later ones were refused; the server still
   sees at most two requests a second); without it the queue stays unbounded, so the parliament profile behaves as
   before.
+- **Reply posted** 2026-11-17 on #137 (Björn's ok): the demo on his lexicon and tango, his proxy (dates that do not
+  move, PR offers), questions (`docs/upstream/tematres-137-reply-draft.md`).
