@@ -1,9 +1,9 @@
 # One Worker for several services, each at its own path (docs/DECISIONS.md, 2026-11-15):
 #   /ecosystem/mcp            the CKAN ecosystem proof of concept, public (listed on / and /health)
 #   /<secret>/mcp             the vocabulary service, private: the path is the secret SERVICES_VOCAB_PATH
-#   /tematres/mcp             the TemaTres demo (vocabularies on vocabularyserver.com and a lunfardo lexicon on
-#                             terminologias.filo.uba.ar), public since the issue to its
-#                             maintainer (listed on / and /health)
+#   /tematres/mcp             the TemaTres demo (vocabularies on vocabularyserver.com, a lunfardo lexicon on
+#                             terminologias.filo.uba.ar and the project's test instance on vocab.hagstrom.nu),
+#                             public since the issue to its maintainer (listed on / and /health)
 # Set the secret (48 random characters; a Worker secret cannot be read back, so keep the value, e.g. in a password
 # manager, before it goes to Cloudflare):
 #   P=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n'); echo "$P"
@@ -33,13 +33,14 @@ enabled = false
 # Each service has its own namespace and its own engine: allowed hosts, cache and rate limit are not shared.
 VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
 ECOSYSTEM_ALLOWED_DOMAINS = "raw.githubusercontent.com"
-# Two hosts; the rate limit below counts per hostname: at most 5 requests a second from one isolate, no burst, a
-# request waits up to 10 s for a token, then fails. vocabularyserver.com, the TemaTres maintainer's server (Björn: 2
+# Three hosts; the rate limit below counts per hostname: at most 5 requests a second from one isolate, no burst, a
+# request waits up to 10 s for a token, then fails. vocab.hagstrom.nu is the project's own TemaTres test instance
+# (UNESCO test copy). vocabularyserver.com, the TemaTres maintainer's server (Björn: 2
 # until the maintainer was told, 5 from then; lower it if he asks). terminologias.filo.uba.ar (University of Buenos
 # Aires) is held to 2 a second on top, by the SKOS profile's host policy in src/services.ts (UBA_HOST_POLICY); a
 # request whose turn there is more than 30 s away fails at once. Any TemaTres on these hosts is reachable by its
 # address; the known ids are in src/services.ts.
-TEMATRES_ALLOWED_DOMAINS = "vocabularyserver.com,terminologias.filo.uba.ar"
+TEMATRES_ALLOWED_DOMAINS = "vocabularyserver.com,terminologias.filo.uba.ar,vocab.hagstrom.nu"
 TEMATRES_RATE_LIMIT_RPS = "5"
 TEMATRES_RATE_LIMIT_BURST = "1"
 TEMATRES_RATE_LIMIT_MAX_WAIT_MS = "10000"

@@ -685,3 +685,18 @@ find.
   before.
 - **Reply posted** 2026-11-17 on #137 (Björn's ok): the demo on his lexicon and tango, his proxy (dates that do not
   move, PR offers), questions (`docs/upstream/tematres-137-reply-draft.md`).
+
+## 2026-11-17: the project's TemaTres test instance in the TemaTres demo
+
+- **Why** (Björn, 2026-11-17): the second reply on tematres/TemaTres-Vocabulary-Server#137
+  (`docs/upstream/tematres-137-reply-2-draft.md`) offers the maintainer changes to TemaTres's side to try before they
+  become PRs, first a session-free web service. They are tried on the project's own instance, run from the tematres-test
+  project, so the demo should reach it too.
+- **What**: `unesco-test`, "UNESCO Thesaurus (English), test copy on vocab.hagstrom.nu", at
+  `https://vocab.hagstrom.nu/unesco/` (a plain TemaTres 4.0 with the UNESCO Thesaurus, CC BY-SA 3.0 IGO, attribution in
+  its rights field; concept URIs `/unesco/skos/<id>`). Listed after the lexicon; UNESCO on vocabularyserver.com stays
+  the default. `TEMATRES_ALLOWED_DOMAINS` gains `vocab.hagstrom.nu`; no host policy, as it is our own server, so the
+  service's 5 a second applies.
+- **Checked**: a search answer recorded live from the instance (`tests/fixtures/unesco-test-search-universal.json`) is
+  read correctly, and requests go only to its base. The recorded answer already came with `Cache-Control: public` and
+  no cookie, the session-free web service being in place there.

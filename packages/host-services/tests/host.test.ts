@@ -23,9 +23,14 @@ recorded.set("https://terminologias.filo.uba.ar/apps/dicrodriguez/services.php?t
   body: readFileSync(join(import.meta.dirname, "fixtures", "lunfardo-search-chorro.json"), "utf8"), contentType: "application/json"
 });
 
+// One answer recorded live from the project's own test instance (TemaTres 4.0, web service 2.2), 2026-11-17.
+recorded.set("https://vocab.hagstrom.nu/unesco/services.php?task=search&arg=universal&output=json", {
+  body: readFileSync(join(import.meta.dirname, "fixtures", "unesco-test-search-universal.json"), "utf8"), contentType: "application/json"
+});
+
 const SECRET = "k3P_9xQ-vR7tW2yZ5bN8mL4hJ6gF1dSa0cE"; // 35 characters
 const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DOMAINS: "raw.githubusercontent.com", SERVICES_VOCAB_PATH: SECRET,
-  TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com,terminologias.filo.uba.ar",
+  TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com,terminologias.filo.uba.ar,vocab.hagstrom.nu",
   VOCAB_RATE_LIMIT_ENABLED: "false", ECOSYSTEM_RATE_LIMIT_ENABLED: "false", TEMATRES_RATE_LIMIT_ENABLED: "false" };
 
 let requested: string[] = [];
@@ -125,6 +130,25 @@ describe("the TemaTres demo service", () => {
     expect(found.text).toContain("cachorro (id `2384`)");
     expect(requested.length).toBeGreaterThan(0);
     for (const url of requested) expect(url.startsWith("https://terminologias.filo.uba.ar/apps/dicrodriguez/"), url).toBe(true);
+  });
+
+  it("names the UNESCO test copy on vocab.hagstrom.nu after the lexicon, and reads it only from its base", async () => {
+    const w = await worker();
+    const list = (await (await w.fetch(post("/tematres/mcp", { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }), ENV)).json()) as
+      { result: { tools: { name: string; inputSchema: { properties: Record<string, { description?: string }> } }[] } };
+    const desc = list.result.tools.find((t) => t.name === "vocab_search_concepts")!.inputSchema.properties.vocab.description!;
+    expect(desc).toContain("'unesco-test' (UNESCO Thesaurus (English), test copy on vocab.hagstrom.nu)");
+    expect(desc.indexOf("'lunfardo'")).toBeLessThan(desc.indexOf("'unesco-test'"));
+    const found = await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "universal", vocab: "unesco-test" });
+    expect(found.isError).toBe(false);
+    expect(found.text).toContain("Universal education (id `5`)");
+    expect(found.text).toContain("Internet universality (id `4819`)");
+    const asJson = JSON.parse((await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "universal", vocab: "unesco-test", response_format: "json" })).text) as
+      { concepts: { id: string; uri: string }[] };
+    // The instance's own URI form, as its SKOS export writes it (hasTopConcept .../unesco/skos/1, checked 2026-11-17).
+    expect(asJson.concepts.find((c) => c.id === "5")?.uri).toBe("https://vocab.hagstrom.nu/unesco/skos/5");
+    expect(requested.length).toBeGreaterThan(0);
+    for (const url of requested) expect(url.startsWith("https://vocab.hagstrom.nu/unesco/"), url).toBe(true);
   });
 
   it("spaces requests to terminologias.filo.uba.ar at least 500 ms apart, and leaves vocabularyserver.com unthrottled", async () => {

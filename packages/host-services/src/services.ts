@@ -53,6 +53,16 @@ export const UBA_LEXICONS: InstanceEntry<VocabExt>[] = [
 ];
 export const UBA_HOST_POLICY = { "terminologias.filo.uba.ar": { minIntervalMs: 500, maxQueueMs: 30_000 } } as const;
 
+/**
+ * The project's own TemaTres test instance (vocab.hagstrom.nu): a plain TemaTres holding a copy of the UNESCO Thesaurus
+ * (English labels and notes, CC BY-SA 3.0 IGO, attribution in its rights field), with full dumps and a DCAT catalog
+ * beside it. Used to try changes to TemaTres's side (such as a session-free web service) before they are proposed
+ * upstream. Its concept URIs are the instance's /skos/<id> form.
+ */
+export const TEST_INSTANCE: InstanceEntry<VocabExt>[] = [
+  { id: "unesco-test", baseUrl: "https://vocab.hagstrom.nu/unesco/", ext: { adapter: "tematres", conceptUriBase: "https://vocab.hagstrom.nu/unesco/skos/", defaultLang: "en", title: "UNESCO Thesaurus (English), test copy on vocab.hagstrom.nu" } }
+];
+
 export const VOCAB: ServiceSetup = {
   id: "vocab", name: "vocab-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
     vocabularies: SVADA,
@@ -64,9 +74,10 @@ export const VOCAB: ServiceSetup = {
 };
 export const TEMATRES: ServiceSetup = {
   id: "tematres", name: "tematres-vocabularyserver-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
-    vocabularies: [...VOCABULARYSERVER, ...UBA_LEXICONS],
+    vocabularies: [...VOCABULARYSERVER, ...UBA_LEXICONS, ...TEST_INSTANCE],
     instructions: "These vocabularies are published with TemaTres: most on vocabularyserver.com, the server of TemaTres's " +
-      "maintainer, and the lunfardo lexicon on terminologias.filo.uba.ar (University of Buenos Aires).",
+      "maintainer, the lunfardo lexicon on terminologias.filo.uba.ar (University of Buenos Aires), and a test copy of the " +
+      "UNESCO Thesaurus on vocab.hagstrom.nu.",
     hostPolicies: UBA_HOST_POLICY
   }),
   configPrefix: "TEMATRES", keyArgs: ["query", "prefix", "id"]

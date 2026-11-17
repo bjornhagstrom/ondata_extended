@@ -39,6 +39,14 @@ the repositories' authors, quoted for search and attributed by repository). The 
 Copyright (c) 2015 Open Knowledge & Crown Copyright; the README states no other licence) and that repository's
 404 answer for README.md, recorded unchanged on 2026-11-14 as test input; they are not part of the built servers.
 
+The test recordings in `packages/host-services/tests/fixtures` are search answers from TemaTres web services, recorded
+unchanged as test input and not part of the built servers: `lunfardo-search-chorro.json` from the *Lexicón de 12.500
+voces y locuciones lunfardas, populares, jergales y extranjeras* (Adolfo Enrique Rodríguez, 1989) at
+https://terminologias.filo.uba.ar/apps/dicrodriguez/ (University of Buenos Aires; no licence stated), recorded on
+2026-11-16; and `unesco-test-search-universal.json` from a copy of the **UNESCO Thesaurus**,
+https://vocabularies.unesco.org/, licensed CC BY-SA 3.0 IGO (https://creativecommons.org/licenses/by-sa/3.0/igo/),
+as served by the project's test instance at https://vocab.hagstrom.nu/unesco/, recorded on 2026-11-17.
+
 ## Third-party dependencies
 
 | Package | License | Copyright |
