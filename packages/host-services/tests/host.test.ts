@@ -34,6 +34,11 @@ const unescoDump = { body: readFileSync(join(import.meta.dirname, "..", "..", "p
 recorded.set(UNESCO_DUMP, unescoDump);
 
 const SVADA_DUMP = "https://begrepp.hagstrom.nu/dumps/svada.ndjson";
+const SVADA_SCHEME = "https://begrepp.hagstrom.nu/services.php?task=fetchVocabularyData&output=json";
+const isScheme = (u: string) => u.includes("task=fetchVocabularyData");
+/** Requests for the answer itself, in order; the source line's scheme read (once an hour) is counted apart. */
+const answerRequests = () => requested.filter((u) => !isScheme(u));
+const schemeRequests = () => requested.filter(isScheme);
 
 const SECRET = "k3P_9xQ-vR7tW2yZ5bN8mL4hJ6gF1dSa0cE"; // 35 characters
 const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DOMAINS: "raw.githubusercontent.com", SERVICES_VOCAB_PATH: SECRET,
@@ -88,11 +93,13 @@ describe("two profiles in one Worker", () => {
     const w = await worker();
     const vocab = await call(w, `/${SECRET}/mcp`, "vocab_search_concepts", { query: "data" });
     expect(vocab.isError).toBe(false);
-    // Svada's snapshot has no recording here, so the search goes to the live service after asking for it.
-    expect(requested).toEqual([SVADA_DUMP, "https://begrepp.hagstrom.nu/services.php?task=search&arg=data&output=json"]);
+    // Svada's snapshot has no recording here, so the search goes to the live service after asking for it; the source
+    // line reads the scheme alongside, counted apart.
+    expect(answerRequests()).toEqual([SVADA_DUMP, "https://begrepp.hagstrom.nu/services.php?task=search&arg=data&output=json"]);
+    expect(schemeRequests()).toEqual([SVADA_SCHEME]);
     const eco = await call(w, "/ecosystem/mcp", "ecosystem_search_extensions", { query: "harvest dcat", limit: 3 });
     expect(eco.text).toContain("ckan/ckanext-dcat");
-    expect(requested).toHaveLength(2); // the ecosystem search made no request
+    expect(requested).toHaveLength(3); // the ecosystem search made no request
   });
 
   it("answers Svada from its snapshot on begrepp.hagstrom.nu when there is one", async () => {
@@ -101,7 +108,9 @@ describe("two profiles in one Worker", () => {
       const w = await worker();
       const r = await call(w, `/${SECRET}/mcp`, "vocab_search_concepts", { query: "förmedl" });
       expect(r.text).toContain("Dataförmedlare (id `77`)");
-      expect(requested).toEqual([SVADA_DUMP]);
+      // The answer from the snapshot; only the source line's scheme read goes live.
+      expect(answerRequests()).toEqual([SVADA_DUMP]);
+      expect(schemeRequests()).toEqual([SVADA_SCHEME]);
     } finally {
       recorded.delete(SVADA_DUMP);
     }
@@ -166,8 +175,9 @@ describe("the TemaTres demo service", () => {
       { concepts: { id: string; uri: string }[] };
     // The instance's own URI form, as its SKOS export writes it (hasTopConcept .../unesco/skos/1, checked 2026-11-17).
     expect(asJson.concepts.find((c) => c.id === "5")?.uri).toBe("https://vocab.hagstrom.nu/unesco/skos/5");
-    // One request for the snapshot, none for the second call and none to the live service.
-    expect(requested).toEqual([UNESCO_DUMP]);
+    // One request for the snapshot and one for the source line's scheme read, none for the second call.
+    expect(answerRequests()).toEqual([UNESCO_DUMP]);
+    expect(schemeRequests()).toEqual(["https://vocab.hagstrom.nu/unesco/services.php?task=fetchVocabularyData&output=json"]);
   });
 
   it("reads the UNESCO test copy live, only from its base, while its snapshot cannot be had", async () => {
@@ -178,9 +188,9 @@ describe("the TemaTres demo service", () => {
       expect(found.isError).toBe(false);
       expect(found.text).toContain("Universal education (id `5`)");
       expect(found.text).toContain("Internet universality (id `4819`)");
-      expect(requested[0]).toBe(UNESCO_DUMP);
-      expect(requested.length).toBeGreaterThan(1);
-      for (const url of requested.slice(1)) expect(url.startsWith("https://vocab.hagstrom.nu/unesco/"), url).toBe(true);
+      expect(answerRequests()[0]).toBe(UNESCO_DUMP);
+      expect(answerRequests().length).toBeGreaterThan(1);
+      for (const url of requested.filter((u) => u !== UNESCO_DUMP)) expect(url.startsWith("https://vocab.hagstrom.nu/unesco/"), url).toBe(true);
     } finally {
       recorded.set(UNESCO_DUMP, unescoDump);
     }
@@ -215,6 +225,10 @@ describe("the TemaTres demo service", () => {
     const svadaId = await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "data", vocab: "svada" });
     expect(svadaId.isError).toBe(true);
     expect(requested).toEqual([]);
+    // The demo's refused call to Svada's base URL leaves Svada's own source untouched (each service keeps its own
+    // memory of sources, pinned in profile-skos's tests; here the whole Worker is checked).
+    const svada = JSON.parse((await call(w, `/${SECRET}/mcp`, "vocab_search_concepts", { query: "data", response_format: "json" })).text) as { source: { title: string; creator?: string } };
+    expect(svada.source).toMatchObject({ title: "Svada - termer och begrepp", creator: "Testredaktion" });
   });
 });
 

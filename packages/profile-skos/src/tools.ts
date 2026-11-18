@@ -38,8 +38,9 @@ export function skosInstructions(entries: Entries, extra?: string): string {
     "When the user asks about one of these vocabularies, or the work at hand uses one (what a term means in it, its preferred " +
     "label, its place in the hierarchy, its neighbours, its equivalent in another language), look it up with these tools " +
     "instead of answering from memory or searching the web: vocab_search_concepts first, then vocab_get_concept. In the " +
-    "answer, use the vocabulary's preferred terms, quote definitions and scope notes as given, and say which vocabulary the " +
-    "answer comes from. If the vocabulary has no matching concept, say so rather than filling the gap from memory. For " +
+    "answer, use the vocabulary's preferred terms, quote definitions and scope notes as given, and name the source as each " +
+    "answer gives it (the vocabulary, its creator and its URI), with the concept URIs, so the answer can be checked and " +
+    "attributed. If the vocabulary has no matching concept, say so rather than filling the gap from memory. For " +
     "general questions about words that do not involve these vocabularies, the tools are not needed.";
   return extra?.trim() ? `${text}\n\n${extra.trim()}` : text;
 }
@@ -195,12 +196,139 @@ function hitsMarkdown(ctx: EngineContext, title: string, hits: SearchHit[], tota
   return md;
 }
 
-function respond(ctx: EngineContext, format: "markdown" | "json", json: unknown, markdown: () => string): ToolResult {
-  return format === "json" ? ctx.output.json(json) : ctx.output.text(markdown());
+function respond(ctx: EngineContext, format: "markdown" | "json", json: unknown, markdown: () => string, trailer?: string): ToolResult {
+  return format === "json" ? ctx.output.json(json) : ctx.output.text(markdown(), trailer ? { trailer } : undefined);
 }
 
 // ---------------------------------------------------------------------------------------
-// Tools
+// Source: every answer names the vocabulary and its creator, as the vocabulary gives them, so it can be attributed
+
+/** Who an answer comes from: the vocabulary's title, creator and publisher, its URI and when it last changed. */
+export interface Source {
+  title: string;
+  creator?: string;
+  publisher?: string;
+  uri: string;
+  modified?: string;
+}
+
+const SOURCE_TTL_MS = 60 * 60_000;
+const SOURCE_RETRY_MS = 5 * 60_000;
+/** How long an answer waits for its source; after that it carries the last known source or the stand-in. */
+const SOURCE_WAIT_MS = 3_000;
+/** A read pending this long is taken as lost (on Workers it dies with the request that started it) and started again. */
+const SOURCE_PENDING_MS = 15_000;
+const MAX_SOURCES = 100;
+const MAX_SOURCE_FIELD = 300;
+
+let sourceWaitMs = SOURCE_WAIT_MS;
+/** For tests: how long an answer waits for its source. */
+export function __setSourceWaitForTests(ms: number | null): void {
+  sourceWaitMs = ms ?? SOURCE_WAIT_MS;
+}
+
+const field = (v: string | undefined): string | undefined => {
+  const t = v?.trim();
+  return t ? (t.length > MAX_SOURCE_FIELD ? `${t.slice(0, MAX_SOURCE_FIELD - 1)}…` : t) : undefined;
+};
+
+interface SourceEntry {
+  /** The last source read, or the stand-in after a failed or slow first read. */
+  value?: Source;
+  /** Until when no answer waits for a read: an hour after a good read, five minutes after a failed or slow one. */
+  until: number;
+  /** One of the deployment's own vocabularies: never evicted for a vocabulary reached by base URL. */
+  known: boolean;
+  /** The latest read; only it may write. */
+  pending?: { at: number; done: Promise<void> };
+}
+
+type SourceOf = (ctx: EngineContext, instance: VocabularyInstance, adapter: VocabularyAdapter) => Promise<Source>;
+
+/**
+ * The sources of one set of tools (one service): remembered per process or isolate, never shared with another service
+ * in the same isolate. The scheme is read at most once an hour per vocabulary. An answer waits for a read only while the
+ * entry is not fresh, at most SOURCE_WAIT_MS on its own timer; a read that fails, or is not done in that time, leaves the
+ * last source (or the deployment's title, or the id, with the base URL) standing for five minutes, so at most one answer
+ * in five minutes waits while the vocabulary service hangs. A read pending SOURCE_PENDING_MS is taken as lost (on Workers
+ * it dies with the request that started it); only the latest read writes. A source never fails an answer.
+ */
+function createSourceMemo(entries: Entries): SourceOf {
+  const memo = new Map<string, SourceEntry>();
+  const knownIds = new Set(entries.map((e) => e.id));
+  function evictOne(): void {
+    for (const [k, v] of memo) if (!v.known) { memo.delete(k); return; }
+    memo.delete(memo.keys().next().value as string);
+  }
+  return async (ctx, instance, adapter) => {
+    const key = `${instance.id}|${adapter.id}|${instance.baseUrl}`;
+    const standIn: Source = { title: field(entries.find((e) => e.id === instance.id)?.ext.title) || instance.id, uri: instance.baseUrl };
+    const now = Date.now();
+    let e = memo.get(key);
+    if (e && now < e.until) return e.value ?? standIn;
+    if (!e) {
+      if (memo.size >= MAX_SOURCES) evictOne();
+      e = { until: 0, known: knownIds.has(instance.id) };
+      memo.set(key, e);
+    }
+    const entry = e;
+    if (!entry.pending || now - entry.pending.at >= SOURCE_PENDING_MS) {
+      const pending: { at: number; done: Promise<void> } = { at: now, done: Promise.resolve() };
+      const latest = () => entry.pending === pending;
+      pending.done = adapter.schemeInfo(ctx, instance).then(
+        (info) => {
+          if (!latest()) return;
+          entry.value = {
+            title: field(info.title) || standIn.title,
+            ...(field(info.creator) ? { creator: field(info.creator) } : {}),
+            ...(field(info.publisher) ? { publisher: field(info.publisher) } : {}),
+            uri: field(info.uri) || standIn.uri,
+            ...(field(info.modified) ? { modified: field(info.modified) } : {})
+          };
+          entry.until = Date.now() + SOURCE_TTL_MS;
+        },
+        () => {
+          if (!latest()) return;
+          entry.value ??= standIn;
+          entry.until = Date.now() + SOURCE_RETRY_MS;
+        }
+      ).finally(() => { if (latest()) entry.pending = undefined; });
+      entry.pending = pending;
+    }
+    const current = entry.pending!;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<"slow">((r) => { timer = setTimeout(() => r("slow"), sourceWaitMs); });
+    const outcome = await Promise.race([current.done.then(() => "done" as const), slow]);
+    clearTimeout(timer);
+    if (outcome === "slow" && entry.pending === current) {
+      // Not done in time: stand for five minutes, so the next answers do not wait too. The read may still finish and write.
+      entry.value ??= standIn;
+      entry.until = Date.now() + SOURCE_RETRY_MS;
+    }
+    return entry.value ?? standIn;
+  };
+}
+
+/**
+ * The main answer and its source together. The source's read is started first, so on a throttled host it is not queued
+ * behind the answer's own requests. The main answer's error wins; the source never fails and waits at most
+ * SOURCE_WAIT_MS, so it is settled (or given up) before the tool answers or fails.
+ */
+async function withSource<T>(sourceOf: SourceOf, ctx: EngineContext, instance: VocabularyInstance, adapter: VocabularyAdapter, main: () => Promise<T>): Promise<[T, Source]> {
+  const source = sourceOf(ctx, instance, adapter);
+  const [m, src] = await Promise.allSettled([main(), source]);
+  if (m.status === "rejected") throw m.reason;
+  return [m.value, (src as PromiseFulfilledResult<Source>).value];
+}
+
+/** The source as a closing Markdown block, passed as the trailer so truncation keeps it. */
+function sourceMarkdown(ctx: EngineContext, s: Source): string {
+  const o = ctx.output;
+  const by = [s.creator, s.publisher && s.publisher !== s.creator ? s.publisher : undefined].filter(Boolean)
+    .map((v) => o.sanitizeInline(v as string)).join("; ");
+  return `\n---\nSource: ${o.sanitizeInline(s.title)}${by ? `, by ${by}` : ""}. ${o.safeUrlText(s.uri)}` +
+    `${s.modified ? ` (last changed ${o.sanitizeInline(s.modified)})` : ""}`;
+}
 
 /**
  * The eight tools for a deployment's vocabularies: `entries` are the known vocabularies (ids usable as `vocab`), the
@@ -209,6 +337,7 @@ function respond(ctx: EngineContext, format: "markdown" | "json", json: unknown,
  */
 export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
   const vocabArg = vocabArgBase.describe(vocabArgDescription(entries));
+  const sourceOf = createSourceMemo(entries);
 
   const searchConcepts: ToolSpec<{ query: z.ZodString; vocab: typeof vocabArg; limit: typeof limitArg; response_format: typeof formatArg }> = {
     name: "vocab_search_concepts",
@@ -228,10 +357,10 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     annotations: { title: "Search concepts", ...READ_ONLY },
     async handler(args, ctx) {
       const { instance, adapter } = resolve(entries, args.vocab);
-      const all = await adapter.search(ctx, instance, args.query);
+      const [all, source] = await withSource(sourceOf, ctx, instance, adapter, () => adapter.search(ctx, instance, args.query));
       const shown = all.slice(0, args.limit);
-      return respond(ctx, args.response_format, { vocab: instance.id, query: args.query, count: all.length, concepts: shown },
-        () => hitsMarkdown(ctx, `Concepts matching "${ctx.output.sanitizeInline(args.query)}"`, shown, all.length));
+      return respond(ctx, args.response_format, { vocab: instance.id, query: args.query, count: all.length, concepts: shown, source },
+        () => hitsMarkdown(ctx, `Concepts matching "${ctx.output.sanitizeInline(args.query)}"`, shown, all.length), sourceMarkdown(ctx, source));
     }
   };
 
@@ -251,11 +380,12 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     annotations: { title: "Suggest concepts", ...READ_ONLY },
     async handler(args, ctx) {
       const { instance, adapter } = resolve(entries, args.vocab);
-      const all = await adapter.suggest(ctx, instance, args.prefix);
+      const [all, source] = await withSource(sourceOf, ctx, instance, adapter, () => adapter.suggest(ctx, instance, args.prefix));
       const shown = all.slice(0, args.limit);
-      return respond(ctx, args.response_format, { vocab: instance.id, prefix: args.prefix, count: all.length, capped: all.length >= 50, concepts: shown },
+      return respond(ctx, args.response_format, { vocab: instance.id, prefix: args.prefix, count: all.length, capped: all.length >= 50, concepts: shown, source },
         () => hitsMarkdown(ctx, `Suggestions for "${ctx.output.sanitizeInline(args.prefix)}"`, shown, all.length) +
-          (all.length >= 50 ? "\n\nThe service returns at most 50 suggestions; type more letters to narrow them." : ""));
+          (all.length >= 50 ? "\n\nThe service returns at most 50 suggestions; type more letters to narrow them." : ""),
+        sourceMarkdown(ctx, source));
     }
   };
 
@@ -270,10 +400,11 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     annotations: { title: "Get concept", ...READ_ONLY },
     async handler(args, ctx) {
       const { instance, adapter, id } = resolveConcept(entries, args.vocab, args.id);
-      const concept = await adapter.getConcept(ctx, instance, id);
+      const [concept, source] = await withSource(sourceOf, ctx, instance, adapter, () => adapter.getConcept(ctx, instance, id));
       if (!concept) throw new ConceptNotFoundError(id, instance.id);
       ctx.telemetry.note({ concept_id: id });
-      return respond(ctx, args.response_format, { vocab: instance.id, concept }, () => conceptMarkdown(ctx, concept, instance));
+      return respond(ctx, args.response_format, { vocab: instance.id, concept, source },
+        () => conceptMarkdown(ctx, concept, instance), sourceMarkdown(ctx, source));
     }
   };
 
@@ -291,10 +422,11 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
       annotations: { title, ...READ_ONLY },
       async handler(args, ctx) {
         const { instance, adapter, id } = resolveConcept(entries, args.vocab, args.id);
-        const refs = await pick(adapter).call(adapter, ctx, instance, id);
+        const [refs, source] = await withSource(sourceOf, ctx, instance, adapter, () => pick(adapter).call(adapter, ctx, instance, id));
         if (refs === null) throw new ConceptNotFoundError(id, instance.id);
-        return respond(ctx, args.response_format, { vocab: instance.id, id, concepts: refs }, () =>
-          refs.length ? `# ${title} of concept ${ctx.output.sanitizeInline(id)}\n\n${refs.map((r) => refLine(ctx, r)).join("\n")}` : `# ${title} of concept ${ctx.output.sanitizeInline(id)}\n\nNone.`);
+        return respond(ctx, args.response_format, { vocab: instance.id, id, concepts: refs, source }, () =>
+          (refs.length ? `# ${title} of concept ${ctx.output.sanitizeInline(id)}\n\n${refs.map((r) => refLine(ctx, r)).join("\n")}` : `# ${title} of concept ${ctx.output.sanitizeInline(id)}\n\nNone.`),
+          sourceMarkdown(ctx, source));
       }
     };
   }
@@ -320,9 +452,10 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     annotations: { title: "Top concepts", ...READ_ONLY },
     async handler(args, ctx) {
       const { instance, adapter } = resolve(entries, args.vocab);
-      const refs = await adapter.topConcepts(ctx, instance);
-      return respond(ctx, args.response_format, { vocab: instance.id, concepts: refs }, () =>
-        `# Top concepts of ${ctx.output.sanitizeInline(instance.id)}\n\n${refs.map((r) => refLine(ctx, r)).join("\n") || "None."}`);
+      const [refs, source] = await withSource(sourceOf, ctx, instance, adapter, () => adapter.topConcepts(ctx, instance));
+      return respond(ctx, args.response_format, { vocab: instance.id, concepts: refs, source }, () =>
+        `# Top concepts of ${ctx.output.sanitizeInline(instance.id)}\n\n${refs.map((r) => refLine(ctx, r)).join("\n") || "None."}`,
+        sourceMarkdown(ctx, source));
     }
   };
 

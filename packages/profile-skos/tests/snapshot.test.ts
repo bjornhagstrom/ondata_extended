@@ -75,7 +75,11 @@ const ok = async (c: Client, name: string, args: Record<string, unknown>) => {
   return r.body;
 };
 const dumpRequests = () => requested.filter((r) => r.url === DUMP);
-const liveRequests = () => requested.filter((r) => r.url.startsWith(LIVE));
+const toLive = () => requested.filter((r) => r.url.startsWith(LIVE));
+const task = (r: { url: string }) => new URL(r.url).searchParams.get("task");
+/** Requests to the live service for the answer itself; the source line's scheme read (once an hour) is counted apart. */
+const liveRequests = () => toLive().filter((r) => task(r) !== "fetchVocabularyData");
+const sourceRequests = () => toLive().filter((r) => task(r) === "fetchVocabularyData");
 const labels = (list: { prefLabel: string }[]) => list.map((x) => x.prefLabel);
 
 describe("answers from the snapshot", () => {
@@ -87,6 +91,9 @@ describe("answers from the snapshot", () => {
     expect(dumpRequests()).toHaveLength(1);
     expect(dumpRequests()[0].headers.get("user-agent")).toMatch(/^Vocab-MCP-Server\//);
     expect(liveRequests()).toEqual([]);
+    // The source line reads the scheme once for both calls; here it is unreachable, so the base URL stands in.
+    expect(sourceRequests()).toHaveLength(1);
+    expect(r.source).toEqual({ title: "unesco-test", uri: "https://vocab.hagstrom.nu/unesco/" });
   });
 
   it("composes a concept: labels, notes, relations in label order, mappings, path from the top", async () => {
@@ -220,7 +227,7 @@ describe("what the snapshot cannot answer goes to the live service", () => {
 
   it("scheme information always", async () => {
     await call(await client(), "vocab_scheme_info", {});
-    expect(liveRequests().map((r) => new URL(r.url).searchParams.get("task"))).toEqual(["fetchVocabularyData"]);
+    expect(toLive().map(task)).toEqual(["fetchVocabularyData"]);
   });
 });
 

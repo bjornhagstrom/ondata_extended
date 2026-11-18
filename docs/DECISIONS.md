@@ -752,3 +752,42 @@ find.
   begrepp.hagstrom.nu publishes `dumps/svada.ndjson` (tematres-test, 2026-11-18: rewritten every minute when changed,
   `topConceptOf` on its top concepts, 304 through Caddy with and without gzip; checked here the same day), in both the
   several-service Worker and host-vocab.
+
+## 2026-11-18: every vocabulary answer names its source: the vocabulary, its creator and URI
+
+- **Why** (Björn, 2026-11-18): in tematres/TemaTres-Vocabulary-Server#137 the maintainer explained "accreditation" as
+  attribution to a responsible subject, and our reply of 2026-11-17 promised that every answer would name the lexicon
+  and its authors, not only the entry's URI. Until now the answer named only the vocabulary's id.
+- **What** (`packages/profile-skos/src/tools.ts`): every tool that answers about concepts (search, suggest, get
+  concept, broader, narrower, related, top concepts) adds `source` to its JSON (`title`, `creator`, `publisher`, `uri`,
+  `modified`, each as the vocabulary's own scheme data gives it, each capped at 300 characters) and a closing Markdown
+  line "Source: <title>, by <creator>. <URI> (last changed …)", passed as the trailer so truncation keeps it.
+  `vocab_scheme_info` is unchanged: it is the source. The server instructions now ask the model to name the source as
+  each answer gives it, with the concept URIs.
+- **Memory**: per set of tools (one service), so two services in one isolate never share it (the TemaTres demo cannot
+  touch the Svada service's source), keyed by vocabulary id, adapter and base URL, at most 100 vocabularies. The scheme
+  is read once per vocabulary and hour, in parallel with the first answer; calls racing on a cold memory share one read.
+- **Waiting**: the source's read starts before the answer's own requests (so on a throttled host it is not queued
+  behind them). An answer waits for it only while the vocabulary's entry is not fresh, at most 3 s on its own timer. A
+  read that fails or is not done in 3 s leaves the last source (or the stand-in) standing for five minutes, so while a
+  vocabulary service hangs at most one answer in five minutes waits 3 s. A read pending for 15 s is taken as lost (on
+  Workers it dies with the request that started it) and started again; only the latest read may write. A vocabulary
+  reached by base URL never evicts one of the deployment's own from the memory. Cost on the demo: one 200 ms
+  rate-limit token (its burst is 1), and on terminologias.filo.uba.ar one 500 ms throttle slot, once an hour.
+- **Failure**: a source never fails an answer, and an answer's own error wins. If the scheme cannot be read, the last
+  source read stands (or, the first time, the deployment's title, else the id, with the base URL), and the read is
+  tried again after five minutes.
+- **Text from upstream**: title, creator, publisher and date are shown with `sanitizeInline`, as labels are; the URI
+  with `safeUrlText`.
+- **Output change**: a new field in JSON and a new last line in Markdown for seven tools; nothing removed or renamed.
+  Not a CKAN tool, so rule 4 does not apply. Tests: `packages/profile-skos/tests/profile.test.ts` ("the source of every
+  answer", fourteen tests), a smoke case (`source.title` of Svada concept 10), the snapshot and host tests now count the
+  scheme read apart from the answer's requests, and `host.test.ts` checks that the demo's refused call leaves Svada's
+  source untouched. Mutations caught: the hour, the five minutes, the retry, the key, a memory shared between
+  services, the trailer, the 3 s bound, recording a slow read, the 15 s restart, latest-read-only writes, protecting
+  the deployment's vocabularies, the error waiting for the source, the field cap, keeping the last source.
+- **Reviewed** (mcp-reviewer, 2026-11-18): the first version kept one memory per module, awaited a shared read without
+  a timer (a read lost with another request could hold every answer for an hour), appended the line to the body (cut by
+  truncation) and pinned too little in tests; the second pass found that a wait that ran out recorded nothing (so every
+  later answer waited 3 s), eviction of the deployment's own vocabularies and late writes by superseded reads; all
+  changed as above.

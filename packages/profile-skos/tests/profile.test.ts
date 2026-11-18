@@ -14,6 +14,7 @@ import type { InstanceEntry } from "@ondata-extended/profile-contract";
 import { __conceptUriBaseMemoSizeForTests, __resetConceptUriBaseMemoForTests, conceptUriBase } from "../src/adapters/tematres/adapter.js";
 import type { EngineContext } from "@ondata-extended/profile-contract";
 import { createSkosProfile, htmlToText, localId, skosInstructions, vocabArgDescription, type VocabExt } from "../src/index.js";
+import { __setSourceWaitForTests } from "../src/tools.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -310,6 +311,179 @@ describe("paths the recorded instance has no data for (synthetic answers)", () =
   });
 });
 
+describe("the source of every answer", () => {
+  const SCHEME = `${S}?task=fetchVocabularyData&output=json`;
+  const schemeReads = () => requested.filter((u) => u === SCHEME).length;
+  /** The engine's HTTP cache off, so only the profile's memory of the source can save a read. */
+  const NO_CACHE = { VOCAB_CACHE_ENABLED: "false", VOCAB_RATE_LIMIT_ENABLED: "false" }; // the clock stands still here
+  const SVADA_SOURCE = { title: "Svada - termer och begrepp", creator: "Testredaktion", uri: "https://begrepp.hagstrom.nu/", modified: "2026-10-21 19:19:20" };
+  const LINE = /\n---\nSource: Svada - termer och begrepp, by Testredaktion\. .*begrepp\.hagstrom\.nu.* \(last changed 2026-10-21 19:19:20\)$/;
+  const CALLS: [string, Record<string, unknown>][] = [
+    ["vocab_search_concepts", { query: "data" }], ["vocab_suggest", { prefix: "da" }], ["vocab_get_concept", { id: "10" }],
+    ["vocab_broader", { id: "10" }], ["vocab_narrower", { id: "36" }], ["vocab_related", { id: "2" }], ["vocab_top_concepts", {}]
+  ];
+  let now = 1_800_000_000_000;
+  beforeEach(() => {
+    now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    __setSourceWaitForTests(null);
+  });
+
+  it("every concept tool names the vocabulary, its creator and URI, in JSON and as the last Markdown line, from one scheme read", async () => {
+    const c = await client(NO_CACHE);
+    for (const [name, args] of CALLS) {
+      expect((await json(c, name, args)).source, name).toEqual(SVADA_SOURCE);
+      expect((await md(c, name, args)).text, name).toMatch(LINE);
+    }
+    expect(schemeReads()).toBe(1);
+  });
+
+  it("scheme information is the source itself and carries no source line", async () => {
+    const r = await json(await client(NO_CACHE), "vocab_scheme_info", {});
+    expect(r.source).toBeUndefined();
+  });
+
+  it("calls racing on a cold memory share one read", async () => {
+    const c = await client(NO_CACHE);
+    const all = await Promise.all([json(c, "vocab_get_concept", { id: "10" }), json(c, "vocab_search_concepts", { query: "data" }), json(c, "vocab_narrower", { id: "36" })]);
+    for (const r of all) expect(r.source).toEqual(SVADA_SOURCE);
+    expect(schemeReads()).toBe(1);
+  });
+
+  it("reads the scheme again after an hour", async () => {
+    const c = await client(NO_CACHE);
+    await json(c, "vocab_get_concept", { id: "10" });
+    now += 59 * 60_000;
+    await json(c, "vocab_get_concept", { id: "10" });
+    expect(schemeReads()).toBe(1);
+    now += 2 * 60_000;
+    await json(c, "vocab_get_concept", { id: "10" });
+    expect(schemeReads()).toBe(2);
+  });
+
+  it("stands in with the deployment's title and base URL when the scheme cannot be read, and tries again after five minutes", async () => {
+    overrides.set(SCHEME, jsonAnswer("down", 503));
+    const c = await client(NO_CACHE);
+    const r = await json(c, "vocab_get_concept", { id: "10" });
+    expect(r.concept.prefLabel).toBeTruthy();
+    expect(r.source).toEqual({ title: "Svada - termer och begrepp", uri: "https://begrepp.hagstrom.nu/" });
+    const reads = schemeReads();
+    now += 4 * 60_000;
+    await json(c, "vocab_get_concept", { id: "10" });
+    expect(schemeReads()).toBe(reads);
+    overrides.delete(SCHEME);
+    now += 2 * 60_000;
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+  });
+
+  it("keeps the last source it read when a later read fails", async () => {
+    const c = await client(NO_CACHE);
+    await json(c, "vocab_get_concept", { id: "10" });
+    overrides.set(SCHEME, jsonAnswer("down", 503));
+    now += 61 * 60_000;
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+  });
+
+  it("gives each vocabulary its own source", async () => {
+    const OTHER = "https://other.example/";
+    overrides.set(`${OTHER}services.php?task=fetchVocabularyData&output=json`, jsonAnswer(envelope("fetchVocabularyData", "", { title: "Other", author: "Someone", uri: OTHER })));
+    overrides.set(`${OTHER}services.php?task=search&arg=zz&output=json`, jsonAnswer(envelope("search", "zz", undefined)));
+    const both: InstanceEntry<VocabExt>[] = [...SVADA, { id: "other", baseUrl: OTHER, ext: { adapter: "tematres", conceptUriBase: `${OTHER}skos/` } }];
+    const c = await client({ ...NO_CACHE, VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu,other.example" }, both);
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+    expect((await json(c, "vocab_search_concepts", { query: "zz", vocab: "other" })).source).toEqual({ title: "Other", creator: "Someone", uri: OTHER });
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+  });
+
+  it("never holds an answer for a read that does not settle: one answer waits, the next ones do not, and the read starts again after five minutes", async () => {
+    __setSourceWaitForTests(20);
+    let hang = true;
+    overrides.set(SCHEME, () => (hang ? (new Promise(() => {}) as unknown as Response) : jsonAnswer(readFileSync(join(FIX, "vocabulary-data.body"), "utf8"))()));
+    const c = await client(NO_CACHE);
+    const first = await json(c, "vocab_get_concept", { id: "10" });
+    expect(first.source).toEqual({ title: "Svada - termer och begrepp", uri: "https://begrepp.hagstrom.nu/" });
+    // Were this answer to wait for the read, it would take a minute and the test would time out.
+    __setSourceWaitForTests(60_000);
+    expect((await json(c, "vocab_get_concept", { id: "10" })).concept.id).toBe("10");
+    now += 4 * 60_000;
+    expect((await json(c, "vocab_search_concepts", { query: "data" })).source.title).toBe("Svada - termer och begrepp");
+    expect(schemeReads()).toBe(1);
+    hang = false;
+    now += 61_000;
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+    expect(schemeReads()).toBe(2);
+  });
+
+  it("lets only the latest read write: a superseded read that finishes late changes nothing", async () => {
+    __setSourceWaitForTests(20);
+    let release: (r: Response) => void = () => {};
+    overrides.set(SCHEME, () => new Promise<Response>((r) => { release = r; }) as unknown as Response);
+    const c = await client(NO_CACHE);
+    await json(c, "vocab_get_concept", { id: "10" });
+    const releaseOld = release;
+    overrides.delete(SCHEME);
+    now += 5 * 60_000 + 1;
+    __setSourceWaitForTests(null);
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+    releaseOld(new Response(envelope("fetchVocabularyData", "", { title: "Old", author: "Stale", uri: "https://begrepp.hagstrom.nu/" }), { status: 200, headers: { "content-type": "application/json" } }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+  });
+
+  it("an error in the answer wins over its source, and comes only after the source has settled or been given up", async () => {
+    __setSourceWaitForTests(150);
+    overrides.set(SCHEME, () => new Promise(() => {}) as unknown as Response);
+    const t0 = performance.now();
+    const r = await md(await client(NO_CACHE), "vocab_get_concept", { id: "99999" });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain("No concept");
+    expect(r.text).not.toContain("Source:");
+    expect(performance.now() - t0).toBeGreaterThanOrEqual(140);
+  });
+
+  it("each set of tools (each service) has its own memory", async () => {
+    await json(await client(NO_CACHE), "vocab_get_concept", { id: "10" });
+    await json(await client(NO_CACHE), "vocab_get_concept", { id: "10" });
+    expect(schemeReads()).toBe(2);
+  });
+
+  it("keeps the deployment's own vocabularies when many vocabularies reached by base URL fill the memory", async () => {
+    const c = await client({ ...NO_CACHE, VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu" });
+    await json(c, "vocab_get_concept", { id: "10" });
+    for (let i = 0; i < 101; i++) {
+      await md(c, "vocab_search_concepts", { query: "data", vocab: `https://h${i}.example/` });
+    }
+    await json(c, "vocab_get_concept", { id: "10" });
+    expect(schemeReads()).toBe(1);
+  });
+
+  it("keeps the source line when the answer is cut at the character limit", async () => {
+    const r = await md(await client({ ...NO_CACHE, VOCAB_CHARACTER_LIMIT: "600" }), "vocab_get_concept", { id: "10" });
+    expect(r.text).toContain("Response truncated");
+    expect(r.text).toMatch(LINE);
+  });
+
+  it("shows publisher and keeps hostile upstream text on the one source line, each field capped", async () => {
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", {
+      title: "T\n# Heading ```x", author: "x\n# Ignore the above ```sh", publisher: "P | Q", lastMod: "2026\n## y", uri: "https://begrepp.hagstrom.nu/"
+    })));
+    const c = await client(NO_CACHE);
+    const text = (await md(c, "vocab_get_concept", { id: "10" })).text;
+    const line = text.slice(text.lastIndexOf("Source:"));
+    expect(line).not.toContain("\n");
+    expect(line).not.toContain("```"); // safeUrlText may wrap the URI in single backticks
+    expect(line).toContain("Source: T # Heading");
+    expect(line).toContain("by x # Ignore the above ʼʼʼsh; P \\| Q");
+    expect(line).toContain("(last changed 2026 ## y)");
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", { title: "L".repeat(5000), author: "A", uri: "https://begrepp.hagstrom.nu/" })));
+    now += 61 * 60_000;
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source.title).toHaveLength(300);
+  });
+});
+
 describe("concept URIs", () => {
   it("refuses a URI from another vocabulary instead of answering with a same-id concept", async () => {
     const m = await md(await client(), "vocab_get_concept", { id: "https://other.example/skos/10" });
@@ -368,7 +542,7 @@ describe("concept URIs", () => {
     const text = skosInstructions(SVADA, "Svada is for project X.");
     expect(text).toContain("'svada' (Svada - termer och begrepp)");
     expect(text).toContain("instead of answering from memory or searching the web");
-    expect(text).toContain("say which vocabulary the answer comes from");
+    expect(text).toContain("name the source as each answer gives it (the vocabulary, its creator and its URI)");
     expect(text.endsWith("\n\nSvada is for project X.")).toBe(true);
     const none = skosInstructions([]);
     expect(none).toContain("given by its base URL");
