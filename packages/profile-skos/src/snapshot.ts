@@ -7,10 +7,11 @@
  * server whether the file changed (`If-None-Match`, `If-Modified-Since`): a 304 keeps the copy, a 200 replaces it. Every
  * request goes through the core's HTTP client and its guards.
  *
- * The snapshot only answers what it can answer completely. Everything else goes to the vocabulary's own adapter, as
+ * The snapshot answers only when it has every concept an answer names. Everything else goes to the vocabulary's own adapter, as
  * without a snapshot: scheme information, an id or a label the snapshot does not have (a concept added since the file
  * was written), a concept that refers to one the snapshot lacks, and every call while the snapshot cannot be loaded.
- * A failed refresh keeps the copy it has and asks again a minute later.
+ * A failed refresh keeps the copy it has and asks again a minute later. What the SKOS export does not carry (TemaTres
+ * codes, meta-term flags, NB notes, note codes) is missing from snapshot answers; docs/DECISIONS.md lists it.
  */
 
 import type { EngineContext } from "@ondata-extended/profile-contract";
@@ -35,9 +36,9 @@ let LOAD_WAIT_MS = 15_000;
 /** At most this many suggestions, as TemaTres gives (the tool reports a full list as capped). */
 const MAX_SUGGESTIONS = 50;
 
-const NOTE_PROPERTIES: Note["type"][] = ["definition", "scopeNote", "historyNote", "changeNote", "example", "note"];
-// skos:editorialNote is left out on purpose: TemaTres exports its private notes as editorial notes, and the live adapter
-// never shows those either.
+// TemaTres's SKOS export never writes its private notes (NP); skos:editorialNote is its editorial note (ED), which the
+// live adapter shows too. Its NB notes go to dc:source, which a snapshot does not carry.
+const NOTE_PROPERTIES: Note["type"][] = ["definition", "scopeNote", "historyNote", "editorialNote", "changeNote", "example", "note"];
 const MAPPING_PROPERTIES = ["exactMatch", "closeMatch", "broadMatch", "narrowMatch", "relatedMatch"] as const;
 
 interface SnapConcept {
@@ -252,8 +253,15 @@ function refOf(c: SnapConcept, instance: VocabularyInstance): ConceptRef {
   return { id: idOf(c.uri, instance), uri: c.uri, prefLabel: label.value, ...(label.lang ? { lang: label.lang } : {}) };
 }
 
-function byLabel(instance: VocabularyInstance) {
-  const collator = new Intl.Collator(instance.defaultLang || undefined, { sensitivity: "base", numeric: true });
+/**
+ * Label order: the root collation at base strength (letters with diacritics sort with their base letter, "Dataägare"
+ * before "Dataproducent"), as TemaTres's database orders them. Not the vocabulary's language: Swedish would put "ä"
+ * after "z", unlike the live service, and the result would depend on the locale data of the runtime.
+ */
+const COLLATOR = new Intl.Collator("und", { sensitivity: "base", numeric: true });
+
+function byLabel(_instance: VocabularyInstance) {
+  const collator = COLLATOR;
   return (a: ConceptRef, b: ConceptRef) => collator.compare(a.prefLabel, b.prefLabel) || a.uri.localeCompare(b.uri);
 }
 

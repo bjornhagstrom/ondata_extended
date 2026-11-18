@@ -133,6 +133,17 @@ describe("answers from the snapshot", () => {
     expect((await ok(c, "vocab_get_concept", { id: "901" })).concept).toMatchObject({ prefLabel: "Only English", lang: "en" });
   });
 
+  it("orders relations as TemaTres does, a letter with a diacritic with its base letter, whatever the language", async () => {
+    dump.body = [
+      JSON.stringify({ uri: `${URI}36`, prefLabel: { sv: "Dataroller" }, narrower: [`${URI}15`, `${URI}10`, `${URI}11`] }),
+      JSON.stringify({ uri: `${URI}10`, prefLabel: { sv: "Dataägare" }, broader: [`${URI}36`] }),
+      JSON.stringify({ uri: `${URI}15`, prefLabel: { sv: "Dataproducent" }, broader: [`${URI}36`] }),
+      JSON.stringify({ uri: `${URI}11`, prefLabel: { sv: "Teknisk dataförvaltare" }, broader: [`${URI}36`] })
+    ].join("\n");
+    const c = await client({ VOCAB_ALLOWED_DOMAINS: "vocab.hagstrom.nu" }, [{ ...UNESCO[0], ext: { ...UNESCO[0].ext, defaultLang: "sv" } }]);
+    expect(labels((await ok(c, "vocab_narrower", { id: "36" })).concepts)).toEqual(["Dataägare", "Dataproducent", "Teknisk dataförvaltare"]);
+  });
+
   it("counts a later word start, not only the first occurrence, and caps suggestions at 50", async () => {
     dump.body = [
       JSON.stringify({ uri: `${URI}1`, prefLabel: { en: "Martial arts" } }),
@@ -176,10 +187,10 @@ describe("answers from the snapshot", () => {
     expect(liveRequests().map((r) => new URL(r.url).searchParams.get("task"))).toEqual(["suggestDetails"]);
   });
 
-  it("shows no editorial note (TemaTres exports its private notes as editorial notes)", () => {
-    const s = parseSnapshot(JSON.stringify({ uri: `${URI}1`, prefLabel: { en: "A" }, editorialNote: { en: ["private"] }, definition: { en: ["<b>Public</b>"] } }));
+  it("reads the SKOS note properties as text, editorial notes included (TemaTres never exports its private notes)", () => {
+    const s = parseSnapshot(JSON.stringify({ uri: `${URI}1`, prefLabel: { en: "A" }, editorialNote: { en: ["Editorial"] }, definition: { en: ["<b>Public</b>"] } }));
     const c = s!.byUri.get(`${URI}1`)!;
-    expect(c.notes).toEqual([{ type: "definition", value: "Public", lang: "en" }]);
+    expect(c.notes).toEqual([{ type: "definition", value: "Public", lang: "en" }, { type: "editorialNote", value: "Editorial", lang: "en" }]);
   });
 
   it("skips lines that are not concepts and counts a file without any as no snapshot", () => {

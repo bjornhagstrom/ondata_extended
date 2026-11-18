@@ -23,7 +23,7 @@ const NOTE_TYPES: Record<string, Note["type"]> = {
   NB: "note",
   NC: "note"
 };
-/** Never shown: TemaTres private notes are editorial, even if an instance exposes them. */
+/** Never shown: TemaTres private notes (NP), even if an instance exposes them. */
 const PRIVATE_NOTE_TYPES = new Set(["NP"]);
 
 const MAPPING_TYPES = new Set(["exactMatch", "closeMatch", "broadMatch", "narrowMatch", "relatedMatch"]);

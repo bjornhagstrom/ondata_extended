@@ -24,7 +24,7 @@ interface ServiceSetup {
 /** The Svada vocabulary, the vocabulary service's only known one (as in packages/host-vocab). */
 const SVADA: InstanceEntry<VocabExt>[] = [{
   id: "svada", baseUrl: "https://begrepp.hagstrom.nu/",
-  ext: { adapter: "tematres", defaultLang: "sv", title: "Svada - termer och begrepp", conceptUriBase: "https://begrepp.hagstrom.nu/skos/" }
+  ext: { adapter: "tematres", defaultLang: "sv", title: "Svada - termer och begrepp", conceptUriBase: "https://begrepp.hagstrom.nu/skos/", snapshotUrl: "https://begrepp.hagstrom.nu/dumps/svada.ndjson" }
 }];
 
 /**

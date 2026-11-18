@@ -722,11 +722,17 @@ find.
   - mappings carry type and URI only, without the label and target vocabulary name the live service gives;
   - search and suggestion hits have `lang` and no `ext.tematres` (index, meta-term flag);
   - `hiddenLabels` are filled and searched (live: always empty), and never shown as the matched label;
-  - relations are in label order, and the path follows the first broader concept by URI (in a polyhierarchy it may
+  - relations are in label order (root collation at base strength, so "ä" sorts as "a", as TemaTres orders them;
+    Svada's known answer for the narrower concepts of 36 stays the same), and the path follows the first broader concept by URI (in a polyhierarchy it may
     differ from TemaTres's `fetchUp`);
   - search hits: preferred-label matches first (exact, prefix, a word start anywhere in the label, inside a word), then
     matches on other labels with the label that matched; suggestions: prefix or word-start matches only, at most 50;
-  - editorial notes are never shown, as TemaTres exports its private notes as editorial notes;
+  - editorial notes are shown, as from the live service, but typed `editorialNote` (live: `note` with
+    `sourceType: "ED"`; likewise `changeNote`/`example` for CH/EX), and no note has a `sourceType` (TemaTres's export writes its editorial notes, ED, as
+    `skos:editorialNote` and never writes private ones, NP; tematres-test, 2026-11-18); NB notes are missing, as the
+    export writes them as `dc:source`;
+  - a grouping (meta) term is a plain concept in the export, so answers from the snapshot do not mark it (Svada's
+    three top concepts are such terms);
   - top concepts come from the snapshot only when it marks them with `topConceptOf`; otherwise from the live service
     (a concept without a broader one may be outside the hierarchy, and TemaTres does not list those);
   - a change in the vocabulary shows after the server rewrites the file plus at most a minute. The server must replace
@@ -742,6 +748,7 @@ find.
 - **Measured**: parsing the UNESCO test copy's 2 MB snapshot (4,500 concepts) takes about 10 ms on a laptop. Against
   the live file: the three known answers of `tematres-test/testinstans/kanda-svar/unesco.json` match; the first call
   took 370 ms (the load), the next 0-3 ms, and the conditional request a minute later got `304`.
-- **Where**: `unesco-test` in the TemaTres demo, whose server already publishes `dumps/unesco.ndjson`. Svada follows
-  when begrepp.hagstrom.nu publishes its snapshot (asked of tematres-test, with a rewrite every minute so that an edit
-  shows within about two).
+- **Where**: `unesco-test` in the TemaTres demo, whose server already publishes `dumps/unesco.ndjson`; Svada since
+  begrepp.hagstrom.nu publishes `dumps/svada.ndjson` (tematres-test, 2026-11-18: rewritten every minute when changed,
+  `topConceptOf` on its top concepts, 304 through Caddy with and without gzip; checked here the same day), in both the
+  several-service Worker and host-vocab.

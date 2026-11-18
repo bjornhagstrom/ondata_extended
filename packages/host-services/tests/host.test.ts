@@ -33,6 +33,8 @@ const UNESCO_DUMP = "https://vocab.hagstrom.nu/dumps/unesco.ndjson";
 const unescoDump = { body: readFileSync(join(import.meta.dirname, "..", "..", "profile-skos", "tests", "fixtures", "snapshot", "unesco-sample.ndjson"), "utf8"), contentType: "application/x-ndjson" };
 recorded.set(UNESCO_DUMP, unescoDump);
 
+const SVADA_DUMP = "https://begrepp.hagstrom.nu/dumps/svada.ndjson";
+
 const SECRET = "k3P_9xQ-vR7tW2yZ5bN8mL4hJ6gF1dSa0cE"; // 35 characters
 const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DOMAINS: "raw.githubusercontent.com", SERVICES_VOCAB_PATH: SECRET,
   TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com,terminologias.filo.uba.ar,vocab.hagstrom.nu",
@@ -86,10 +88,23 @@ describe("two profiles in one Worker", () => {
     const w = await worker();
     const vocab = await call(w, `/${SECRET}/mcp`, "vocab_search_concepts", { query: "data" });
     expect(vocab.isError).toBe(false);
-    expect(requested).toEqual(["https://begrepp.hagstrom.nu/services.php?task=search&arg=data&output=json"]);
+    // Svada's snapshot has no recording here, so the search goes to the live service after asking for it.
+    expect(requested).toEqual([SVADA_DUMP, "https://begrepp.hagstrom.nu/services.php?task=search&arg=data&output=json"]);
     const eco = await call(w, "/ecosystem/mcp", "ecosystem_search_extensions", { query: "harvest dcat", limit: 3 });
     expect(eco.text).toContain("ckan/ckanext-dcat");
-    expect(requested).toHaveLength(1); // the ecosystem search made no request
+    expect(requested).toHaveLength(2); // the ecosystem search made no request
+  });
+
+  it("answers Svada from its snapshot on begrepp.hagstrom.nu when there is one", async () => {
+    recorded.set(SVADA_DUMP, { body: JSON.stringify({ uri: "https://begrepp.hagstrom.nu/skos/77", prefLabel: { sv: "Dataförmedlare" }, topConceptOf: ["https://begrepp.hagstrom.nu/"] }), contentType: "application/x-ndjson" });
+    try {
+      const w = await worker();
+      const r = await call(w, `/${SECRET}/mcp`, "vocab_search_concepts", { query: "förmedl" });
+      expect(r.text).toContain("Dataförmedlare (id `77`)");
+      expect(requested).toEqual([SVADA_DUMP]);
+    } finally {
+      recorded.delete(SVADA_DUMP);
+    }
   });
 
   it("keeps the allowed hosts apart: the vocabulary service may not reach a host only the ecosystem service may", async () => {
