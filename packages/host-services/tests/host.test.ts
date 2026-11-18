@@ -28,6 +28,11 @@ recorded.set("https://vocab.hagstrom.nu/unesco/services.php?task=search&arg=univ
   body: readFileSync(join(import.meta.dirname, "fixtures", "unesco-test-search-universal.json"), "utf8"), contentType: "application/json"
 });
 
+// The test instance's snapshot: 17 lines of its UNESCO dump (the SKOS profile's fixture), served where the dump lives.
+const UNESCO_DUMP = "https://vocab.hagstrom.nu/dumps/unesco.ndjson";
+const unescoDump = { body: readFileSync(join(import.meta.dirname, "..", "..", "profile-skos", "tests", "fixtures", "snapshot", "unesco-sample.ndjson"), "utf8"), contentType: "application/x-ndjson" };
+recorded.set(UNESCO_DUMP, unescoDump);
+
 const SECRET = "k3P_9xQ-vR7tW2yZ5bN8mL4hJ6gF1dSa0cE"; // 35 characters
 const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DOMAINS: "raw.githubusercontent.com", SERVICES_VOCAB_PATH: SECRET,
   TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com,terminologias.filo.uba.ar,vocab.hagstrom.nu",
@@ -132,7 +137,7 @@ describe("the TemaTres demo service", () => {
     for (const url of requested) expect(url.startsWith("https://terminologias.filo.uba.ar/apps/dicrodriguez/"), url).toBe(true);
   });
 
-  it("names the UNESCO test copy on vocab.hagstrom.nu after the lexicon, and reads it only from its base", async () => {
+  it("names the UNESCO test copy on vocab.hagstrom.nu after the lexicon, and answers from its snapshot", async () => {
     const w = await worker();
     const list = (await (await w.fetch(post("/tematres/mcp", { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }), ENV)).json()) as
       { result: { tools: { name: string; inputSchema: { properties: Record<string, { description?: string }> } }[] } };
@@ -142,13 +147,28 @@ describe("the TemaTres demo service", () => {
     const found = await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "universal", vocab: "unesco-test" });
     expect(found.isError).toBe(false);
     expect(found.text).toContain("Universal education (id `5`)");
-    expect(found.text).toContain("Internet universality (id `4819`)");
     const asJson = JSON.parse((await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "universal", vocab: "unesco-test", response_format: "json" })).text) as
       { concepts: { id: string; uri: string }[] };
     // The instance's own URI form, as its SKOS export writes it (hasTopConcept .../unesco/skos/1, checked 2026-11-17).
     expect(asJson.concepts.find((c) => c.id === "5")?.uri).toBe("https://vocab.hagstrom.nu/unesco/skos/5");
-    expect(requested.length).toBeGreaterThan(0);
-    for (const url of requested) expect(url.startsWith("https://vocab.hagstrom.nu/unesco/"), url).toBe(true);
+    // One request for the snapshot, none for the second call and none to the live service.
+    expect(requested).toEqual([UNESCO_DUMP]);
+  });
+
+  it("reads the UNESCO test copy live, only from its base, while its snapshot cannot be had", async () => {
+    recorded.delete(UNESCO_DUMP);
+    try {
+      const w = await worker();
+      const found = await call(w, "/tematres/mcp", "vocab_search_concepts", { query: "universal", vocab: "unesco-test" });
+      expect(found.isError).toBe(false);
+      expect(found.text).toContain("Universal education (id `5`)");
+      expect(found.text).toContain("Internet universality (id `4819`)");
+      expect(requested[0]).toBe(UNESCO_DUMP);
+      expect(requested.length).toBeGreaterThan(1);
+      for (const url of requested.slice(1)) expect(url.startsWith("https://vocab.hagstrom.nu/unesco/"), url).toBe(true);
+    } finally {
+      recorded.set(UNESCO_DUMP, unescoDump);
+    }
   });
 
   it("spaces requests to terminologias.filo.uba.ar at least 500 ms apart, and leaves vocabularyserver.com unthrottled", async () => {

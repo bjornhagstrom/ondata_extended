@@ -57,10 +57,11 @@ export const UBA_HOST_POLICY = { "terminologias.filo.uba.ar": { minIntervalMs: 5
  * The project's own TemaTres test instance (vocab.hagstrom.nu): a plain TemaTres holding a copy of the UNESCO Thesaurus
  * (English labels and notes, CC BY-SA 3.0 IGO, attribution in its rights field), with full dumps and a DCAT catalog
  * beside it. Used to try changes to TemaTres's side (such as a session-free web service) before they are proposed
- * upstream. Its concept URIs are the instance's /skos/<id> form.
+ * upstream. Its concept URIs are the instance's /skos/<id> form. Answered from its NDJSON dump where the dump can
+ * answer (the SKOS profile's snapshot), live otherwise.
  */
 export const TEST_INSTANCE: InstanceEntry<VocabExt>[] = [
-  { id: "unesco-test", baseUrl: "https://vocab.hagstrom.nu/unesco/", ext: { adapter: "tematres", conceptUriBase: "https://vocab.hagstrom.nu/unesco/skos/", defaultLang: "en", title: "UNESCO Thesaurus (English), test copy on vocab.hagstrom.nu" } }
+  { id: "unesco-test", baseUrl: "https://vocab.hagstrom.nu/unesco/", ext: { adapter: "tematres", conceptUriBase: "https://vocab.hagstrom.nu/unesco/skos/", snapshotUrl: "https://vocab.hagstrom.nu/dumps/unesco.ndjson", defaultLang: "en", title: "UNESCO Thesaurus (English), test copy on vocab.hagstrom.nu" } }
 ];
 
 export const VOCAB: ServiceSetup = {

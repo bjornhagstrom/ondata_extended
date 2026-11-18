@@ -35,6 +35,9 @@ scripts/smoke-vocab.mjs`. The rest of this page describes the one-service Worker
 
 - Requests to a vocabulary server: at most 5 per second per host, bursts of 10, then a wait of up to 5 s and a
   refusal (the core's rate limit, per Worker isolate). This protects the TemaTres servers, not the Worker.
+- A vocabulary with a snapshot (`snapshotUrl`, an NDJSON file on its server) is answered from memory and revalidated
+  at most once a minute with a conditional request; what the snapshot cannot answer goes to the server
+  (`docs/DECISIONS.md`, 2026-11-18). Note that the core's cache does nothing on a `*.workers.dev` host.
 - Answers are cached; responses are capped in size, and a large JSON answer is shortened with a note rather than
   cut mid-value.
 - No access control: anyone with the URL can call it. What it serves is public vocabulary content, and the
@@ -56,7 +59,8 @@ Every deploy needs Björn's ok, each time.
 5. **Logs:** `npx wrangler tail -c packages/host-vocab/wrangler.toml --env production`, or Workers Observability in
    the Cloudflare dashboard. A log line per tool call holds the tool, its arguments `vocab`, `query`, `prefix`,
    `id`, `limit` and `response_format` (the profile's `telemetryFields`), the status with a short error summary,
-   the duration, whether the cache answered and, for `vocab_get_concept`, the concept id; never a secret. The search text users type is logged, so tell
+   the duration, whether the cache answered, for `vocab_get_concept` the concept id, and for a vocabulary with a snapshot
+   `source` (`snapshot` or `live`) and, when a call loaded one, `snapshot_loaded` (its number of concepts); never a secret. The search text users type is logged, so tell
    invited users so.
 
 ## Adding a vocabulary

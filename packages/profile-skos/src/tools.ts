@@ -10,6 +10,9 @@ import { z } from "zod";
 import type { EngineContext, InstanceEntry, ToolResult, ToolSpec } from "@ondata-extended/profile-contract";
 import type { Concept, ConceptRef, Note, SearchHit, VocabularyAdapter, VocabularyInstance } from "./model.js";
 import { createResolver, type VocabExt } from "./vocabularies.js";
+import { localId } from "./ids.js";
+
+export { localId };
 
 type Entries = readonly InstanceEntry<VocabExt>[];
 const vocabArgBase = z.string().max(500).optional();
@@ -59,23 +62,6 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 
 function resolve(entries: Entries, vocab: string | undefined): { instance: VocabularyInstance; adapter: VocabularyAdapter } {
   return createResolver(entries).resolve(vocab);
-}
-
-/** A local id from an id or a concept URI (`.../skos/10`, `...?term_id=10`, `...?tema=10`). */
-export function localId(idOrUri: string): string {
-  const v = idOrUri.trim();
-  if (/^https?:\/\//i.test(v)) {
-    try {
-      const u = new URL(v);
-      const param = u.searchParams.get("term_id") ?? u.searchParams.get("tema");
-      if (param) return param;
-      const last = u.pathname.replace(/\/+$/, "").split("/").pop() ?? "";
-      return decodeURIComponent(last);
-    } catch {
-      return v;
-    }
-  }
-  return v;
 }
 
 export class ForeignConceptUriError extends Error {

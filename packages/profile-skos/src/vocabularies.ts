@@ -11,6 +11,7 @@ import type { InstanceEntry } from "@ondata-extended/profile-contract";
 import { createInstanceRegistry } from "@ondata-extended/core";
 import type { VocabularyAdapter, VocabularyInstance } from "./model.js";
 import { temaTresAdapter } from "./adapters/tematres/adapter.js";
+import { withSnapshot } from "./snapshot.js";
 
 export interface VocabExt {
   adapter: string;
@@ -18,6 +19,11 @@ export interface VocabExt {
   title?: string;
   /** The text before the id in concept URIs, as the instance's SKOS export writes them. */
   conceptUriBase?: string;
+  /**
+   * A full snapshot of the vocabulary (NDJSON, one SKOS concept per line), kept in memory and revalidated at most once a
+   * minute; the adapter answers what the snapshot cannot (src/snapshot.ts). Its host must be allowed like any other.
+   */
+  snapshotUrl?: string;
 }
 
 export const ADAPTERS: Record<string, VocabularyAdapter> = { [temaTresAdapter.id]: temaTresAdapter };
@@ -57,7 +63,7 @@ export function createResolver(entries: readonly InstanceEntry<VocabExt>[] = [])
             ...(entry.ext.defaultLang ? { defaultLang: entry.ext.defaultLang } : {}),
             ...(entry.ext.conceptUriBase ? { conceptUriBase: entry.ext.conceptUriBase } : {})
           },
-          adapter
+          adapter: entry.ext.snapshotUrl ? withSnapshot(adapter, entry.ext.snapshotUrl) : adapter
         };
       }
       let url: URL;

@@ -45,7 +45,9 @@ voces y locuciones lunfardas, populares, jergales y extranjeras* (Adolfo Enrique
 https://terminologias.filo.uba.ar/apps/dicrodriguez/ (University of Buenos Aires; no licence stated), recorded on
 2026-11-16; and `unesco-test-search-universal.json` from a copy of the **UNESCO Thesaurus**,
 https://vocabularies.unesco.org/, licensed CC BY-SA 3.0 IGO (https://creativecommons.org/licenses/by-sa/3.0/igo/),
-as served by the project's test instance at https://vocab.hagstrom.nu/unesco/, recorded on 2026-11-17.
+as served by the project's test instance at https://vocab.hagstrom.nu/unesco/, recorded on 2026-11-17. The same
+licence covers `packages/profile-skos/tests/fixtures/snapshot/unesco-sample.ndjson`: 17 lines, unchanged, of the test
+instance's snapshot of that copy (https://vocab.hagstrom.nu/dumps/unesco.ndjson), taken on 2026-11-18.
 
 ## Third-party dependencies
 

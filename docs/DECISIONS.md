@@ -700,3 +700,48 @@ find.
 - **Checked**: a search answer recorded live from the instance (`tests/fixtures/unesco-test-search-universal.json`) is
   read correctly, and requests go only to its base. The recorded answer already came with `Cache-Control: public` and
   no cookie, the session-free web service being in place there.
+
+## 2026-11-18: a vocabulary can be answered from a snapshot, revalidated once a minute
+
+- **Why** (Björn, 2026-11-18): a vocabulary tool call took 0.3-0.5 s, and repeated calls were no faster. The core's
+  cache uses the Workers Cache API, which does nothing on a `*.workers.dev` host, so every call went to TemaTres (the
+  Worker logs showed `cache_hit: false` on three identical calls in a row). A small vocabulary fits in memory whole,
+  and its server can say cheaply whether it changed.
+- **What**: `VocabExt.snapshotUrl` names a full snapshot of a known vocabulary: NDJSON, one SKOS concept per line
+  (`packages/profile-skos/src/snapshot.ts`). It is loaded once per process or isolate and kept in memory; after a
+  minute the next call asks again with `If-None-Match`/`If-Modified-Since`, a 304 keeps the copy, a 200 replaces it.
+  Generic: any server that publishes such a file can be a source; the adapter stays the vocabulary's own.
+- **Only complete answers from the snapshot**: an id or a search the snapshot has no answer for (a concept added since
+  the file was written), a concept that refers to one the snapshot lacks, scheme information, and every call while the
+  file cannot be had go to the live adapter as before. A failed refresh keeps the copy and asks a minute later; a
+  failed first load is not retried for a minute. The URL passes the deployment's guards on every call, so one service's
+  loaded snapshot is never used by a service that may not reach its host.
+- **What changes in answers** (before/after, rule 8), when the snapshot answers:
+  - a concept's `ext` is `{ snapshot: { lastModified } }` instead of `ext.tematres`: no code, meta-term flag, relation
+    sub-types, other relation types, target vocabularies or partial matches, as the SKOS export does not carry them;
+  - mappings carry type and URI only, without the label and target vocabulary name the live service gives;
+  - search and suggestion hits have `lang` and no `ext.tematres` (index, meta-term flag);
+  - `hiddenLabels` are filled and searched (live: always empty), and never shown as the matched label;
+  - relations are in label order, and the path follows the first broader concept by URI (in a polyhierarchy it may
+    differ from TemaTres's `fetchUp`);
+  - search hits: preferred-label matches first (exact, prefix, a word start anywhere in the label, inside a word), then
+    matches on other labels with the label that matched; suggestions: prefix or word-start matches only, at most 50;
+  - editorial notes are never shown, as TemaTres exports its private notes as editorial notes;
+  - top concepts come from the snapshot only when it marks them with `topConceptOf`; otherwise from the live service
+    (a concept without a broader one may be outside the hierarchy, and TemaTres does not list those);
+  - a change in the vocabulary shows after the server rewrites the file plus at most a minute. The server must replace
+    the file atomically: a partial file that still parses would be taken as the whole vocabulary.
+  - The log line gains `source` and `snapshot_loaded`. Not changed: the server instructions still say the tools read
+    "live from the vocabulary service", and `vocab_suggest` still says "start with or contain"; the copy is at most a
+    minute behind the file, and a suggestion that only matches inside a word goes to the live service when nothing
+    else matches.
+- **A load other calls wait for** (review, 2026-11-18): on Workers a request's I/O ends with the request, so a load
+  started by a request that went away may never settle. Each caller waits on its own timer for at most 15 s and then
+  answers from the copy it has or live, and a load older than that is started afresh; the same rule as the core's host
+  throttle (2026-11-16).
+- **Measured**: parsing the UNESCO test copy's 2 MB snapshot (4,500 concepts) takes about 10 ms on a laptop. Against
+  the live file: the three known answers of `tematres-test/testinstans/kanda-svar/unesco.json` match; the first call
+  took 370 ms (the load), the next 0-3 ms, and the conditional request a minute later got `304`.
+- **Where**: `unesco-test` in the TemaTres demo, whose server already publishes `dumps/unesco.ndjson`. Svada follows
+  when begrepp.hagstrom.nu publishes its snapshot (asked of tematres-test, with a rewrite every minute so that an edit
+  shows within about two).
