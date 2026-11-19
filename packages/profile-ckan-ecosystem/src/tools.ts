@@ -8,7 +8,7 @@ import { z } from "zod";
 import type { EngineContext, FetchOptions, Row, ToolSpec } from "@ondata-extended/profile-contract";
 import {
   README_FILES, UPKEEP, findExtensions, getIndex, pluginInfo, portalsUsing, readmeOpening, readmeUrl, search,
-  sourceLine, usedWith, type Extension
+  sourceLine, usedWith, wholePrefix, type Extension
 } from "./data.js";
 
 /** Three tools answer from the bundled index only (closed world); `ecosystem_get_extension` also reads GitHub. */
@@ -44,7 +44,7 @@ const responseFormat = z.enum(["markdown", "json"]).default("markdown").describe
 
 function short(text: string | null, max: number): string {
   if (!text) return "";
-  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+  return text.length > max ? `${wholePrefix(text, max - 1).trimEnd()}…` : text;
 }
 
 // ---------------------------------------------------------------------------------------
