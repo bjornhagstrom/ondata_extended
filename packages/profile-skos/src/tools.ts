@@ -221,15 +221,31 @@ const SOURCE_PENDING_MS = 15_000;
 const MAX_SOURCES = 100;
 const MAX_SOURCE_FIELD = 300;
 
+/** For tests: the production timings, so a change to them is a deliberate one. */
+export const __SOURCE_TIMINGS = { ttlMs: SOURCE_TTL_MS, retryMs: SOURCE_RETRY_MS, waitMs: SOURCE_WAIT_MS, pendingMs: SOURCE_PENDING_MS, max: MAX_SOURCES, field: MAX_SOURCE_FIELD } as const;
+
 let sourceWaitMs = SOURCE_WAIT_MS;
 /** For tests: how long an answer waits for its source. */
 export function __setSourceWaitForTests(ms: number | null): void {
   sourceWaitMs = ms ?? SOURCE_WAIT_MS;
 }
 
-const field = (v: string | undefined): string | undefined => {
-  const t = v?.trim();
+/** One line of upstream text, at most MAX_SOURCE_FIELD characters: line breaks and control characters become spaces. */
+const field = (v: unknown): string | undefined => {
+  // eslint-disable-next-line no-control-regex
+  const t = typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/ {2,}/g, " ").trim() : "";
   return t ? (t.length > MAX_SOURCE_FIELD ? `${t.slice(0, MAX_SOURCE_FIELD - 1)}…` : t) : undefined;
+};
+/** An http(s) URI of at most `max` characters, or undefined: a URI is never cut, since a cut one names nothing. */
+const uriField = (v: unknown, max = MAX_SOURCE_FIELD): string | undefined => {
+  const t = typeof v === "string" ? v.trim() : "";
+  if (!t || t.length > max || /[\u0000-\u0020\u007f-\u009f\u2028\u2029]/.test(t)) return undefined;
+  try {
+    const u = new URL(t);
+    return u.protocol === "http:" || u.protocol === "https:" ? t : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 interface SourceEntry {
@@ -237,7 +253,7 @@ interface SourceEntry {
   value?: Source;
   /** Until when no answer waits for a read: an hour after a good read, five minutes after a failed or slow one. */
   until: number;
-  /** One of the deployment's own vocabularies: never evicted for a vocabulary reached by base URL. */
+  /** One of the deployment's own vocabularies: never evicted. */
   known: boolean;
   /** The latest read; only it may write. */
   pending?: { at: number; done: Promise<void> };
@@ -247,61 +263,74 @@ type SourceOf = (ctx: EngineContext, instance: VocabularyInstance, adapter: Voca
 
 /**
  * The sources of one set of tools (one service): remembered per process or isolate, never shared with another service
- * in the same isolate. The scheme is read at most once an hour per vocabulary. An answer waits for a read only while the
- * entry is not fresh, at most SOURCE_WAIT_MS on its own timer; a read that fails, or is not done in that time, leaves the
- * last source (or the deployment's title, or the id, with the base URL) standing for five minutes, so at most one answer
- * in five minutes waits while the vocabulary service hangs. A read pending SOURCE_PENDING_MS is taken as lost (on Workers
- * it dies with the request that started it); only the latest read writes. A source never fails an answer.
+ * in the same isolate. The scheme is read at most once an hour per vocabulary. Answers wait for a read only while the
+ * entry is not fresh, and only until SOURCE_WAIT_MS after that read began, each on its own timer (on Workers a timer
+ * dies with the request that set it, so no answer waits on another's), all ending at that one moment; a read
+ * that fails, answers with nothing usable, or is not done in that time leaves the last source (or the deployment's
+ * title, or the id, with the base URL) standing for five minutes, so while the vocabulary service hangs answers wait at
+ * most once in five minutes, and then at most SOURCE_WAIT_MS. A read pending SOURCE_PENDING_MS is taken as lost (on
+ * Workers it dies with the request that started it); only the latest read writes. The deployment's own vocabularies
+ * are never evicted; at most MAX_SOURCES vocabularies reached by base URL are kept besides. A source never fails an
+ * answer.
  */
 function createSourceMemo(entries: Entries): SourceOf {
   const memo = new Map<string, SourceEntry>();
   const knownIds = new Set(entries.map((e) => e.id));
-  function evictOne(): void {
-    for (const [k, v] of memo) if (!v.known) { memo.delete(k); return; }
-    memo.delete(memo.keys().next().value as string);
-  }
+  let adHoc = 0;
   return async (ctx, instance, adapter) => {
-    const key = `${instance.id}|${adapter.id}|${instance.baseUrl}`;
-    const standIn: Source = { title: field(entries.find((e) => e.id === instance.id)?.ext.title) || instance.id, uri: instance.baseUrl };
+    const known = knownIds.has(instance.id);
+    // A vocabulary reached by base URL is one vocabulary whether or not its URL ends in a slash.
+    const key = known ? `${instance.id}|${adapter.id}|${instance.baseUrl}` : `|${adapter.id}|${instance.baseUrl.replace(/\/+$/, "")}`;
+    const standIn: Source = {
+      title: field(entries.find((e) => e.id === instance.id)?.ext.title) || field(instance.id) || "",
+      // The base URL as given (at most 500 characters, as the argument allows), never cut.
+      uri: uriField(instance.baseUrl, 500) ?? ""
+    };
     const now = Date.now();
     let e = memo.get(key);
     if (e && now < e.until) return e.value ?? standIn;
     if (!e) {
-      if (memo.size >= MAX_SOURCES) evictOne();
-      e = { until: 0, known: knownIds.has(instance.id) };
+      if (!known && adHoc >= MAX_SOURCES) {
+        for (const [k, v] of memo) if (!v.known) { memo.delete(k); adHoc--; break; }
+      }
+      e = { until: 0, known };
       memo.set(key, e);
+      if (!known) adHoc++;
     }
     const entry = e;
     if (!entry.pending || now - entry.pending.at >= SOURCE_PENDING_MS) {
-      const pending: { at: number; done: Promise<void> } = { at: now, done: Promise.resolve() };
+      const pending: NonNullable<SourceEntry["pending"]> = { at: now, done: Promise.resolve() };
       const latest = () => entry.pending === pending;
+      const failed = () => {
+        if (!latest()) return;
+        entry.value ??= standIn;
+        entry.until = Date.now() + SOURCE_RETRY_MS;
+      };
       pending.done = adapter.schemeInfo(ctx, instance).then(
         (info) => {
           if (!latest()) return;
+          const title = field(info.title), creator = field(info.creator), publisher = field(info.publisher);
+          if (!title && !creator && !publisher) return failed(); // nothing usable: keep the last source
           entry.value = {
-            title: field(info.title) || standIn.title,
-            ...(field(info.creator) ? { creator: field(info.creator) } : {}),
-            ...(field(info.publisher) ? { publisher: field(info.publisher) } : {}),
-            uri: field(info.uri) || standIn.uri,
+            title: title || standIn.title,
+            ...(creator ? { creator } : {}),
+            ...(publisher ? { publisher } : {}),
+            uri: uriField(info.uri) || entry.value?.uri || standIn.uri,
             ...(field(info.modified) ? { modified: field(info.modified) } : {})
           };
           entry.until = Date.now() + SOURCE_TTL_MS;
         },
-        () => {
-          if (!latest()) return;
-          entry.value ??= standIn;
-          entry.until = Date.now() + SOURCE_RETRY_MS;
-        }
+        failed
       ).finally(() => { if (latest()) entry.pending = undefined; });
       entry.pending = pending;
     }
     const current = entry.pending!;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const slow = new Promise<"slow">((r) => { timer = setTimeout(() => r("slow"), sourceWaitMs); });
+    const slow = new Promise<"slow">((r) => { timer = setTimeout(() => r("slow"), Math.max(0, current.at + sourceWaitMs - Date.now())); });
     const outcome = await Promise.race([current.done.then(() => "done" as const), slow]);
     clearTimeout(timer);
-    if (outcome === "slow" && entry.pending === current) {
-      // Not done in time: stand for five minutes, so the next answers do not wait too. The read may still finish and write.
+    if (outcome === "slow" && entry.pending === current && Date.now() >= entry.until) {
+      // Not done in time: stand for five minutes, so later answers do not wait. The read may still finish and write.
       entry.value ??= standIn;
       entry.until = Date.now() + SOURCE_RETRY_MS;
     }

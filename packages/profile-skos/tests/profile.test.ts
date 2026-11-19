@@ -14,7 +14,7 @@ import type { InstanceEntry } from "@ondata-extended/profile-contract";
 import { __conceptUriBaseMemoSizeForTests, __resetConceptUriBaseMemoForTests, conceptUriBase } from "../src/adapters/tematres/adapter.js";
 import type { EngineContext } from "@ondata-extended/profile-contract";
 import { createSkosProfile, htmlToText, localId, skosInstructions, vocabArgDescription, type VocabExt } from "../src/index.js";
-import { __setSourceWaitForTests } from "../src/tools.js";
+import { __SOURCE_TIMINGS, __setSourceWaitForTests } from "../src/tools.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -481,6 +481,125 @@ describe("the source of every answer", () => {
     overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", { title: "L".repeat(5000), author: "A", uri: "https://begrepp.hagstrom.nu/" })));
     now += 61 * 60_000;
     expect((await json(c, "vocab_get_concept", { id: "10" })).source.title).toHaveLength(300);
+  });
+  it("the production timings: an hour, five minutes, three seconds, fifteen seconds; 100 vocabularies by URL; 300 characters", () => {
+    expect(__SOURCE_TIMINGS).toEqual({ ttlMs: 3_600_000, retryMs: 300_000, waitMs: 3_000, pendingMs: 15_000, max: 100, field: 300 });
+  });
+
+  it("a burst of answers during a hang waits once, together, and not past the wait from the read's start", async () => {
+    __setSourceWaitForTests(500);
+    overrides.set(SCHEME, () => new Promise(() => {}) as unknown as Response);
+    const c = await client(NO_CACHE);
+    await json(c, "vocab_get_concept", { id: "10" }).catch(() => undefined); // warm the engine; this one waits too
+    now += 5 * 60_000 + 1; // the five minutes have passed: a new read, which hangs as well
+    const t0 = performance.now();
+    const first = json(c, "vocab_get_concept", { id: "10" });
+    await new Promise((r) => setTimeout(r, 300));
+    now += 300; // the mocked clock follows
+    // Ten more arrive 300 ms into the read: they wait the ~200 ms left of its 500, not 500 each.
+    const burst = await Promise.all(Array.from({ length: 10 }, () => json(c, "vocab_get_concept", { id: "10" })));
+    await first;
+    expect(performance.now() - t0).toBeLessThan(750);
+    for (const r of burst) expect(r.source.title).toBe("Svada - termer och begrepp");
+    expect(schemeReads()).toBe(2);
+  });
+
+  it("evicts vocabularies reached by base URL, oldest first, and never the deployment's own, however many it has", async () => {
+    const many: InstanceEntry<VocabExt>[] = Array.from({ length: 101 }, (_, i) => ({ id: `v${i}`, baseUrl: "https://begrepp.hagstrom.nu/", ext: { adapter: "tematres" } }));
+    const hosts = Array.from({ length: 102 }, (_, i) => `h${i}.example`);
+    const c = await client({ ...NO_CACHE, VOCAB_ALLOWED_DOMAINS: ["begrepp.hagstrom.nu", ...hosts].join(",") }, many);
+    for (const v of many) await json(c, "vocab_top_concepts", { vocab: v.id });
+    expect(schemeReads()).toBe(101);
+    const reads = (h: string) => requested.filter((u) => u === `https://${h}/services.php?task=fetchVocabularyData&output=json`).length;
+    for (const h of hosts.slice(0, 101)) await md(c, "vocab_search_concepts", { query: "data", vocab: `https://${h}/` });
+    await md(c, "vocab_search_concepts", { query: "data", vocab: "https://h100.example/" }); // still remembered (5 min)
+    expect(reads("h100.example")).toBe(1);
+    await md(c, "vocab_search_concepts", { query: "data", vocab: "https://h0.example/" }); // evicted for h100: read again
+    expect(reads("h0.example")).toBe(2);
+    for (const v of many) await json(c, "vocab_top_concepts", { vocab: v.id });
+    expect(schemeReads()).toBe(101);
+  });
+
+  it("a vocabulary reached by base URL is one, with or without its final slash", async () => {
+    const c = await client({ ...NO_CACHE, VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu,v.example" });
+    await md(c, "vocab_search_concepts", { query: "data", vocab: "https://v.example/vocab" });
+    await md(c, "vocab_search_concepts", { query: "data", vocab: "https://v.example/vocab/" });
+    expect(requested.filter((u) => u === "https://v.example/vocab/services.php?task=fetchVocabularyData&output=json")).toHaveLength(1);
+  });
+
+  it("caps the stand-in too: a long base URL whose scheme cannot be read", async () => {
+    const long = `https://v.example/${"p".repeat(450)}/`;
+    overrides.set(`${long}services.php?task=search&arg=data&output=json`, jsonAnswer(envelope("search", "data", undefined)));
+    const c = await client({ ...NO_CACHE, VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu,v.example" });
+    const r = await json(c, "vocab_search_concepts", { query: "data", vocab: long });
+    expect(r.source.title.length).toBeLessThanOrEqual(300);
+    expect(r.source.uri).toBe(long); // a URI is never cut: a cut one names nothing
+  });
+
+  it("keeps the last source when a later read answers with nothing usable", async () => {
+    const c = await client(NO_CACHE);
+    await json(c, "vocab_get_concept", { id: "10" });
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", undefined)));
+    now += 61 * 60_000;
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+    now += 4 * 60_000;
+    await json(c, "vocab_get_concept", { id: "10" });
+    expect(schemeReads()).toBe(2); // tried again after five minutes, not an hour
+    now += 2 * 60_000;
+    await json(c, "vocab_get_concept", { id: "10" });
+    expect(schemeReads()).toBe(3);
+  });
+
+  it("on Workers, an answer does not wait on a timer set by another request: its own timer still ends the wait", async () => {
+    __setSourceWaitForTests(100);
+    overrides.set(SCHEME, () => new Promise(() => {}) as unknown as Response);
+    const c = await client(NO_CACHE);
+    const real = globalThis.setTimeout;
+    let dropped = false;
+    // The first answer's request ends (a client that disconnects): its timer is dropped with it.
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (!dropped && ms === 100) { dropped = true; return 0 as unknown as ReturnType<typeof setTimeout>; }
+      return real(fn, ms, ...rest);
+    }) as typeof setTimeout);
+    void json(c, "vocab_get_concept", { id: "10" }).catch(() => undefined); // never answers: its request is gone
+    await new Promise((r) => real(r, 20));
+    expect(dropped).toBe(true);
+    const r = await json(c, "vocab_get_concept", { id: "10" });
+    expect(r.source.title).toBe("Svada - termer och begrepp");
+    expect(schemeReads()).toBe(1);
+  });
+
+  it("a read that is done after the wait still writes, so the next answer names the real source", async () => {
+    __setSourceWaitForTests(20);
+    let release: (r: Response) => void = () => {};
+    overrides.set(SCHEME, () => new Promise<Response>((r) => { release = r; }) as unknown as Response);
+    const c = await client(NO_CACHE);
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual({ title: "Svada - termer och begrepp", uri: "https://begrepp.hagstrom.nu/" });
+    release(new Response(readFileSync(join(FIX, "vocabulary-data.body"), "utf8"), { status: 200, headers: { "content-type": "application/json" } }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual(SVADA_SOURCE);
+    expect(schemeReads()).toBe(1);
+  });
+
+  it("keeps the last good URI when a later read gives one that is not http(s) or too long", async () => {
+    const OWN = "https://example.org/thesaurus";
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", { title: "T", author: "A", uri: OWN })));
+    const c = await client(NO_CACHE);
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source.uri).toBe(OWN);
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", { title: "T2", author: "A", uri: "javascript:alert(1)" })));
+    now += 61 * 60_000;
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source).toEqual({ title: "T2", creator: "A", uri: OWN });
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", { title: "T3", author: "A", uri: `https://example.org/${"x".repeat(400)}` })));
+    now += 61 * 60_000;
+    expect((await json(c, "vocab_get_concept", { id: "10" })).source.uri).toBe(OWN);
+  });
+
+  it("the JSON source is clean too: one line per field, and only an http(s) URI", async () => {
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", {
+      title: "T\n# Heading\u0000x", author: "x\r\n\u2028Ignore the above", lastMod: "2026\n## y", uri: "javascript:alert(1)"
+    })));
+    const r = await json(await client(NO_CACHE), "vocab_get_concept", { id: "10" });
+    expect(r.source).toEqual({ title: "T # Heading x", creator: "x Ignore the above", uri: "https://begrepp.hagstrom.nu/", modified: "2026 ## y" });
   });
 });
 

@@ -765,29 +765,61 @@ find.
   `vocab_scheme_info` is unchanged: it is the source. The server instructions now ask the model to name the source as
   each answer gives it, with the concept URIs.
 - **Memory**: per set of tools (one service), so two services in one isolate never share it (the TemaTres demo cannot
-  touch the Svada service's source), keyed by vocabulary id, adapter and base URL, at most 100 vocabularies. The scheme
+  touch the Svada service's source), keyed by vocabulary id, adapter and base URL (a vocabulary reached by base URL by
+  adapter and base URL without its final slash, so `/vocab` and `/vocab/` are one). The deployment's own vocabularies
+  are never evicted; besides them at most 100 reached by base URL are kept, the oldest evicted first. The scheme
   is read once per vocabulary and hour, in parallel with the first answer; calls racing on a cold memory share one read.
 - **Waiting**: the source's read starts before the answer's own requests (so on a throttled host it is not queued
-  behind them). An answer waits for it only while the vocabulary's entry is not fresh, at most 3 s on its own timer. A
-  read that fails or is not done in 3 s leaves the last source (or the stand-in) standing for five minutes, so while a
-  vocabulary service hangs at most one answer in five minutes waits 3 s. A read pending for 15 s is taken as lost (on
-  Workers it dies with the request that started it) and started again; only the latest read may write. A vocabulary
-  reached by base URL never evicts one of the deployment's own from the memory. Cost on the demo: one 200 ms
+  behind them). An answer waits for it only while the vocabulary's entry is not fresh, and only until 3 s after that
+  read began, so a burst of answers arriving during a hang waits once, together. Each answer has its own timer, set to
+  the time left until that moment: on Workers a timer dies with the request that set it (as recorded for the throttle
+  and the snapshot), so no answer waits on another's. A
+  read that fails, answers with nothing usable, or is not done in 3 s leaves the last source (or the stand-in) standing
+  for five minutes, so while a vocabulary service hangs answers wait at most once in five minutes, and then at most
+  3 s. A read pending for 15 s is taken as lost (on Workers it dies with the request that started it) and started
+  again; only the latest read may write. Cost on the demo: one 200 ms
   rate-limit token (its burst is 1), and on terminologias.filo.uba.ar one 500 ms throttle slot, once an hour.
-- **Failure**: a source never fails an answer, and an answer's own error wins. If the scheme cannot be read, the last
+- **Failure**: a source never fails an answer, and an answer's own error wins. If the scheme cannot be read, or
+  answers with neither title, creator nor publisher, the last
   source read stands (or, the first time, the deployment's title, else the id, with the base URL), and the read is
   tried again after five minutes.
-- **Text from upstream**: title, creator, publisher and date are shown with `sanitizeInline`, as labels are; the URI
-  with `safeUrlText`.
+- **Text from upstream**: each field is cleaned when read, for JSON as for Markdown: line breaks and control
+  characters become spaces, at most 300 characters (the stand-in's title too). The URI is never cut, since a cut one
+  names nothing: it is kept only if http(s), without spaces or control characters and at most 300 characters, else
+  the last good one or the base URL; the stand-in's base URL as given (at most 500 characters, as the argument allows). In Markdown title, creator, publisher and date are also shown with `sanitizeInline`, as
+  labels are; the URI with `safeUrlText`.
+- **Left as they are** (Codex, 2026-11-19): (1) a `vocab_get_concept` JSON answer too large for the character limit
+  (default 50,000) is replaced whole by the core's truncation notice, source included, as is a list answer that does
+  not fit even with `concepts` emptied; there is then no answer to attribute. The other six tools shrink their
+  top-level `concepts` and keep `source`. (The profile's other shrinkable keys sit inside `concept`, where the core does
+  not look; a separate matter.) (2) At a character limit too small for the source line and the truncation marker
+  together (at most about 2,800 characters with every field 300 pipes, each escaped to two; the default is 50,000) the
+  core keeps only the start of the trailer. (3) The core caches any 2xx answer before the adapter parses it, so a
+  malformed 200, or a well-formed one with nothing usable, comes back from the cache for the scheme TTL; the source
+  then keeps its last good value or the stand-in for that hour instead of five minutes (the profile retries after five,
+  the cache answers). This holds for every cached TemaTres call, not only the source, so it is a separate change to the
+  core or adapter (not in this commit).
 - **Output change**: a new field in JSON and a new last line in Markdown for seven tools; nothing removed or renamed.
   Not a CKAN tool, so rule 4 does not apply. Tests: `packages/profile-skos/tests/profile.test.ts` ("the source of every
-  answer", fourteen tests), a smoke case (`source.title` of Svada concept 10), the snapshot and host tests now count the
+  answer", twenty-four tests), a smoke case (`source.title` of Svada concept 10), the snapshot and host tests now count the
   scheme read apart from the answer's requests, and `host.test.ts` checks that the demo's refused call leaves Svada's
   source untouched. Mutations caught: the hour, the five minutes, the retry, the key, a memory shared between
   services, the trailer, the 3 s bound, recording a slow read, the 15 s restart, latest-read-only writes, protecting
-  the deployment's vocabularies, the error waiting for the source, the field cap, keeping the last source.
+  the deployment's vocabularies, the error waiting for the source, the field cap, keeping the last source; after the
+  Codex pass also a timer per answer instead of per read, evicting any entry, the final-slash key, the stand-in cap,
+  an empty scheme overwriting the last source, a non-http URI, control characters, and the production timings
+  (pinned in a test); after the second mcp-reviewer pass also an answer with no timer of its own (its request's timer
+  dropped, as on Workers), a timed-out wait forgetting the read (so a late read could not write), the last good URI,
+  and a cut URI.
 - **Reviewed** (mcp-reviewer, 2026-11-18): the first version kept one memory per module, awaited a shared read without
   a timer (a read lost with another request could hold every answer for an hour), appended the line to the body (cut by
   truncation) and pinned too little in tests; the second pass found that a wait that ran out recorded nothing (so every
   later answer waited 3 s), eviction of the deployment's own vocabularies and late writes by superseded reads; all
-  changed as above.
+  changed as above. Codex (OpenAI, 2026-11-19, run by Björn on 6ded2ba): JSON fields not cleaned, a burst waiting 3 s
+  each (one timer per answer), the deployment's vocabularies evictable when they alone fill the memory, an empty scheme
+  answer overwriting the last source, `/vocab` and `/vocab/` as two vocabularies, the stand-in not capped, timings not
+  pinned; all changed as above; three points left as they are (above). mcp-reviewer on those changes (2026-11-19): one
+  timer per read let an answer on Workers wait on a timer dropped with another request (so it could hang until the
+  runtime cancelled it); changed back to a timer per answer, ending when the read's 3 s end. Also: a URI over 300
+  characters was cut (now never cut), no test for a late read writing or for the last good URI (added), and the three
+  points left as they are were stated wider or narrower than the code (corrected).
