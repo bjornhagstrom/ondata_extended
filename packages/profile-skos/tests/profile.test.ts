@@ -14,7 +14,8 @@ import type { InstanceEntry } from "@ondata-extended/profile-contract";
 import { __conceptUriBaseMemoSizeForTests, __resetConceptUriBaseMemoForTests, conceptUriBase } from "../src/adapters/tematres/adapter.js";
 import type { EngineContext } from "@ondata-extended/profile-contract";
 import { createSkosProfile, htmlToText, localId, skosInstructions, vocabArgDescription, type VocabExt } from "../src/index.js";
-import { __SOURCE_TIMINGS, __setSourceWaitForTests } from "../src/tools.js";
+import { __SOURCE_TIMINGS, __setSourceWaitForTests, fitConceptAnswer } from "../src/tools.js";
+import type { Concept } from "../src/model.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -606,6 +607,462 @@ describe("the source of every answer", () => {
     })));
     const r = await json(await client(NO_CACHE), "vocab_get_concept", { id: "10" });
     expect(r.source).toEqual({ title: "T # Heading x", creator: "x Ignore the above", uri: "https://begrepp.hagstrom.nu/", modified: "2026 ## y" });
+  });
+});
+
+describe("one concept in JSON at the character limit", () => {
+  const QUIET = { VOCAB_CACHE_ENABLED: "false", VOCAB_RATE_LIMIT_ENABLED: "false" };
+  /** Both channels of a JSON answer: the text as sent and the structured content. */
+  const both = async (c: Client, id: string) => {
+    const r = await c.callTool({ name: "vocab_get_concept", arguments: { id, response_format: "json" } });
+    const text = (r.content as { text: string }[])[0].text;
+    return { text, parsed: JSON.parse(text), structured: r.structuredContent, isError: r.isError === true };
+  };
+  const manyNarrower = (id: string, n: number) => overrides.set(`${S}?task=fetchDown&arg=${id}&output=json`, jsonAnswer(envelope("fetchDown", id,
+    Object.fromEntries(Array.from({ length: n }, (_, i) => [String(1000 + i), { term_id: String(1000 + i), lang: "sv", string: `Underbegrepp nummer ${i}`, isMetaTerm: "0" }])))));
+  const longNote = (id: string, length: number) => overrides.set(`${S}?task=fetchNotes&arg=${id}&output=json`, jsonAnswer(envelope("fetchNotes", id, {
+    "1": { term_id: id, note_id: "1", note_type: "DF", note_lang: "sv", note_text: "START " + "ord ".repeat(length / 4) },
+    "2": { term_id: id, note_id: "2", note_type: "NA", note_lang: "sv", note_text: "a short scope note" }
+  })));
+
+  it("a concept with thousands of narrower concepts keeps itself, its notes and its source; the list is cut and counted", async () => {
+    const whole = (await both(await client(QUIET), "10")).parsed;
+    expect(whole._truncated).toBeUndefined();
+    expect(whole._cut).toBeUndefined();
+    manyNarrower("10", 3000);
+    const r = await both(await client(QUIET), "10");
+    expect(r.isError).toBe(false);
+    expect(r.text.length).toBeLessThanOrEqual(50000);
+    expect(r.structured).toEqual(r.parsed);
+    const { concept, source, vocab, _truncated, _cut, _note } = r.parsed;
+    expect(vocab).toBe("svada");
+    expect(source).toEqual(whole.source);
+    expect(source.title).toBeTruthy();
+    expect({ ...concept, narrower: [] }).toEqual({ ...whole.concept, narrower: [] });
+    expect(concept.notes.length).toBeGreaterThan(0);
+    expect(_truncated).toBe(true);
+    expect(_cut).toEqual({ narrower: { shown: concept.narrower.length, total: 3000 } });
+    expect(concept.narrower[0]).toMatchObject({ id: "1000", prefLabel: "Underbegrepp nummer 0" });
+    // As much as fits: the service's first entries, and one more would pass the limit.
+    expect(concept.narrower.length).toBeGreaterThan(100);
+    expect(r.text.length + JSON.stringify(concept.narrower[0]).length + 1).toBeGreaterThan(50000);
+    expect(_note).toContain("vocab_narrower");
+  });
+
+  it("a very long note is cut and marked, and takes the room the rest leaves; the lists, the other notes and the source stay whole", async () => {
+    manyNarrower("2", 5);
+    const whole = (await both(await client(QUIET), "2")).parsed;
+    expect(whole.concept.narrower).toHaveLength(5);
+    longNote("2", 120000);
+    const r = await both(await client(QUIET), "2");
+    expect(r.text.length).toBeLessThanOrEqual(50000);
+    expect(r.structured).toEqual(r.parsed);
+    const { concept, source, _truncated, _cut } = r.parsed;
+    expect(source).toEqual(whole.source);
+    expect(_truncated).toBe(true);
+    expect(_cut).toEqual({});
+    expect(concept.notes).toHaveLength(2);
+    expect(concept.notes[0].type).toBe("definition");
+    expect(concept.notes[0].value.startsWith("START ord ord")).toBe(true);
+    expect(concept.notes[0].value.endsWith(" … [cut]")).toBe(true);
+    expect(concept.notes[0].value.length).toBeGreaterThan(45000); // not held to half the limit when nothing else needs it
+    expect(r.text.length).toBeGreaterThan(50000 - 300);
+    expect(concept.notes[1].value).toBe("a short scope note");
+    expect({ ...concept, notes: [] }).toEqual({ ...whole.concept, notes: [] });
+  });
+
+  it("long notes and a long list together: the notes take at most half, the list the rest", async () => {
+    longNote("10", 120000);
+    manyNarrower("10", 3000);
+    const { text, parsed, structured } = await both(await client(QUIET), "10");
+    expect(text.length).toBeLessThanOrEqual(50000);
+    expect(structured).toEqual(parsed);
+    expect(JSON.stringify(parsed.concept.notes).length).toBeLessThanOrEqual(25000);
+    expect(JSON.stringify(parsed.concept.notes).length).toBeGreaterThan(20000); // about half, not less
+    expect(parsed.concept.notes).toHaveLength(2);
+    expect(parsed.concept.narrower.length).toBeGreaterThan(50);
+    expect(parsed._cut).toEqual({ narrower: { shown: parsed.concept.narrower.length, total: 3000 } });
+    expect(parsed.source.uri).toBeTruthy();
+  });
+
+  it("the lists are given up in order: a list partly kept has every list before it in the order whole, every one after it empty", async () => {
+    const rows = (n: number, label: string) => Object.fromEntries(Array.from({ length: n }, (_, i) => [String(2000 + i), { term_id: String(2000 + i), lang: "sv", string: `${label} ${i}`, isMetaTerm: "0" }]));
+    manyNarrower("10", 400);
+    const whole = (await both(await client(QUIET), "10")).parsed;
+    // Related rows come from fetchDirectTerms (relation type 2); add 40 to concept 10's own.
+    const direct = JSON.parse(readFileSync(join(FIX, "direct-10.body"), "utf8"));
+    const extra = Object.fromEntries(Object.entries(rows(40, "Relaterat " + "r".repeat(1000))).map(([k, v]) => [k, { ...v, relation_type_id: "2", relation_type: "RT" }]));
+    overrides.set(`${S}?task=fetchDirectTerms&arg=10&output=json`, jsonAnswer(JSON.stringify({ ...direct, result: { ...direct.result, ...extra } })));
+    const big = (await both(await client(QUIET), "10")).parsed;
+    expect(big.concept.related.length).toBe(whole.concept.related.length + 40);
+    const relatedSize = JSON.stringify(big.concept.related).length;
+    const narrowerSize = JSON.stringify(big.concept.narrower).length;
+    // A limit where everything but narrower and about half of related fits.
+    const limit = JSON.stringify(big).length - narrowerSize - Math.floor(relatedSize / 2) + 400;
+    const { text, parsed, structured } = await both(await client({ ...QUIET, VOCAB_CHARACTER_LIMIT: String(limit) }), "10");
+    expect(text.length).toBeLessThanOrEqual(limit);
+    expect(structured).toEqual(parsed);
+    expect(parsed._cut.narrower).toEqual({ shown: 0, total: 400 });
+    expect(parsed._cut.related.shown).toBeGreaterThan(0);
+    expect(parsed._cut.related.shown).toBeLessThan(big.concept.related.length);
+    for (const key of ["broader", "path", "altLabels", "hiddenLabels", "mappings", "notes"]) expect(parsed.concept[key], key).toEqual(big.concept[key]);
+    expect(parsed.concept.ext).toEqual(big.concept.ext);
+    expect(parsed.source).toEqual(whole.source);
+  });
+
+  it("at a small limit the concept's name and source remain, the notes are kept before the lists", async () => {
+    manyNarrower("2", 5);
+    const whole = (await both(await client(QUIET), "2")).parsed;
+    const limit = 1500;
+    const { text, parsed, structured } = await both(await client({ ...QUIET, VOCAB_CHARACTER_LIMIT: String(limit) }), "2");
+    expect(text.length).toBeLessThanOrEqual(limit);
+    expect(structured).toEqual(parsed);
+    expect(parsed.concept).toMatchObject({ id: "2", uri: whole.concept.uri, prefLabel: whole.concept.prefLabel });
+    expect(parsed.source).toEqual(whole.source);
+    expect(parsed._truncated).toBe(true);
+    expect(parsed.concept.notes.length).toBeGreaterThan(0);
+    expect(parsed.concept.notes[0].type).toBe(whole.concept.notes[0].type);
+    expect(parsed._cut.narrower).toEqual({ shown: parsed.concept.narrower.length, total: whole.concept.narrower.length });
+  });
+
+  it("a huge optional field or ext is left out and reported; a short definition is kept", async () => {
+    const term = JSON.parse(readFileSync(join(FIX, "term-2.body"), "utf8"));
+    term.result.term.date_create = "2026-".repeat(10200);
+    term.result.term.code = "C".repeat(51000);
+    overrides.set(`${S}?task=fetchTerm&arg=2&output=json`, jsonAnswer(JSON.stringify(term)));
+    overrides.set(`${S}?task=fetchNotes&arg=2&output=json`, jsonAnswer(envelope("fetchNotes", "2", {
+      "1": { term_id: "2", note_id: "1", note_type: "DF", note_lang: "sv", note_text: "Kort definition." }
+    })));
+    const { text, parsed, structured } = await both(await client(QUIET), "2");
+    expect(text.length).toBeLessThanOrEqual(50000);
+    expect(structured).toEqual(parsed);
+    expect(parsed.concept.notes).toEqual([expect.objectContaining({ type: "definition", value: "Kort definition." })]);
+    expect(parsed.concept.created).toBeUndefined();
+    expect(parsed.concept.ext).toEqual({});
+    expect(parsed._cut.created).toEqual({ shown: 0, total: 1 });
+    expect(parsed._cut.ext).toEqual({ shown: 0, total: 1 });
+    expect(parsed.source.title).toBeTruthy();
+  });
+
+  it("a limit below the concept's own name and source is left to the core's notice, still JSON in both channels", async () => {
+    const { text, parsed, structured } = await both(await client({ ...QUIET, VOCAB_CHARACTER_LIMIT: "200" }), "2");
+    expect(text.length).toBeLessThanOrEqual(200);
+    expect(structured).toEqual(parsed);
+    expect(parsed._truncated).toBe(true);
+    expect(parsed.concept).toBeUndefined();
+  });
+
+  it("many notes: each kept to at least 200 characters, the rest left out and counted", async () => {
+    const notes: Record<string, unknown> = {};
+    for (let i = 1; i <= 300; i++) notes[String(i)] = { term_id: "2", note_id: String(i), note_type: "NA", note_lang: "sv", note_text: `N${i} ` + "x".repeat(400) };
+    overrides.set(`${S}?task=fetchNotes&arg=2&output=json`, jsonAnswer(envelope("fetchNotes", "2", notes)));
+    const { text, parsed } = await both(await client({ ...QUIET, VOCAB_CHARACTER_LIMIT: "20000" }), "2");
+    expect(text.length).toBeLessThanOrEqual(20000);
+    const kept = parsed.concept.notes as { value: string }[];
+    expect(kept.length).toBeGreaterThan(10);
+    expect(kept.length).toBeLessThan(300);
+    expect(parsed._cut.notes).toEqual({ shown: kept.length, total: 300 });
+    expect(kept[0].value.startsWith("N1 ")).toBe(true); // in their order
+    for (const n of kept) expect(n.value.length).toBeGreaterThanOrEqual(200 + " … [cut]".length);
+  });
+
+  it("notes of equal length share the room equally, use most of it, and are never cut inside a character", async () => {
+    overrides.set(`${S}?task=fetchNotes&arg=2&output=json`, jsonAnswer(envelope("fetchNotes", "2", {
+      "1": { term_id: "2", note_id: "1", note_type: "DF", note_lang: "sv", note_text: "😀".repeat(30000) },
+      "2": { term_id: "2", note_id: "2", note_type: "DF", note_lang: "en", note_text: "a" + "😀".repeat(30000) }
+    })));
+    const { text, parsed } = await both(await client(QUIET), "2");
+    expect(text.length).toBeLessThanOrEqual(50000);
+    expect(text.length).toBeGreaterThan(50000 - 300);
+    const [a, b] = parsed.concept.notes as { value: string }[];
+    expect(Math.abs(a.value.length - b.value.length)).toBeLessThanOrEqual(2);
+    for (const n of [a, b]) {
+      expect(n.value.endsWith(" … [cut]")).toBe(true);
+      expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(n.value)).toBe(false);
+    }
+  });
+
+  it("at every limit, the notes get room before any list does", () => {
+    const ref = (i: number) => ({ id: String(i), uri: `https://x.example/${i}`, prefLabel: `R${i}` });
+    const concept = {
+      id: "1", uri: "https://x.example/1", prefLabel: "L", altLabels: [], hiddenLabels: [],
+      notes: [{ type: "definition", value: "d".repeat(5000) }], broader: Array.from({ length: 200 }, (_, i) => ref(i)),
+      narrower: [], related: [], mappings: [], path: [], ext: {}
+    } as unknown as Concept;
+    let checked = 0;
+    for (let limit = 400; limit <= 6000; limit += 10) {
+      const out = fitConceptAnswer({ vocab: "v", concept, source: { title: "T", uri: "https://x.example/" } }, limit) as { concept: Concept };
+      if (JSON.stringify(out).length > limit) continue; // left to the core
+      checked++;
+      if (out.concept.broader.length > 0 && out.concept.notes.length === 0) {
+        // Only if the note would not fit even with no list at all, less what `_cut` needs to say a list was cut.
+        const cutEntry = JSON.stringify({ broader: { shown: 200, total: 200 } }).length;
+        const alone = fitConceptAnswer({ vocab: "v", concept: { ...concept, broader: [] }, source: { title: "T", uri: "https://x.example/" } }, limit - cutEntry) as { concept?: Concept };
+        expect(alone.concept?.notes.length ?? 0, `limit ${limit}`).toBe(0);
+      }
+    }
+    expect(checked).toBeGreaterThan(400);
+  });
+
+  const src = { title: "T", uri: "https://x.example/" };
+  const ref = (i: number) => ({ id: String(i), uri: `https://x.example/${i}`, prefLabel: `R${i}` });
+  const bareConcept = (over: Record<string, unknown> = {}) => ({
+    id: "1", uri: "https://x.example/1", prefLabel: "L", altLabels: [], hiddenLabels: [], notes: [], broader: [], narrower: [],
+    related: [], mappings: [], path: [], ext: {}, ...over
+  }) as unknown as Concept;
+
+  it("a limit just large enough for the frame and what is said about the cut is used, not left to the core", () => {
+    const concept = bareConcept({ narrower: [{ ...ref(1), prefLabel: "N".repeat(60000) }], created: "2026-11-19" });
+    // The answer fitted at a roomy limit: the concept with `created`, narrower left out. Exactly its size must do.
+    const roomy = fitConceptAnswer({ vocab: "v", concept, source: src }, 59_000) as { concept: Concept };
+    expect(roomy.concept.created).toBe("2026-11-19");
+    const limit = JSON.stringify(roomy).length;
+    const out = fitConceptAnswer({ vocab: "v", concept, source: src }, limit) as { concept?: Concept; _cut?: unknown };
+    expect(JSON.stringify(out).length).toBeLessThanOrEqual(limit);
+    expect(out.concept?.id).toBe("1");
+    expect(out.concept?.created).toBe("2026-11-19");
+    expect(out._cut).toEqual({ narrower: { shown: 0, total: 1 } });
+    // A little more room keeps it too (with `created` back, the answer is shorter than with its `_cut` entry).
+    const more = fitConceptAnswer({ vocab: "v", concept, source: src }, limit + 10) as { concept: Concept };
+    expect(more.concept.created).toBe("2026-11-19");
+  });
+
+  it("a cut note keeps at least 200 characters even when the 200th would split a character", () => {
+    const value = "x".repeat(199) + "😀".repeat(500);
+    for (let limit = 790; limit <= 1100; limit++) {
+      const out = fitConceptAnswer({ vocab: "v", concept: bareConcept({ notes: [{ type: "definition", value }] }), source: src }, limit) as { concept?: Concept };
+      const note = out.concept?.notes[0];
+      if (limit >= 800) {
+        expect(note, `limit ${limit}`).toBeDefined(); // the frame takes about 580, a note of 200 characters about 210
+        expect(JSON.stringify(out).length, `limit ${limit}`).toBeLessThanOrEqual(limit); // fitted, not left to the core
+      }
+      if (!note || note.value === value) continue;
+      const kept = note.value.slice(0, -" … [cut]".length);
+      expect([...kept].length, `limit ${limit}`).toBeGreaterThanOrEqual(200); // characters, not UTF-16 units
+      expect(/[\ud800-\udbff]$/.test(kept)).toBe(false);
+    }
+  });
+
+  it("50,000 tiny notes are fitted quickly, not tried count by count", () => {
+    const notes = Array.from({ length: 50_000 }, () => ({ type: "note", value: "x", sourceType: "" }));
+    const t0 = performance.now();
+    const out = fitConceptAnswer({ vocab: "v", concept: bareConcept({ notes }), source: src }, 50_000) as { concept: Concept; _cut: Record<string, { shown: number }> };
+    expect(performance.now() - t0).toBeLessThan(3000); // tens of seconds when every count is tried
+    expect(out.concept.notes.length).toBeGreaterThan(500);
+    expect(out._cut.notes.shown).toBe(out.concept.notes.length);
+  });
+
+  it("a note's other upstream fields are measured once, not with every probe", () => {
+    const notes = [{ type: "note", value: "y".repeat(300), sourceType: "A".repeat(1_000_000) },
+      ...Array.from({ length: 600 }, () => ({ type: "note", value: "z", sourceType: "" }))];
+    const real = JSON.stringify;
+    let chars = 0;
+    const spy = vi.spyOn(JSON, "stringify").mockImplementation(((...a: Parameters<typeof JSON.stringify>) => { const t = real(...a); chars += t?.length ?? 0; return t; }) as typeof JSON.stringify);
+    const out = fitConceptAnswer({ vocab: "v", concept: bareConcept({ notes }), source: src }, 50_000) as { concept: Concept };
+    spy.mockRestore();
+    expect(out.concept.notes.length).toBe(600); // the huge one left out, the others kept
+    expect(chars).toBeLessThan(5_000_000); // the 1 MB field serialized a couple of times, not per probe and count
+  });
+
+  it("the lists are given up in their stated order, at every limit", () => {
+    const order = ["broader", "path", "altLabels", "hiddenLabels", "mappings", "related", "narrower"];
+    const lists = Object.fromEntries(order.map((k, j) => [k, Array.from({ length: 10 }, (_, i) =>
+      k.endsWith("Labels") ? { value: `${k}-${i}`, lang: "en" } : k === "mappings" ? { uri: `https://m.example/${i}`, type: "exactMatch" } : ref(j * 100 + i))]));
+    const concept = bareConcept(lists);
+    let checked = 0;
+    for (let limit = 300; limit <= 6000; limit += 13) {
+      const out = fitConceptAnswer({ vocab: "v", concept, source: src }, limit) as { concept?: Record<string, unknown[]> };
+      if (!out.concept || JSON.stringify(out).length > limit) {
+        // Left to the core only below some limit: once one fits, every larger one does.
+        expect(checked, `limit ${limit} left to the core after a smaller one fitted`).toBe(0);
+        continue;
+      }
+      checked++;
+      const firstShort = order.findIndex((k) => out.concept![k].length < 10);
+      if (firstShort < 0) continue;
+      for (const k of order.slice(firstShort + 1)) expect(out.concept[k], `${k} at ${limit}`).toHaveLength(0);
+    }
+    expect(checked).toBeGreaterThan(300);
+  });
+
+  it("once a list is cut, a later list with tiny entries gets none of the room left", () => {
+    const big = Array.from({ length: 20 }, (_, i) => ({ ...ref(i), prefLabel: "B".repeat(300) }));
+    const tiny = Array.from({ length: 20 }, (_, i) => ({ value: `t${i}`, lang: "en" }));
+    for (let limit = 1200; limit <= 4000; limit += 37) {
+      const out = fitConceptAnswer({ vocab: "v", concept: bareConcept({ broader: big, altLabels: tiny }), source: src }, limit) as { concept?: Concept };
+      if (!out.concept || out.concept.broader.length === 20) continue;
+      expect(out.concept.altLabels, `limit ${limit}`).toHaveLength(0);
+    }
+  });
+
+  it("a huge optional field never pushes the answer over the limit, at every limit", () => {
+    const concept = bareConcept({ modified: "M".repeat(60_000), created: "C".repeat(60_000), broader: Array.from({ length: 30 }, (_, i) => ref(i)),
+      notes: [{ type: "definition", value: "d".repeat(2000) }] });
+    let fitted = 0;
+    for (let limit = 600; limit <= 3000; limit += 7) {
+      const out = fitConceptAnswer({ vocab: "v", concept, source: src }, limit) as { concept?: Concept };
+      if (out.concept && JSON.stringify(out).length <= limit && out.concept.modified === undefined) { fitted++; continue; }
+      expect(fitted, `limit ${limit} left to the core after a smaller one fitted`).toBe(0);
+    }
+    expect(fitted).toBeGreaterThan(300);
+  });
+
+  it("created and modified come before the lists, ext after them", () => {
+    const concept = bareConcept({ created: "2026-11-19 10:00:00", broader: Array.from({ length: 100 }, (_, i) => ref(i)), ext: { tematres: { code: "C".repeat(300) } } });
+    const out = fitConceptAnswer({ vocab: "v", concept, source: src }, 2000) as { concept: Concept; _cut: Record<string, unknown> };
+    expect(out.concept.broader.length).toBeGreaterThan(0);
+    expect(out.concept.broader.length).toBeLessThan(100);
+    expect(out.concept.created).toBe("2026-11-19 10:00:00");
+    expect(out.concept.ext).toEqual({}); // larger than one more list entry, so after the cut list there is no room
+    expect(out._cut.ext).toEqual({ shown: 0, total: 1 });
+  });
+
+  it("a note that fits the limit but never the room left after the frame does not keep the others out", () => {
+    const notes = [{ type: "note", value: "h".repeat(300), sourceType: "S".repeat(49_700) },
+      ...Array.from({ length: 5 }, (_, i) => ({ type: "note", value: `small ${i}` }))];
+    const out = fitConceptAnswer({ vocab: "v", concept: bareConcept({ notes, narrower: [{ ...ref(1), prefLabel: "N".repeat(60_000) }] }), source: src }, 50_000) as { concept: Concept };
+    expect(out.concept.notes.map((n) => n.value)).toEqual(["small 0", "small 1", "small 2", "small 3", "small 4"]);
+  });
+
+  it("a note of emoji keeps at least 200 emoji, not 200 UTF-16 units", () => {
+    for (let limit = 800; limit <= 2000; limit += 3) {
+      const out = fitConceptAnswer({ vocab: "v", concept: bareConcept({ notes: [{ type: "definition", value: "😀".repeat(5000) }] }), source: src }, limit) as { concept?: Concept };
+      const note = out.concept?.notes[0];
+      if (!note) continue;
+      expect(JSON.stringify(out).length, `limit ${limit}`).toBeLessThanOrEqual(limit); // fitted, not left to the core
+      expect([...note.value.slice(0, -" … [cut]".length)].length, `limit ${limit}`).toBeGreaterThanOrEqual(200);
+    }
+  });
+
+  it("a cut list comes back whole when the room it reserved for being cut is enough", () => {
+    const concept = bareConcept({ broader: [ref(7)], narrower: [{ ...ref(1), prefLabel: "N".repeat(60000) }] });
+    const roomy = fitConceptAnswer({ vocab: "v", concept, source: src }, 59_000) as { concept: Concept };
+    expect(roomy.concept.broader).toHaveLength(1);
+    const exact = fitConceptAnswer({ vocab: "v", concept, source: src }, JSON.stringify(roomy).length);
+    expect(exact).toEqual(roomy);
+  });
+
+  it("useful notes after many that can never fit are still found", () => {
+    const notes = [...Array.from({ length: 1000 }, () => ({ type: "note", value: "n", sourceType: "S".repeat(1000) })), { type: "definition", value: "The definition." }];
+    const out = fitConceptAnswer({ vocab: "v", concept: bareConcept({ notes, narrower: [{ ...ref(1), prefLabel: "N".repeat(60000) }] }), source: src }, 1000) as { concept: Concept; _cut: Record<string, unknown> };
+    expect(out.concept.notes).toEqual([{ type: "definition", value: "The definition." }]);
+    expect(out._cut.notes).toEqual({ shown: 1, total: 1001 });
+  });
+
+  it("modified, like created, comes before the lists, and a huge one is left out and reported", () => {
+    const short = fitConceptAnswer({ vocab: "v", concept: bareConcept({ modified: "2026-11-19 10:00:00", broader: Array.from({ length: 100 }, (_, i) => ref(i)) }), source: src }, 2000) as { concept: Concept };
+    expect(short.concept.broader.length).toBeLessThan(100);
+    expect(short.concept.modified).toBe("2026-11-19 10:00:00");
+    const huge = fitConceptAnswer({ vocab: "v", concept: bareConcept({ modified: "M".repeat(60_000), notes: [{ type: "definition", value: "Kept." }] }), source: src }, 50_000) as { concept: Concept; _cut: Record<string, unknown> };
+    expect(huge.concept.modified).toBeUndefined();
+    expect(huge._cut.modified).toEqual({ shown: 0, total: 1 });
+    expect(huge.concept.notes[0].value).toBe("Kept.");
+  });
+
+  it("ext never costs a whole note, at every limit", () => {
+    const notes = [{ type: "definition", value: "d".repeat(800) }, { type: "note", value: "e".repeat(800) }];
+    const concept = bareConcept({ notes, ext: { tematres: { code: "C".repeat(150) } } });
+    let withExt = 0;
+    for (let limit = 700; limit <= 2400; limit++) {
+      const out = fitConceptAnswer({ vocab: "v", concept, source: src }, limit) as { concept?: Concept };
+      if (!out.concept || !Object.keys(out.concept.ext).length) continue;
+      withExt++;
+      // Dropping ext would free its size but cost its `_cut` entry.
+      const entry = `,"ext":{"shown":0,"total":1}`.length;
+      const without = fitConceptAnswer({ vocab: "v", concept: { ...concept, ext: {} }, source: src }, limit - entry) as { concept?: Concept };
+      expect(out.concept.notes.length, `limit ${limit}`).toBeGreaterThanOrEqual(without.concept?.notes.length ?? 0);
+    }
+    expect(withExt).toBeGreaterThan(100);
+  });
+
+  /** Once a limit gives a fitted answer, every larger one does, within it, with no `_cut` entry for an empty list. */
+  const monotone = (concept: Concept, from: number, to: number) => {
+    let first = 0;
+    for (let limit = from; limit <= to; limit++) {
+      const out = fitConceptAnswer({ vocab: "v", concept, source: src }, limit) as { concept?: Concept; _cut?: Record<string, { total: number }> };
+      const fitted = !!out._cut && JSON.stringify(out).length <= limit;
+      if (!fitted) { expect(first, `limit ${limit} left to the core after ${first} fitted`).toBe(0); continue; }
+      first ||= limit;
+      for (const [k, v] of Object.entries(out._cut!)) expect(v.total, `${k} at ${limit}`).toBeGreaterThan(0);
+    }
+    expect(first).toBeGreaterThan(0);
+    return first;
+  };
+
+  it("optional fields of any length leave room for what follows: every larger limit fits once one does", () => {
+    const huge = [{ ...ref(1), prefLabel: "N".repeat(60000) }];
+    for (const len of [19, 20, 25, 50, 100, 300]) {
+      monotone(bareConcept({ created: "C".repeat(len), narrower: huge }), 400, 1100);
+      monotone(bareConcept({ modified: "M".repeat(len), created: "C".repeat(len), broader: [ref(2)], narrower: huge, ext: { tematres: {} } }), 400, 1200);
+    }
+  });
+
+  it("an optional field never costs the definition", () => {
+    const concept = bareConcept({ notes: [{ type: "definition", value: "d".repeat(5000) }], created: "C".repeat(50), narrower: [{ ...ref(1), prefLabel: "N".repeat(60000) }] });
+    const first = monotone(concept, 400, 1400);
+    let hadCreated = false;
+    for (let limit = first; limit <= 1400; limit++) {
+      const out = fitConceptAnswer({ vocab: "v", concept, source: src }, limit) as { concept: Concept };
+      // More room never drops `created` once it was kept, nor the note once it was kept.
+      if (hadCreated && !out.concept.notes.length) expect(out.concept.created, `limit ${limit}`).toBeDefined();
+      hadCreated ||= out.concept.created !== undefined;
+      const withNote = fitConceptAnswer({ vocab: "v", concept: { ...concept, created: undefined } as unknown as Concept, source: src }, limit - 32) as { concept?: Concept };
+      if (withNote.concept?.notes.length) expect(out.concept.notes.length, `limit ${limit}`).toBe(1);
+    }
+  });
+
+  it("an empty ext from the adapter costs no more than itself near the smallest limit", () => {
+    const concept = bareConcept({ ext: { tematres: {} }, narrower: [{ ...ref(1), prefLabel: "N".repeat(60000) }] });
+    const first = monotone(concept, 400, 900);
+    const smallest = { vocab: "v", concept: { ...concept, narrower: [] }, source: src, _truncated: true, _cut: { narrower: { shown: 0, total: 1 } } };
+    const out = fitConceptAnswer({ vocab: "v", concept, source: src }, 59_000);
+    expect(JSON.stringify(out).length).toBe(JSON.stringify({ ...smallest, _note: (out as { _note: string })._note }).length);
+    expect(first).toBe(JSON.stringify(out).length);
+  });
+
+  it("more room never means fewer notes: the second note fit keeps what the first placed", () => {
+    const notes = [{ type: "note", value: '""' + "a".repeat(998) }, { type: "note", value: "b" + "😀".repeat(500) },
+      { type: "note", value: "c".repeat(300), sourceType: "S".repeat(60_000) }];
+    const concept = bareConcept({ notes, broader: Array.from({ length: 40 }, (_, i) => ref(i)), ext: { tematres: { k: "v".repeat(20) } } });
+    let last = 0;
+    for (let limit = 700; limit <= 2600; limit++) {
+      const out = fitConceptAnswer({ vocab: "v", concept, source: src }, limit) as { concept?: Concept };
+      const n = out.concept && JSON.stringify(out).length <= limit ? out.concept.notes.length : 0; // over: left to the core
+      expect(n, `limit ${limit}`).toBeGreaterThanOrEqual(last);
+      last = n;
+    }
+    expect(last).toBe(2);
+  });
+
+  it("the work stays bounded whatever upstream sends: a label no limit can hold is measured a few times, not per probe", () => {
+    const ref = (i: number) => ({ id: String(i), uri: `https://x.example/${i}`, prefLabel: `R${i}` });
+    const many = Array.from({ length: 5000 }, (_, i) => ref(i));
+    const concept = {
+      id: "1", uri: "https://x.example/1", prefLabel: "L".repeat(2_000_000), altLabels: [], hiddenLabels: [],
+      notes: [{ type: "definition", value: "d".repeat(100_000) }], broader: many, narrower: many, related: many, mappings: [], path: many, ext: {}
+    } as unknown as Concept;
+    const spy = vi.spyOn(JSON, "stringify");
+    const out = fitConceptAnswer({ vocab: "v", concept, source: { title: "T", uri: "https://x.example/" } }, 50000) as { concept: Concept };
+    expect(out.concept.prefLabel).toHaveLength(2_000_000); // left to the core's notice
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(3);
+    spy.mockClear();
+    const huge = Array.from({ length: 200_000 }, (_, i) => ref(i));
+    const fits = fitConceptAnswer({ vocab: "v", concept: { ...concept, prefLabel: "L", narrower: huge }, source: { title: "T", uri: "https://x.example/" } }, 50000) as { concept: Concept };
+    expect(fits.concept.notes.length).toBe(1);
+    // Each entry up to the limit's count measured once (not all 200,000), each note probed a few dozen times, plus a
+    // handful for the frame and the fills.
+    expect(spy.mock.calls.length).toBeLessThan(3 * 5000 + 50_000 + 500);
+    spy.mockRestore();
+  });
+
+  it("Markdown is not changed by this: no marker fields, the list as before", async () => {
+    manyNarrower("10", 30);
+    const r = await md(await client(QUIET), "vocab_get_concept", { id: "10" });
+    expect(r.text).toContain("## Narrower (30)");
+    // And for a concept too large for JSON: Markdown is rendered from the whole concept, not the fitted one.
+    manyNarrower("10", 3000);
+    expect((await md(await client(QUIET), "vocab_get_concept", { id: "10" })).text).toContain("## Narrower (3000)");
+    expect(r.text).not.toContain("_truncated");
   });
 });
 

@@ -201,6 +201,242 @@ function respond(ctx: EngineContext, format: "markdown" | "json", json: unknown,
 }
 
 // ---------------------------------------------------------------------------------------
+// One concept in JSON at the character limit: cut inside the concept, so the answer keeps its identity and its source
+
+/** The concept's lists from the one kept longest to the one given up first: those another tool gives, or that say least, go first. */
+const LIST_ORDER = ["broader", "path", "altLabels", "hiddenLabels", "mappings", "related", "narrower"] as const;
+/** Optional fields kept when there is room, after the notes and before the lists. */
+const OPTIONAL_FIELDS = ["created", "modified"] as const;
+/** What ends a note text that was cut. */
+const NOTE_CUT = " … [cut]";
+/** A note text is never cut below this many characters; with less room, whole notes are left out. */
+const NOTE_MIN = 200;
+const CUT_NOTE =
+  "This concept was cut to fit the character limit. `_cut` gives, per list or field, how many entries are shown of the " +
+  `total; a note ending in "${NOTE_CUT.trim()}" is not whole. vocab_narrower, vocab_related and vocab_broader give one ` +
+  "list each (themselves within the same limit).";
+
+const jsonSize = (value: unknown): number => JSON.stringify(value).length;
+
+/** The first `n` characters of a text, without leaving half of a character that takes two UTF-16 units. */
+function prefix(text: string, n: number): string {
+  const p = text.slice(0, n);
+  const last = p.charCodeAt(p.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? p.slice(0, -1) : p;
+}
+
+/** The largest n in lo..hi for which `fits` holds, or lo - 1 if none does; `fits` holds for every n below one that does. */
+function largest(lo: number, hi: number, fits: (n: number) => boolean): number {
+  let best = lo - 1;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (fits(mid)) { best = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return best;
+}
+
+/**
+ * A note measured once: its JSON size is `fixed` (everything but the text) plus the text's own JSON size, so a cut is
+ * priced by serializing only the text's prefix, never the note's other fields (which come from upstream too).
+ */
+interface MeasuredNote { note: Note; fixed: number; whole: number; min: number }
+
+/** The UTF-16 length of a text's first `points` characters (code points), or the whole text's if it has fewer. */
+function unitsOf(text: string, points: number): number {
+  let i = 0;
+  for (let n = 0; n < points && i < text.length; n++) {
+    const c = text.charCodeAt(i);
+    i += c >= 0xd800 && c <= 0xdbff && i + 1 < text.length ? 2 : 1;
+  }
+  return i;
+}
+
+function measureNote(note: Note, limit: number): MeasuredNote {
+  const value = note.value.length > limit ? prefix(note.value, limit + 1) : note.value;
+  const fixed = jsonSize({ ...note, value: "" }) - 2;
+  const whole = fixed + jsonSize(value);
+  // The shortest cut keeps NOTE_MIN characters (code points, so an emoji counts as one).
+  const least = unitsOf(value, NOTE_MIN);
+  const min = least >= value.length ? whole : Math.min(whole, fixed + jsonSize(value.slice(0, least) + NOTE_CUT));
+  return { note: value === note.value ? note : { ...note, value }, fixed, whole, min };
+}
+
+/** One note cut to at most `room` characters of JSON (with the marker, at least NOTE_MIN characters of text), or null. */
+function cutNote(m: MeasuredNote, room: number): { note: Note; size: number } | null {
+  if (m.whole <= room) return { note: m.note, size: m.whole };
+  const text = m.note.value;
+  const at = (k: number) => prefix(text, k) + NOTE_CUT;
+  // From `least` UTF-16 units on, a prefix keeps at least NOTE_MIN characters (prefix never ends inside one).
+  const least = unitsOf(text, NOTE_MIN);
+  if (least >= text.length) return null;
+  const n = largest(least, Math.min(text.length - 1, room), (k) => m.fixed + jsonSize(at(k)) <= room);
+  if (n < least) return null;
+  const value = at(n);
+  return { note: { ...m.note, value }, size: m.fixed + jsonSize(value) };
+}
+
+/**
+ * The first `count` notes in `room`, shared like water: a note smaller than the level stays whole, a note whose shortest
+ * cut is above the level gets that shortest cut, the others are cut to the level. Null if their shortest forms do not fit.
+ */
+function shareNotes(notes: readonly MeasuredNote[], count: number, room: number): { notes: Note[]; size: number } | null {
+  const avail = room - Math.max(0, count - 1); // separators
+  let least = 0;
+  for (let i = 0; i < count; i++) least += notes[i].min;
+  if (least > avail) return null;
+  // Find the level: the largest share such that sum(clamp(min_i, share, whole_i)) fits (monotonic in the share).
+  const need = (level: number) => {
+    let sum = 0;
+    for (let i = 0; i < count; i++) sum += Math.min(notes[i].whole, Math.max(notes[i].min, level));
+    return sum;
+  };
+  const level = largest(0, avail, (l) => need(l) <= avail);
+  const out: Note[] = [];
+  let size = Math.max(0, count - 1);
+  for (let i = 0; i < count; i++) {
+    const m = notes[i];
+    const target = Math.min(m.whole, Math.max(m.min, level));
+    const c = cutNote(m, target);
+    if (!c) return null;
+    out.push(c.note); size += c.size;
+  }
+  return { notes: out, size };
+}
+
+/** How many of the first notes fit in `room` at their shortest (fewer always fit if more do). */
+function noteCount(notes: readonly MeasuredNote[], room: number): number {
+  let used = -1; // n notes have n - 1 separators
+  let n = 0;
+  while (n < notes.length && used + 1 + notes[n].min <= room) used += 1 + notes[n].min, n++;
+  return n;
+}
+
+/** The notes that fit in `room` characters of JSON (the list's brackets not counted), in their order, shared as above. */
+function fitNotes(notes: readonly MeasuredNote[], room: number): { notes: Note[]; size: number } {
+  const count = noteCount(notes, room);
+  return (count && shareNotes(notes, count, room)) || { notes: [], size: 0 };
+}
+
+/**
+ * A `vocab_get_concept` JSON answer that fits `limit` characters. The core shrinks top-level lists only, and here they
+ * sit inside `concept`, so an answer too large would be replaced whole by the core's notice, source included. Instead
+ * the answer is rebuilt from its frame (vocab, the concept's id, URI, preferred label and language, source) by filling
+ * in order of value: the notes up to half the room, the optional fields, the lists in LIST_ORDER (each the longest
+ * start that fits; once one is cut, the ones after it get nothing), the notes again with what is left, and `ext` if
+ * it costs no whole note.
+ * `_truncated`, `_cut` and `_note` say what was done. Every part is measured once, linearly in what upstream sent; the
+ * rest (at most two fills, the notes' searches) is bounded by the limit, not by upstream. An answer that fits is returned as it is; if even
+ * the bare frame does not fit, the answer is left to the core's notice.
+ */
+export function fitConceptAnswer(answer: { vocab: string; concept: Concept; source: Source }, limit: number): unknown {
+  if (jsonSize(answer) <= limit) return answer;
+  const full = answer.concept;
+  const bare: Concept = { ...full, notes: [], ext: {} };
+  for (const key of LIST_ORDER) bare[key] = [];
+  for (const key of OPTIONAL_FIELDS) delete bare[key];
+  type Cut = Record<string, { shown: number; total: number }>;
+  const build = (concept: Concept, cut: Cut) =>
+    ({ vocab: answer.vocab, concept, source: answer.source, _truncated: true, _cut: cut, _note: CUT_NOTE });
+  const frameSize = (cut: Cut) => jsonSize(build(bare, cut));
+  if (frameSize({}) > limit) return answer; // not even the concept's name and source fit: the core's notice
+
+  // Nothing past `limit` entries or characters can fit; each part is measured once. A note that cannot fit even cut is
+  // left out at once (counted in `_cut.notes`).
+  const most0 = limit - frameSize({}); // the most room any fill can have
+  // Every note is measured (linear in what upstream sent); of those that can fit at all, at most `limit` are fitted.
+  const notes = full.notes.map((n) => measureNote(n, limit)).filter((m) => m.min <= most0).slice(0, limit);
+  const notesWhole = notes.reduce((sum, m, i) => sum + m.whole + (i ? 1 : 0), 0);
+  const lists = Object.fromEntries(LIST_ORDER.map((key) => {
+    const list = (full[key] as unknown[]).slice(0, limit);
+    return [key, { list, sizes: list.map(jsonSize) }];
+  })) as Record<(typeof LIST_ORDER)[number], { list: unknown[]; sizes: number[] }>;
+  const extSize = jsonSize(full.ext) - 2;
+  const extKeys = Object.keys(full.ext).length;
+  const optional = OPTIONAL_FIELDS.map((key) => ({ key, value: full[key], size: full[key] === undefined ? 0 : jsonSize(key) + jsonSize(full[key]) + 2 }));
+
+  // "key":{"shown":n,"total":t} and a comma; keys are plain names, so this is arithmetic.
+  const entry = (key: string, shown: number, total: number) => key.length + 2 + 1 + 19 + String(shown).length + String(total).length + 1;
+
+  const extEntry = extKeys ? entry("ext", 0, extKeys) : 0;
+  // `_cut.<list>` for the lists after each one, all left out; and the least those lists can cost (the next ones whole,
+  // up to one that is cut with all after it).
+  const later = LIST_ORDER.map((_k, i) => LIST_ORDER.slice(i + 1).reduce((sum, k) => sum + (full[k].length ? entry(k, 0, full[k].length) : 0), 0));
+  const wholeSize = LIST_ORDER.map((k) => lists[k].list.length < full[k].length ? Infinity
+    : lists[k].sizes.reduce((sum, x, n) => sum + x + (n ? 1 : 0), 0));
+  const minRest: number[] = new Array(LIST_ORDER.length).fill(0);
+  for (let i = LIST_ORDER.length - 2; i >= 0; i--) minRest[i] = Math.min(later[i], wholeSize[i + 1] + minRest[i + 1]);
+  // The least all lists, and `ext`, can cost (`ext` whole when that is cheaper than saying it was left out); and the
+  // least the optional fields after each one can cost (each whole or its entry, whichever is less).
+  const allEntries = LIST_ORDER.reduce((sum, k) => sum + (full[k].length ? entry(k, 0, full[k].length) : 0), 0);
+  const listsMin = Math.min(allEntries, wholeSize[0] + minRest[0]);
+  const extMin = extKeys ? Math.min(extSize, extEntry) : 0;
+  const optMin = optional.map((o) => (o.value === undefined ? 0 : Math.min(o.size, entry(o.key, 0, 1))));
+  const optAfter = optional.map((_o, j) => optMin.slice(j + 1).reduce((a, b) => a + b, 0));
+  // The least everything but the notes can cost: the notes never take that room.
+  const rest = optMin.reduce((a, b) => a + b, 0) + listsMin + extMin;
+
+  /**
+   * The answer filled in order of value. Each `_cut` entry is paid for with a comma; `spare` gives back the first one's,
+   * which has none (if no entry is made, that character is not there, and the fill is repeated without it).
+   */
+  function fill(spare: number) {
+    const concept: Concept = { ...bare };
+    const cut: Cut = {};
+    let room = most0 + spare;
+
+    // The notes first. If not all can be shown, their `_cut` entry is paid for now (its widest form).
+    if (noteCount(notes, Math.max(0, room - rest)) < full.notes.length) room -= entry("notes", full.notes.length, full.notes.length);
+    const forNotes = Math.max(0, room - rest);
+    // As many notes as that room allows, each at least at its shortest; beyond that, up to half the room.
+    const count = noteCount(notes, forNotes);
+    let least = Math.max(0, count - 1);
+    for (let i = 0; i < count; i++) least += notes[i].min;
+    let fitted = fitNotes(notes, Math.min(forNotes, Math.max(Math.floor(room / 2), least)));
+    room -= fitted.size;
+
+    // An optional field is taken only if what follows can still be paid for at its least.
+    optional.forEach(({ key, value, size }, j) => {
+      if (value === undefined) return;
+      if (size + optAfter[j] + listsMin + extMin <= room) { concept[key] = value; room -= size; }
+      else { cut[key] = { shown: 0, total: 1 }; room -= entry(key, 0, 1); }
+    });
+
+    // The lists leave room for `ext` at its least (whole, or its entry), settled at the end.
+    room -= extMin;
+    // The lists in order: once one is cut, the ones after it get nothing (their entries paid for with the cut).
+    let open = true;
+    LIST_ORDER.forEach((key, i) => {
+      const { list, sizes } = lists[key];
+      const total = full[key].length;
+      if (!total) return; // an empty list is never cut
+      if (!open) { cut[key] = { shown: 0, total }; return; }
+      if (wholeSize[i] + minRest[i] <= room) { (concept as unknown as Record<string, unknown[]>)[key] = list; room -= wholeSize[i]; return; }
+      let used = 0;
+      let n = 0;
+      while (n < list.length && used + sizes[n] + (n ? 1 : 0) + entry(key, n + 1, total) + later[i] <= room) used += sizes[n] + (n ? 1 : 0), n++;
+      (concept as unknown as Record<string, unknown[]>)[key] = list.slice(0, n);
+      cut[key] = { shown: n, total };
+      room -= used + entry(key, n, total) + later[i];
+      open = false;
+    });
+
+    // `ext` (the backend's particulars) if it fits, then the notes again with what is left. The number of notes was
+    // settled with room for every `_cut` entry, so neither can cost a whole note, only characters of a cut one.
+    room += extMin;
+    if (!extKeys || extSize <= room) { concept.ext = full.ext; room -= extSize; } else { cut.ext = { shown: 0, total: extKeys }; room -= extEntry; }
+    if (fitted.size < notesWhole) fitted = fitNotes(notes, fitted.size + room);
+    concept.notes = fitted.notes;
+    if (fitted.notes.length < full.notes.length) cut.notes = { shown: fitted.notes.length, total: full.notes.length };
+    return build(concept, cut);
+  }
+  for (const spare of [1, 0]) {
+    const out = fill(spare);
+    if (jsonSize(out) <= limit) return out;
+  }
+  return answer; // only when even the frame and what `_cut` must say do not fit
+}
+
+// ---------------------------------------------------------------------------------------
 // Source: every answer names the vocabulary and its creator, as the vocabulary gives them, so it can be attributed
 
 /** Who an answer comes from: the vocabulary's title, creator and publisher, its URI and when it last changed. */
@@ -432,7 +668,8 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
       const [concept, source] = await withSource(sourceOf, ctx, instance, adapter, () => adapter.getConcept(ctx, instance, id));
       if (!concept) throw new ConceptNotFoundError(id, instance.id);
       ctx.telemetry.note({ concept_id: id });
-      return respond(ctx, args.response_format, { vocab: instance.id, concept, source },
+      const answer = { vocab: instance.id, concept, source };
+      return respond(ctx, args.response_format, args.response_format === "json" ? fitConceptAnswer(answer, ctx.limits.characterLimit) : answer,
         () => conceptMarkdown(ctx, concept, instance), sourceMarkdown(ctx, source));
     }
   };

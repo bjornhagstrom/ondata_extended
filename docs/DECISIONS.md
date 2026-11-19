@@ -74,7 +74,8 @@ reason; (3) black-box parity for every CKAN tool against ondata at `09e8cdc`. De
   cases, with no automated runner yet (needs an API key: owner's decision).
 - **Known limit**: JSON truncation shrinks only top-level arrays, so a huge concept (thousands of narrower terms)
   is cut by the generic fallback rather than by shrinking `concept.narrower`. Fine for the test vocabulary; revisit
-  with nested shrink paths in the contract if a real vocabulary needs it.
+  with nested shrink paths in the contract if a real vocabulary needs it. Changed 2026-11-19: see "one concept in JSON is cut
+  inside the concept".
 
 ## 2026-11-09: reviewer model
 
@@ -796,7 +797,8 @@ find.
   together (at most about 2,800 characters with every field 300 pipes, each escaped to two; the default is 50,000) the
   core keeps only the start of the trailer. (3) The core cached any 2xx answer before the adapter parsed it, so a
   malformed 200, or a well-formed one with nothing usable, came back from the cache for the scheme TTL. Fixed
-  separately on 2026-11-19 (next entry): such answers are no longer cached.
+  separately on 2026-11-19 (next entry): such answers are no longer cached. (1) changed for `vocab_get_concept` on
+  2026-11-19: see "one concept in JSON is cut inside the concept".
 - **Output change**: a new field in JSON and a new last line in Markdown for seven tools; nothing removed or renamed.
   Not a CKAN tool, so rule 4 does not apply. Tests: `packages/profile-skos/tests/profile.test.ts` ("the source of every
   answer", twenty-four tests), a smoke case (`source.title` of Svada concept 10), the snapshot and host tests now count the
@@ -856,3 +858,106 @@ find.
   halves and the author- or publisher-only scheme were untested; the scheme rule differed from the source's (blanks);
   an empty or plain-text export answer was cached for the hour; a doc comment displaced in the core client; the burst
   test's rewrite unrecorded. All changed as above.
+
+## 2026-11-19: one concept in JSON is cut inside the concept, and keeps its source
+
+- **Why**: a `vocab_get_concept` JSON answer is `{ vocab, concept, source }`. The core shrinks top-level lists only,
+  so an answer above the character limit (default 50,000; thousands of narrower concepts, or very long notes) was
+  replaced whole by the core's notice: the model got neither the concept nor its source. Markdown already kept its
+  start and its source line.
+- **What**: `fitConceptAnswer` in `packages/profile-skos/src/tools.ts`, called for JSON only, before
+  `ctx.output.json`, with `ctx.limits.characterLimit`. An answer that fits is passed on untouched (no new field).
+  Otherwise the answer is rebuilt from its frame (`vocab`, the concept's `id`, `uri`, `prefLabel`, `lang`, and
+  `source`, never cut) by filling in order of value: (1) the notes: as many as fit at their shortest, with room kept
+  for the least everything else can cost, and up to half the room; (2) `created` and `modified`, each only if what
+  follows can still be paid for at its least; (3) the lists in the order `broader`, `path`, `altLabels`, `hiddenLabels`, `mappings`, `related`, `narrower`:
+  a list is taken whole only if the least the lists after it can cost still fits, otherwise the longest start that
+  fits, and the ones after it get nothing; (4) `ext`, if it fits; (5) the notes again, with all that is left. Notes are
+  fitted in their order and shared like water: a note smaller than the level stays whole, a note whose shortest cut is
+  above it gets that, the others are cut to the level. A cut note keeps at least 200 characters (code points: an emoji
+  counts as one), is never cut inside a character, and ends in " … [cut]"; notes that do not fit at their shortest are
+  left out from the end. The answer then carries `_truncated: true` (the core's name), `_cut`
+  (`{ <list or field>: { shown, total } }` for every list, field or `ext` cut or left out) and `_note`, a sentence for
+  the model that names `vocab_narrower`, `vocab_related` and `vocab_broader` ("one list each, themselves within the
+  same limit"). The order is by what the model can get elsewhere and what says least: the notes (the definition) are
+  only here. Every step keeps room for what follows at its least (each later part whole or its `_cut` entry,
+  whichever is less; for the lists, the next ones whole up to one cut with all after it), so neither the optional
+  fields, the lists nor `ext` can cost a whole note, only characters of a cut one; and once a limit gives a fitted
+  answer, every larger limit does. An empty list is never reported as cut.
+- **Fitting**: one fill. The bare frame (with an empty `_cut`) decides first whether anything can fit. `_cut` is paid
+  for as it grows (the notes' entry at its widest, a few digits at most to spare), each entry at its exact size with a comma; the first entry has none, so that character is given
+  back, and in the one case where no entry is made the fill is repeated without it. When something divisible takes
+  the remainder (a list, a note), the answer ends within a single entry of the limit; when what is left out is
+  indivisible (a label of 60,000 characters), the answer is as short as what remains. If even the frame and what
+  `_cut` must say do not fit, the answer is left to the core's notice, which then carries neither the concept nor its
+  source.
+- **Both channels**: unchanged mechanism. The fitted object is at most the limit as compact JSON, so the core sends
+  it as it is and builds `structuredContent` by parsing that text.
+- **Rejected**: (a) nested shrink paths in the core and the contract (`concept.narrower` in `shrinkableKeys`), the
+  idea noted on 2026-11-09: it changes the profile API and the function CKAN's output passes through (rule 4), cuts
+  lists only, so one long definition would still empty every list before it and then be dropped whole, and the core
+  cannot say which tool gives the rest (profiles own model-facing text, rule 3). (b) Running the core's
+  `truncateJson` on the concept alone with the profile's keys: same weakness with long notes, and `_original_count`
+  names one list without saying which. (c) Moving `source` first or flattening the concept to the top level: changes
+  the JSON shape of every answer to help the rare one. (d) Paging arguments on `vocab_get_concept`: a change to the
+  frozen tool surface. (e) Cutting the text and closing the JSON by hand: fragile, and the two channels would differ.
+- **Limits**: a character limit too small for the frame (about 1,000 characters with ordinary values and every
+  list filled; a hostile label is not cut) still gets the core's notice, as before, decided before any other work.
+  With too little room for even the first note at 200 characters, the lists may take what there is.
+  `vocab_narrower` and the other list tools are themselves cut at the limit (their `concepts` shrink, with the
+  count), so a list above the limit cannot be read whole through any tool; paging would be a separate decision. The
+  profile's `shrinkableKeys` still lists keys that sit inside `concept`, where the core does not look; left as is. A
+  list answer that does not fit even with `concepts` emptied is unchanged (not reachable with the source capped).
+- **Cost** (of `fitConceptAnswer`; when it leaves the answer to the core, the core then serializes it as before):
+  nothing when the answer fits beyond one `JSON.stringify`. Otherwise, linear in what upstream sent: each list entry
+  measured once (at most the limit's count of entries per list) and each note once (its fixed part, which comes from
+  upstream too, and its text capped at the limit); a note that cannot fit even at its shortest in the most room there
+  is is left out at once, and of the rest at most the limit's count are fitted. The rest is bounded by the limit, not
+  by upstream: at most two fills, each with two note fits; the number of notes comes from their shortest sizes, the
+  water level by binary search, and each cut note is searched by serializing only its text's prefix. A label of
+  megabytes is decided after two serializations. Tests bound the call count (a list of 200,000, a 2 MB label), the
+  characters serialized (a note with a 1 MB `sourceType` among 600) and the time (50,000 tiny notes).
+- **Output change**: only answers that were replaced by the notice before; three new top-level fields on those.
+  Markdown and the six other tools unchanged; the frozen tool surface unchanged.
+- **Tests**: `packages/profile-skos/tests/profile.test.ts`, "one concept in JSON at the character limit"
+  (thirty tests, end to end through MCP and on the function). Cases: 3,000 narrower concepts (one more would pass
+  the limit); a 120,000-character note taking the room left; long notes and a long list (the notes about half); lists
+  given up in order, end to end and at every limit (a list partly kept, those after it empty; once one is cut, a later
+  list of tiny entries gets nothing); a small limit; huge `created`, `modified` and `ext` left out and reported with a
+  short definition kept, and never pushing the answer over the limit at any limit; `created` and `modified` before the
+  lists and `ext` after them; 300 notes; equal notes of emoji; notes of emoji keeping 200 emoji; a note whose 200th
+  character is an emoji, at every limit; notes before any list at every limit; `ext` never costing a whole note at
+  every limit; more room never fewer notes; an exact-fit limit and one a little larger; a cut list coming back whole at
+  an exact fit; a useful note after 1,000 that never fit; a note fitting the limit but not the room; bounded work
+  (time, characters, calls); a limit below the frame; Markdown unchanged, also for an oversized concept; and, at every
+  limit, once an answer is fitted every larger limit gives a fitted one (never left to the core), also with optional
+  fields of 19 to 300 characters and an adapter's empty `ext`, at every limit; an optional field never costing the
+  definition, nor dropped again with more room. Mutations caught:
+  the entry for `ext` reserved through the lists, the later lists' entries, a whole list ignoring the rest, the notes
+  ignoring the rest, an optional field's entry, an entry one character short, the comma given back, the floor in
+  UTF-16 units, the cap before the filter, `modified` treated as optional, the first pass sized for the count, the
+  level ignoring minimums, strict list order, the frame floor, the 200-character floor, the half-character guard, the
+  list cap, hopeless notes kept, a swap in the list order, `ext` always kept, `ext`'s entry unpaid, an optional field taking room blindly, `ext`'s entry reserved when it
+  whole is cheaper, an empty list cut, the notes' reserve, the lists' least ignored.
+- **Reviewed** (2026-11-19): written by a Fable agent without our proposal (nested shrink paths in the core),
+  which it rejected (above); then mcp-reviewer and Codex on that version. They found: every probe re-serialized the
+  whole answer (70 to 120 serializations for an answer that could never fit); an optional field or a large `ext`
+  could cost the whole concept, and `ext` was emptied only after the notes; the half-limit note budget left room
+  unused; the note-length search was not monotonic and could cut inside a character; three behaviours and the order
+  were not pinned by tests; cost and limits stated wrongly. Rewritten as a fill by value. Second pass,
+  mcp-reviewer and Codex on def7d55: fitting notes tried every count with a sort each (quadratic; 50,000 tiny notes,
+  about 1 MB, took tens of seconds) and re-serialized a note's other upstream fields with every probe (a 1 MB
+  `sourceType`, gigabytes); the floor used the largest `_cut` and gave up when a smaller answer fitted; the candidate
+  was chosen by size; a cut note could keep 199 characters when the 200th split a character; the test of 3,000
+  narrower concepts had been loosened; cost and closeness stated wider than the code. All changed as above. Third
+  pass, mcp-reviewer: the notes' second fit could lose a note; parts of the order and Markdown for an oversized
+  concept were not pinned; a note fitting the limit but never the room could keep the others out; four fills, not
+  three; cost stated as arithmetic. Codex on the result: a cut list could not come back whole (its own reserve), the
+  floor counted UTF-16 units (100 emoji passed), the note cap came before the filter, `modified` was untested, the cost
+  claim stopped at the function. Fixing those, property tests over every limit found the multi-pass reserves
+  overrunning or under-using the limit at boundaries; rewritten as one fill paying for `_cut` exactly, with notes
+  counted by their shortest sizes and shared like water. Fourth pass, mcp-reviewer on that: an optional field was taken
+  without keeping room for what follows (left to the core, or costing the definition, with any date longer than
+  TemaTres' 19 characters); `ext`'s entry was reserved even when `ext` whole is cheaper; an empty list could be
+  reported as cut; stale comments. All changed as above. The steps (Fable's version and the rewrites) are one commit.
+
