@@ -183,6 +183,26 @@ describe("HttpClient against a live server", () => {
     expect(hits["/json"]).toBe(before + 2);
   });
 
+  it("caches only what the caller's accept check lets through; a check that throws caches nothing", async () => {
+    const run = async (accept: (a: { status: number; headers: Record<string, string>; text: string }) => boolean) => {
+      const client = new HttpClient(settings({ cache: new MemoryLruCache(10) }));
+      const before = hits["/json"] ?? 0;
+      const seen: { status: number; text: string; type?: string }[] = [];
+      const opts = { ...PRIVATE, cache: { ttlSeconds: 60, accept: (x: { status: number; headers: Record<string, string>; text: string }) => { seen.push({ status: x.status, text: x.text, type: x.headers["content-type"] }); return accept(x); } } };
+      await client.request(`${base}/json`, {}, opts);
+      const second = await client.request(`${base}/json`, {}, opts);
+      return { reached: hits["/json"] - before, fromCache: second.fromCache, seen };
+    };
+    const refused = await run(() => false);
+    expect(refused).toMatchObject({ reached: 2, fromCache: false });
+    expect(refused.seen[0].status).toBe(200);
+    expect(JSON.parse(refused.seen[0].text).n).toBeTypeOf("number");
+    expect(refused.seen[0].type).toContain("json");
+    expect(await run(() => true)).toMatchObject({ reached: 1, fromCache: true });
+    expect(await run(() => { throw new Error("bad"); })).toMatchObject({ reached: 2, fromCache: false });
+    expect(await run(() => "yes" as unknown as boolean)).toMatchObject({ reached: 2, fromCache: false });
+  });
+
   it("stops reading a body without Content-Length at the cap", async () => {
     const client = new HttpClient(settings({ maxDecompressedBytes: 8 * 1024 }));
     await expect(client.request(`${base}/chunked-big`, {}, PRIVATE)).rejects.toBeInstanceOf(ResponseTooLargeError);

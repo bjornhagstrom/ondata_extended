@@ -35,8 +35,9 @@ function isNumericId(id: string): boolean {
 const withSlash = (u: string) => (u.endsWith("/") ? u : `${u}/`);
 
 /**
- * Instances whose server refused the SKOS export (a 4xx answer, e.g. a browser check), with the time until which it is
- * not asked again. The core caches only successful answers, so without this every tool call would repeat a refused
+ * Instances whose server refused the SKOS export, with the time until which it is not asked again: an hour after a 4xx
+ * (e.g. a browser check), five minutes after a 200 that is not RDF/XML (an HTML page, an empty or plain-text body),
+ * which is also not cached, so a passing page does not hold the default pattern for an hour. The core caches only successful answers, so without this every tool call would repeat a refused
  * request. Only a refusal by the server counts: a timeout, a 5xx or 429, or a request our own guards stopped (an
  * allow-list, the rate limit) is not remembered, so it neither sticks a working server to the default pattern nor
  * carries over between services with different allow-lists. In memory, per process or Worker isolate, at most
@@ -45,12 +46,12 @@ const withSlash = (u: string) => (u.endsWith("/") ? u : `${u}/`);
 const exportRefusedUntil = new Map<string, number>();
 const MAX_REFUSALS = 200;
 
-function rememberRefusal(base: string): void {
+function rememberRefusal(base: string, seconds: number = TTL.scheme): void {
   const now = Date.now();
   for (const [key, until] of exportRefusedUntil) if (until <= now) exportRefusedUntil.delete(key);
   exportRefusedUntil.delete(base);
   while (exportRefusedUntil.size >= MAX_REFUSALS) exportRefusedUntil.delete(exportRefusedUntil.keys().next().value!);
-  exportRefusedUntil.set(base, now + TTL.scheme * 1000);
+  exportRefusedUntil.set(base, now + seconds * 1000);
 }
 
 /** Forget remembered refusals; for tests. */
@@ -63,6 +64,10 @@ export function __conceptUriBaseMemoSizeForTests(): number {
   return exportRefusedUntil.size;
 }
 
+/** Whether an answer looks like the SKOS export's RDF/XML: XML, and not HTML by its content type or its first tag. */
+const looksLikeRdf = (a: { headers?: Record<string, string>; text: string }): boolean =>
+  !(a.headers?.["content-type"] ?? "").toLowerCase().includes("html") && /^\s*</.test(a.text) && !/^\s*(<!doctype html|<html)/i.test(a.text);
+
 /** The text before the id in this instance's concept URIs. */
 export async function conceptUriBase(ctx: EngineContext, instance: VocabularyInstance): Promise<string> {
   if (instance.conceptUriBase) return instance.conceptUriBase;
@@ -70,9 +75,11 @@ export async function conceptUriBase(ctx: EngineContext, instance: VocabularyIns
   const fallback = `${base}xml.php?schema=skos&term_id=`;
   if ((exportRefusedUntil.get(base) ?? 0) > Date.now()) return fallback;
   try {
-    const res = await ctx.http.request(`${base}xml.php?skosMeta=1`, { method: "GET" }, { cache: { ttlSeconds: TTL.scheme }, userAgent: "honest" });
+    const res = await ctx.http.request(`${base}xml.php?skosMeta=1`, { method: "GET" }, { cache: { ttlSeconds: TTL.scheme, accept: looksLikeRdf }, userAgent: "honest" });
     if (res.status >= 400 && res.status < 500 && res.status !== 429) {
       rememberRefusal(base);
+    } else if (res.status === 200 && !looksLikeRdf({ headers: res.headers, text: res.text ?? "" })) {
+      rememberRefusal(base, TTL.term);
     } else {
       const m = res.status === 200 && res.text ? res.text.match(/hasTopConcept\s+rdf:resource="([^"]*?)(\d+)"/) : null;
       if (m) return m[1].replace(/&amp;/g, "&");

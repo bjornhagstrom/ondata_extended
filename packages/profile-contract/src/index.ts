@@ -64,8 +64,12 @@ export interface FetchOptions {
   retryHonestIf?: ((bodyText: string) => boolean) | false;
   /** Take a rate token for the hostname before the request. Default true. */
   rateLimit?: boolean;
-  /** Cache successful (2xx) bodies for this many seconds, keyed by method, URL, body and `key`. */
-  cache?: { ttlSeconds: number; key?: unknown[] };
+  /**
+   * Cache successful (2xx) bodies for this many seconds, keyed by method, URL, body and `key`. `accept`, when given,
+   * must also return true for the answer to be cached (an answer the caller cannot use, such as a 200 carrying an error
+   * page, then does not stand for the whole TTL); if it throws, the answer is not cached. Default: every 2xx.
+   */
+  cache?: { ttlSeconds: number; key?: unknown[]; accept?: (answer: { status: number; headers: Record<string, string>; text: string }) => boolean };
   /**
    * Let a host the administrator listed as private resolve to a private address
    * (loopback, RFC 1918, unique-local). Default false: closed even for listed hosts.

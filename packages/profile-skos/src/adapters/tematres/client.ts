@@ -101,6 +101,20 @@ export function parseEnvelope(task: string, contentType: string | undefined, tex
   return { rows: [], record: result as Record<string, unknown>, resume: parsedResume };
 }
 
+/** Text with at least one character that is neither white space nor a control character. */
+const hasText = (v: unknown): boolean => typeof v === "string" && /[^\s\u0000-\u001f\u007f-\u009f]/.test(v);
+
+/**
+ * Whether the vocabulary's own data may be cached for its hour: it parses and names the vocabulary (a title, author or
+ * publisher with real text, the rule the source of every answer uses). Otherwise it is not cached, so a maintenance
+ * page or an empty record does not stand for the hour once the service answers properly again. The term tasks keep
+ * the core's default (every 2xx, five minutes), which also spares a service that keeps answering with a page.
+ */
+function namesVocabulary(a: { headers: Record<string, string>; text: string }): boolean {
+  const r = parseEnvelope("fetchVocabularyData", a.headers["content-type"], a.text).record ?? {};
+  return hasText(r.title) || hasText(r.author) || hasText(r.publisher);
+}
+
 export async function callTask(
   ctx: EngineContext,
   baseUrl: string,
@@ -113,7 +127,8 @@ export async function callTask(
   }
   const url = servicesUrl(baseUrl, task, arg);
   // The profile's own name (Vocab-MCP-Server/<version>), not a browser's: a vocabulary server should see who calls it.
-  const res = await ctx.http.request(url, { method: "GET" }, { cache: { ttlSeconds }, userAgent: "honest" });
+  const cache = task === "fetchVocabularyData" ? { ttlSeconds, accept: namesVocabulary } : { ttlSeconds };
+  const res = await ctx.http.request(url, { method: "GET" }, { cache, userAgent: "honest" });
   if (res.status < 200 || res.status >= 300) {
     // An edge answering for an origin it could not reach: no answer from the service (as the core's json()).
     if ((res.status >= 520 && res.status <= 527) || res.status === 530) {

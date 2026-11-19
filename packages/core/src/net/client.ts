@@ -35,6 +35,16 @@ import {
 /** What kind of transport failure: lets a profile word it in its own terms. */
 export type TransportErrorKind = "timeout" | "network" | "not-found" | "too-many-redirects" | "edge";
 
+/** Whether the caller's `cache.accept` lets this answer be cached; a check that throws does not. */
+function accepted(accept: NonNullable<FetchOptions["cache"]>["accept"], r: { status: number; headers: Record<string, string>; text: string | null }): boolean {
+  if (!accept) return true;
+  try {
+    return accept({ status: r.status, headers: r.headers, text: r.text ?? "" }) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** The request never got an answer: DNS, socket, timeout, or an edge that could not reach the origin. */
 export class TransportError extends Error {
   /** `retryable: false` for failures that repeating cannot fix (a redirect loop). */
@@ -358,7 +368,7 @@ export class HttpClient {
       result = await attempt(true, 1);
     }
 
-    if (cache && result.status >= 200 && result.status < 300 && result.text !== null) {
+    if (cache && result.status >= 200 && result.status < 300 && result.text !== null && accepted(opts.cache!.accept, result)) {
       const entry: CachedBody = {
         status: result.status, statusText: result.statusText, headers: result.headers, text: result.text, url: result.url
       };

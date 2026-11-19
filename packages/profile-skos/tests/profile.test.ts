@@ -487,19 +487,25 @@ describe("the source of every answer", () => {
   });
 
   it("a burst of answers during a hang waits once, together, and not past the wait from the read's start", async () => {
-    __setSourceWaitForTests(500);
+    __setSourceWaitForTests(400);
     overrides.set(SCHEME, () => new Promise(() => {}) as unknown as Response);
     const c = await client(NO_CACHE);
     await json(c, "vocab_get_concept", { id: "10" }).catch(() => undefined); // warm the engine; this one waits too
     now += 5 * 60_000 + 1; // the five minutes have passed: a new read, which hangs as well
-    const t0 = performance.now();
     const first = json(c, "vocab_get_concept", { id: "10" });
-    await new Promise((r) => setTimeout(r, 300));
-    now += 300; // the mocked clock follows
-    // Ten more arrive 300 ms into the read: they wait the ~200 ms left of its 500, not 500 each.
+    while (schemeReads() < 2) await new Promise((r) => setTimeout(r, 5));
+    now += 300; // ten more arrive 300 ms into the read (by the clock the profile reads; no wall-clock measure)
+    const real = globalThis.setTimeout;
+    const delays: number[] = [];
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (ms !== undefined && ms > 0 && ms <= 400) delays.push(ms);
+      return real(fn, ms, ...rest);
+    }) as typeof setTimeout);
     const burst = await Promise.all(Array.from({ length: 10 }, () => json(c, "vocab_get_concept", { id: "10" })));
     await first;
-    expect(performance.now() - t0).toBeLessThan(750);
+    // Each waits only the 100 ms left of the read's 400, not 400 of its own.
+    expect(delays.length).toBeGreaterThanOrEqual(10);
+    for (const d of delays) expect(d).toBeLessThanOrEqual(100);
     for (const r of burst) expect(r.source.title).toBe("Svada - termer och begrepp");
     expect(schemeReads()).toBe(2);
   });
@@ -769,5 +775,103 @@ describe("concept URIs", () => {
     overrides.set(`${B}services.php?task=fetchTopTerms&output=json`, jsonAnswer(envelope("fetchTopTerms", "", { "3": { term_id: "3", string: "Top", isMetaTerm: "0" } })));
     const out = await json(await client(), "vocab_top_concepts", { vocab: B });
     expect(out.concepts[0].uri).toBe(`${B}xml.php?schema=skos&term_id=3`);
+  });
+});
+
+describe("the HTTP cache keeps only answers the profile can use", () => {
+  const SCHEME = `${S}?task=fetchVocabularyData&output=json`;
+  const GOOD = readFileSync(join(FIX, "vocabulary-data.body"), "utf8");
+
+  it("an answer that does not parse is not cached: once the service recovers, the next call is answered", async () => {
+    let body = "<html><body>Maintenance</body></html>";
+    overrides.set(SCHEME, () => new Response(body, { status: 200, headers: { "content-type": "application/json" } }));
+    const c = await client();
+    expect((await md(c, "vocab_scheme_info", {})).isError).toBe(true);
+    body = GOOD;
+    expect((await json(c, "vocab_scheme_info", {})).scheme.title).toBe("Svada - termer och begrepp");
+    expect((await json(c, "vocab_scheme_info", {})).scheme.title).toBe("Svada - termer och begrepp");
+    expect(requested.filter((u) => u === SCHEME)).toHaveLength(2); // the good answer is cached
+  });
+
+  it("a scheme answer that names nothing, or only blanks, is not cached; one naming only its author or publisher is", async () => {
+    let body = envelope("fetchVocabularyData", "", undefined);
+    overrides.set(SCHEME, () => new Response(body, { status: 200, headers: { "content-type": "application/json" } }));
+    const c = await client();
+    await json(c, "vocab_scheme_info", {});
+    body = envelope("fetchVocabularyData", "", { title: " \u0007 ", uri: "https://begrepp.hagstrom.nu/" });
+    await json(c, "vocab_scheme_info", {});
+    body = GOOD;
+    expect((await json(c, "vocab_scheme_info", {})).scheme.title).toBe("Svada - termer och begrepp");
+    expect(requested.filter((u) => u === SCHEME)).toHaveLength(3);
+    for (const only of [{ author: "Someone" }, { publisher: "Somewhere" }]) {
+      requested = [];
+      body = envelope("fetchVocabularyData", "", { ...only, uri: "https://begrepp.hagstrom.nu/" });
+      const fresh = await client();
+      await json(fresh, "vocab_scheme_info", {});
+      body = GOOD;
+      await json(fresh, "vocab_scheme_info", {});
+      expect(requested.filter((u) => u === SCHEME), JSON.stringify(only)).toHaveLength(1);
+    }
+  });
+
+  it("an answer to a term task that does not parse is still cached for its five minutes, sparing a service that keeps sending a page", async () => {
+    const TOP = `${S}?task=fetchTopTerms&output=json`;
+    overrides.set(TOP, () => new Response("<html>Maintenance</html>", { status: 200, headers: { "content-type": "text/html" } }));
+    const c = await client();
+    for (let i = 0; i < 3; i++) expect((await md(c, "vocab_top_concepts", {})).isError).toBe(true);
+    expect(requested.filter((u) => u === TOP)).toHaveLength(1);
+  });
+
+  it("an empty search result is an answer, and is cached", async () => {
+    const SEARCH = `${S}?task=search&arg=zz&output=json`;
+    overrides.set(SEARCH, jsonAnswer(envelope("search", "zz", undefined)));
+    const c = await client();
+    await json(c, "vocab_search_concepts", { query: "zz" });
+    await json(c, "vocab_search_concepts", { query: "zz" });
+    expect(requested.filter((u) => u === SEARCH)).toHaveLength(1);
+  });
+
+  it("a 200 from the SKOS export that is not RDF/XML is not cached and is asked again after five minutes, not on every call", async () => {
+    const B = "https://checked-tematres.example/";
+    const META = `${B}xml.php?skosMeta=1`;
+    const metaReads = () => requested.filter((u) => u === META).length;
+    let now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    let meta = () => new Response("<!DOCTYPE html><html>Checking your browser</html>", { status: 200, headers: { "content-type": "text/html" } });
+    overrides.set(META, () => meta());
+    overrides.set(`${B}services.php?task=fetchTopTerms&output=json`, jsonAnswer(envelope("fetchTopTerms", "", { "3": { term_id: "3", string: "Top", isMetaTerm: "0" } })));
+    const c = await client({ VOCAB_ALLOWED_DOMAINS: "checked-tematres.example", VOCAB_RATE_LIMIT_ENABLED: "false" }, []);
+    for (let i = 0; i < 3; i++) expect((await json(c, "vocab_top_concepts", { vocab: B })).concepts[0].uri).toBe(`${B}xml.php?schema=skos&term_id=3`);
+    expect(metaReads()).toBe(1);
+    meta = () => new Response(`<rdf:RDF><skos:hasTopConcept rdf:resource="https://id.example/c/3"/></rdf:RDF>`, { status: 200, headers: { "content-type": "application/rdf+xml" } });
+    now += 5 * 60_000 + 1;
+    expect((await json(c, "vocab_top_concepts", { vocab: B })).concepts[0].uri).toBe("https://id.example/c/3");
+    __resetConceptUriBaseMemoForTests();
+    expect((await json(c, "vocab_top_concepts", { vocab: B })).concepts[0].uri).toBe("https://id.example/c/3");
+    expect(metaReads()).toBe(2); // the RDF is cached
+    vi.restoreAllMocks();
+  });
+
+  it("each half of the RDF check refuses on its own: HTML by content type, by first tag, and a body that is not XML", async () => {
+    const cases: [string, string, string][] = [
+      ["html by content type", "text/html; charset=utf-8", `<rdf:RDF><skos:hasTopConcept rdf:resource="https://id.example/c/3"/></rdf:RDF>`],
+      ["html by first tag", "application/rdf+xml", "  <html><body>Login</body></html>"],
+      ["html by doctype", "application/xml", "<!doctype html><p>x</p>"],
+      ["empty", "application/rdf+xml", ""],
+      ["plain text", "text/plain", "Service unavailable"]
+    ];
+    for (const [name, type, text] of cases) {
+      __resetConceptUriBaseMemoForTests();
+      requested = [];
+      const B = `https://${name.replace(/ /g, "-")}.example/`;
+      overrides.set(`${B}xml.php?skosMeta=1`, () => new Response(text, { status: 200, headers: { "content-type": type } }));
+      overrides.set(`${B}services.php?task=fetchTopTerms&output=json`, jsonAnswer(envelope("fetchTopTerms", "", { "3": { term_id: "3", string: "Top", isMetaTerm: "0" } })));
+      const c = await client({ VOCAB_ALLOWED_DOMAINS: new URL(B).hostname }, []);
+      expect((await json(c, "vocab_top_concepts", { vocab: B })).concepts[0].uri, name).toBe(`${B}xml.php?schema=skos&term_id=3`);
+      expect(__conceptUriBaseMemoSizeForTests(), name).toBe(1); // remembered as a refusal
+      __resetConceptUriBaseMemoForTests();
+      await json(c, "vocab_top_concepts", { vocab: B });
+      expect(requested.filter((u) => u === `${B}xml.php?skosMeta=1`), name).toHaveLength(2); // and not cached
+    }
   });
 });

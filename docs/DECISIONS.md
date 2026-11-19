@@ -794,11 +794,9 @@ find.
   top-level `concepts` and keep `source`. (The profile's other shrinkable keys sit inside `concept`, where the core does
   not look; a separate matter.) (2) At a character limit too small for the source line and the truncation marker
   together (at most about 2,800 characters with every field 300 pipes, each escaped to two; the default is 50,000) the
-  core keeps only the start of the trailer. (3) The core caches any 2xx answer before the adapter parses it, so a
-  malformed 200, or a well-formed one with nothing usable, comes back from the cache for the scheme TTL; the source
-  then keeps its last good value or the stand-in for that hour instead of five minutes (the profile retries after five,
-  the cache answers). This holds for every cached TemaTres call, not only the source, so it is a separate change to the
-  core or adapter (not in this commit).
+  core keeps only the start of the trailer. (3) The core cached any 2xx answer before the adapter parsed it, so a
+  malformed 200, or a well-formed one with nothing usable, came back from the cache for the scheme TTL. Fixed
+  separately on 2026-11-19 (next entry): such answers are no longer cached.
 - **Output change**: a new field in JSON and a new last line in Markdown for seven tools; nothing removed or renamed.
   Not a CKAN tool, so rule 4 does not apply. Tests: `packages/profile-skos/tests/profile.test.ts` ("the source of every
   answer", twenty-four tests), a smoke case (`source.title` of Svada concept 10), the snapshot and host tests now count the
@@ -823,3 +821,38 @@ find.
   runtime cancelled it); changed back to a timer per answer, ending when the read's 3 s end. Also: a URI over 300
   characters was cut (now never cut), no test for a late read writing or for the last good URI (added), and the three
   points left as they are were stated wider or narrower than the code (corrected).
+
+## 2026-11-19: the HTTP cache keeps only answers the caller can use
+
+- **Why**: Codex and mcp-reviewer (review of the source of every answer, above): the core cached every 2xx body before
+  the adapter parsed it. A TemaTres service that answered once with a maintenance page, invalid JSON or an empty scheme
+  record under status 200 kept failing from the cache for the TTL (an hour for the scheme and the SKOS export, five minutes for terms),
+  for every cached TemaTres call, after the service had recovered.
+- **What**: `FetchOptions.cache` takes an optional `accept(answer)` (`packages/profile-contract/src/index.ts`); the core
+  caches a 2xx body only when it returns exactly `true`, and not when it throws (`packages/core/src/net/client.ts`).
+  Without it, every 2xx is cached as before, so no other profile changes (CKAN untouched; rule 4). The core names no
+  backend: the check is the caller's.
+- **TemaTres** (`packages/profile-skos/src/adapters/tematres/`): the vocabulary's own data (`fetchVocabularyData`, an
+  hour) is cached only if it parses and names the vocabulary (a title, author or publisher with a character that is
+  neither white space nor a control character, the rule the source of every answer uses). The term tasks keep the
+  core's default (every 2xx, five minutes): checking them would make a service that keeps answering with a page be
+  asked on every call. The SKOS export (`xml.php?skosMeta=1`, an hour) is cached only if it looks like RDF/XML (it
+  starts with a tag, and is not HTML by content type or by a leading doctype or html tag). A 200 that does not is not
+  cached and is remembered as a refusal for five minutes (a 4xx for an hour, as before), so a passing page does not hold
+  the default URI pattern for an hour, and a page that stays is asked once in five minutes, not on every call. RDF/XML
+  without a top concept is the vocabulary's real answer and is cached.
+- **Cost**: the scheme is parsed twice on a cache miss (once to accept it, once to use it). A vocabulary reached by
+  base URL whose scheme never parses (not a TemaTres service) is asked for it on each `vocab_scheme_info` call; the
+  source of every answer asks at most once in five minutes.
+- **Tests**: `packages/core/tests/client.test.ts` (refused, accepted, a check that throws, a truthy non-boolean);
+  `packages/profile-skos/tests/profile.test.ts` ("the HTTP cache keeps only answers the profile can use", six tests,
+  with the cache on). Mutations caught: the core ignoring `accept`, a truthy result accepted, a throwing check caching,
+  the scheme rule reduced to the title, blanks counted as a name, term tasks not cached, each of the three halves of
+  the RDF check, a 200 page not remembered, remembered for an hour, and the export cached whatever it is.
+- **Also in this commit**: the test "a burst of answers during a hang waits once" (the source of every answer) no
+  longer measures wall-clock time, which failed once under a full parallel run; it records the delay each answer's
+  timer is set to and requires each at most the time left of the read's wait.
+- **Reviewed** (mcp-reviewer, 2026-11-19): a page that stays was asked on every call (now five minutes); the RDF check's
+  halves and the author- or publisher-only scheme were untested; the scheme rule differed from the source's (blanks);
+  an empty or plain-text export answer was cached for the hour; a doc comment displaced in the core client; the burst
+  test's rewrite unrecorded. All changed as above.
