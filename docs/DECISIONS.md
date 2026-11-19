@@ -961,7 +961,7 @@ find.
   TemaTres' 19 characters); `ext`'s entry was reserved even when `ext` whole is cheaper; an empty list could be
   reported as cut; stale comments. All changed as above. The steps (Fable's version and the rewrites) are one commit.
 
-## 2026-11-19: three follow-ups from the reviews
+## 2026-11-19: follow-ups from the reviews
 
 - **The CKAN ecosystem's README cache keeps only READMEs** (`packages/profile-ckan-ecosystem/src/tools.ts`). A README
   from raw.githubusercontent.com was cached for a day as any 2xx, so an HTML page in its place (a proxy's or a
@@ -981,3 +981,12 @@ find.
 - **A source field is cut at a whole character** (`field()` in `packages/profile-skos/src/tools.ts`), with the same
   `prefix` as the notes, so a 300-character cap never leaves half of an emoji. Test: the hostile-text source test, with
   a title of 400 emoji; mutation caught: the old `slice`.
+- **The CKAN ecosystem cuts at whole characters too** (follow-up, same day). `short()` (descriptions and plugin lists
+  in search rows) and the end of `readmeOpening` cut by UTF-16 unit and could leave half of an emoji; both now use
+  `wholePrefix` (`packages/profile-ckan-ecosystem/src/data.ts`), the same rule as the SKOS profile's `prefix` (profiles
+  do not share code; the core has no such helper). The first slice in `readmeOpening` stays as it is: it is only
+  searched for a space. The helper is a copy of the SKOS profile's `prefix`; moving it into the core would change the
+  core's surface for three lines, left for when a third profile needs it. Tests: `data.test.ts` (cuts at whole
+  characters, exact values, a late space), `contract.test.ts` (a long description, exact value); mutations caught at
+  both cut sites.
+

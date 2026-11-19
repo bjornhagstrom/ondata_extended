@@ -201,6 +201,13 @@ export function readmeUrl(repo: string, file: string): string {
   return `https://raw.githubusercontent.com/${repo}/HEAD/${file}`;
 }
 
+/** The first `n` UTF-16 units of a text, without leaving half of a character that takes two. */
+export function wholePrefix(text: string, n: number): string {
+  const p = text.slice(0, n);
+  const last = p.charCodeAt(p.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? p.slice(0, -1) : p;
+}
+
 /**
  * The first prose paragraph of a README: headings, badges, images, HTML, code blocks, tables, lists and
  * reStructuredText directives skipped; links reduced to their text. At most `max` characters, cut on a word.
@@ -237,6 +244,6 @@ export function readmeOpening(text: string, max = 600): string | null {
   const para = paragraphs.map(clean).find((p) => p.length >= 40 && /[a-z]{3}/i.test(p) && !/^(pip|git|cd|python|ckan) /i.test(p));
   if (!para) return null;
   if (para.length <= max) return para;
-  const cut = para.slice(0, max);
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 40)).trimEnd()}…`;
+  const cut = para.slice(0, max); // only searched for a space; the cut below decides where the text ends
+  return `${wholePrefix(cut, Math.max(cut.lastIndexOf(" "), max - 40)).trimEnd()}…`;
 }

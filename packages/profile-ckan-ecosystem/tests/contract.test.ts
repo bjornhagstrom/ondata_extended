@@ -66,6 +66,21 @@ describe("ecosystem_search_extensions", () => {
   });
 });
 
+describe("descriptions cut at whole characters", () => {
+  it("a long description in a search row ends in a whole character", async () => {
+    const lone = /[\ud800-\udbff](?![\udc00-\udfff])/;
+    for (const description of ["😀".repeat(150), "x" + "😀".repeat(150)]) {
+      setIndexForTests({ ...SMALL_INDEX, extensions: SMALL_INDEX.extensions.map((e) => e.repo === "ckan/ckanext-dcat" ? { ...e, description } : e) });
+      const r = await tool("ecosystem_search_extensions").rows!({ query: "dcat", limit: 1 }, context(noNetwork().http));
+      expect(r.rows[0].repo).toBe("ckan/ckanext-dcat");
+      expect(lone.test(String(r.rows[0].description))).toBe(false);
+      // Exactly: cut at 199 units, the half emoji dropped, otherwise as before.
+      expect(r.rows[0].description).toBe(description.startsWith("x") ? "x" + "😀".repeat(99) + "…" : "😀".repeat(99) + "…");
+    }
+    setIndexForTests(SMALL_INDEX);
+  });
+});
+
 describe("ecosystem_get_extension", () => {
   const args = { include_readme: true, response_format: "markdown" };
 

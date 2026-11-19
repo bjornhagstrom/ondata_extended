@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findExtensions, portalsUsing, readmeOpening, readmeUrl, search, tokens, usedWith } from "../src/data.js";
+import { findExtensions, portalsUsing, readmeOpening, readmeUrl, search, tokens, usedWith, wholePrefix } from "../src/data.js";
 import { SMALL_INDEX as I } from "./small-index.js";
 
 const FIX = join(import.meta.dirname, "fixtures", "github");
@@ -104,3 +104,25 @@ describe("README openings", () => {
     expect(readmeOpening("# Title\n\n```\ncode\n```\n")).toBeNull();
   });
 });
+
+describe("cuts at whole characters", () => {
+  const lone = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+  it("wholePrefix never ends in half of an emoji", () => {
+    expect(wholePrefix("😀😀", 3)).toBe("😀");
+    expect(wholePrefix("a😀", 2)).toBe("a");
+    expect(wholePrefix("abc", 2)).toBe("ab");
+  });
+
+  it("a README opening cut at its cap keeps whole characters, at an even or odd offset and at a late space", () => {
+    for (const para of ["Abcdef" + "😀".repeat(700), "Abcdefg" + "😀".repeat(700), "Prose " + "😀".repeat(700), "Prose x" + "😀".repeat(700)]) {
+      const out = readmeOpening(`# T\n\n${para}\n`)!;
+      expect(out.endsWith("…")).toBe(true);
+      expect(lone.test(out), para.slice(0, 6)).toBe(false);
+    }
+    // Exactly: 7 letters and 553 units of emoji up to the cut at 560; the half emoji is dropped.
+    expect(readmeOpening(`# T\n\nAbcdefg${"😀".repeat(700)}\n`)).toBe("Abcdefg" + "😀".repeat(276) + "…");
+    // A space after max - 40: the cut is at the space, as before.
+    expect(readmeOpening(`# T\n\n${"a".repeat(570)} ${"😀".repeat(100)}\n`)).toBe("a".repeat(570) + "…");
+  });
+});
+
