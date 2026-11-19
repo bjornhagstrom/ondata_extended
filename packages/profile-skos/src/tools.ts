@@ -470,7 +470,7 @@ export function __setSourceWaitForTests(ms: number | null): void {
 const field = (v: unknown): string | undefined => {
   // eslint-disable-next-line no-control-regex
   const t = typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/ {2,}/g, " ").trim() : "";
-  return t ? (t.length > MAX_SOURCE_FIELD ? `${t.slice(0, MAX_SOURCE_FIELD - 1)}…` : t) : undefined;
+  return t ? (t.length > MAX_SOURCE_FIELD ? `${prefix(t, MAX_SOURCE_FIELD - 1)}…` : t) : undefined;
 };
 /** An http(s) URI of at most `max` characters, or undefined: a URI is never cut, since a cut one names nothing. */
 const uriField = (v: unknown, max = MAX_SOURCE_FIELD): string | undefined => {

@@ -21,9 +21,23 @@ export class NotInIndexError extends Error {
   }
 }
 
-/** READMEs change rarely; a day keeps GitHub's load and the answer time down. */
+/**
+ * An HTML page where raw.githubusercontent.com serves a README as text: a proxy's or a firewall's page under status
+ * 200, not the README.
+ */
+function isHtmlPage(headers: Record<string, string> | undefined, text: string): boolean {
+  return (headers?.["content-type"] ?? "").toLowerCase().includes("html") || /^\s*<(!doctype html|html)\b/i.test(text);
+}
+
+/**
+ * READMEs change rarely; a day keeps GitHub's load and the answer time down. Only a README is cached, not an HTML
+ * page in its place, which would otherwise stand for the day.
+ */
 function readmeOptions(): FetchOptions {
-  return { fixedUpstream: true, userAgent: "honest", cache: { ttlSeconds: 86_400 }, retry: { attempts: 1 } };
+  return {
+    fixedUpstream: true, userAgent: "honest", retry: { attempts: 1 },
+    cache: { ttlSeconds: 86_400, accept: (a) => !isHtmlPage(a.headers, a.text) }
+  };
 }
 
 const responseFormat = z.enum(["markdown", "json"]).default("markdown").describe("Output format: 'markdown' for reading, 'json' for programs");
@@ -108,6 +122,7 @@ async function fetchReadme(e: Extension, ctx: EngineContext): Promise<ReadmeResu
     }
     if (res.status === 404) continue;
     if (res.status < 200 || res.status > 299 || res.text === null) return { kind: "unavailable", status: res.status };
+    if (isHtmlPage(res.headers, res.text)) return { kind: "unavailable" }; // a page in the README's place
     const text = readmeOpening(res.text);
     return text ? { kind: "found", text, url } : { kind: "no-prose" };
   }

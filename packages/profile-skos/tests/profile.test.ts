@@ -482,6 +482,12 @@ describe("the source of every answer", () => {
     overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", { title: "L".repeat(5000), author: "A", uri: "https://begrepp.hagstrom.nu/" })));
     now += 61 * 60_000;
     expect((await json(c, "vocab_get_concept", { id: "10" })).source.title).toHaveLength(300);
+    // A cut never leaves half of a character that takes two UTF-16 units.
+    overrides.set(SCHEME, jsonAnswer(envelope("fetchVocabularyData", "", { title: "😀".repeat(400), author: "A", uri: "https://begrepp.hagstrom.nu/" })));
+    now += 61 * 60_000;
+    const emoji = (await json(c, "vocab_get_concept", { id: "10" })).source.title as string;
+    expect(emoji.length).toBeLessThanOrEqual(300);
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])/.test(emoji)).toBe(false);
   });
   it("the production timings: an hour, five minutes, three seconds, fifteen seconds; 100 vocabularies by URL; 300 characters", () => {
     expect(__SOURCE_TIMINGS).toEqual({ ttlMs: 3_600_000, retryMs: 300_000, waitMs: 3_000, pendingMs: 15_000, max: 100, field: 300 });
@@ -1053,6 +1059,16 @@ describe("one concept in JSON at the character limit", () => {
     // handful for the frame and the fills.
     expect(spy.mock.calls.length).toBeLessThan(3 * 5000 + 50_000 + 500);
     spy.mockRestore();
+  });
+
+  it("a list tool at the limit shrinks its concepts by the core and keeps its source", async () => {
+    manyNarrower("10", 3000);
+    const r = await json(await client({ ...QUIET, VOCAB_CHARACTER_LIMIT: "5000" }), "vocab_narrower", { id: "10" });
+    expect(r._truncated).toBe(true);
+    expect(r._original_count).toBe(3000);
+    expect(r.concepts.length).toBeGreaterThan(10);
+    expect(r.concepts.length).toBeLessThan(3000);
+    expect(r.source.title).toBe("Svada - termer och begrepp");
   });
 
   it("Markdown is not changed by this: no marker fields, the list as before", async () => {

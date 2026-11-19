@@ -961,3 +961,23 @@ find.
   TemaTres' 19 characters); `ext`'s entry was reserved even when `ext` whole is cheaper; an empty list could be
   reported as cut; stale comments. All changed as above. The steps (Fable's version and the rewrites) are one commit.
 
+## 2026-11-19: three follow-ups from the reviews
+
+- **The CKAN ecosystem's README cache keeps only READMEs** (`packages/profile-ckan-ecosystem/src/tools.ts`). A README
+  from raw.githubusercontent.com was cached for a day as any 2xx, so an HTML page in its place (a proxy's or a
+  firewall's page under status 200) would stand for the day. Now the cache's `accept` refuses an HTML answer (by
+  content type or a leading doctype or html tag), and such an answer is reported as an unreadable README instead of
+  being read for its opening (no "HTTP 200" in the note). A README with no prose is still a real answer and is cached.
+  Same failure class as "the HTTP cache keeps only answers the caller can use" (above). A README whose file itself
+  begins with an html tag or doctype would count as a page (none known in the index). Test:
+  `packages/profile-ckan-ecosystem/tests/contract.test.ts`: a page refused by either signal, in Markdown and JSON; a
+  README with no prose, or opening with its own `<p align="center">`, `<h1>` or a comment, still cached and read.
+  Mutations caught: accepting everything, no HTML check on reading, any leading tag taken for HTML, a no-prose README
+  not cached.
+- **The SKOS profile's shrinkable keys are only `concepts`.** The others (`results`, `narrower`, `related`, `broader`,
+  `altLabels`, `notes`, `mappings`) are never top-level in any answer, so the core never used them; one concept's lists
+  are fitted by the profile ("one concept in JSON is cut inside the concept", above). No behaviour change; a test now
+  pins that a list tool at the limit shrinks `concepts` and keeps its source (the `_note` relies on it).
+- **A source field is cut at a whole character** (`field()` in `packages/profile-skos/src/tools.ts`), with the same
+  `prefix` as the notes, so a 300-character cap never leaves half of an emoji. Test: the hostile-text source test, with
+  a title of 400 emoji; mutation caught: the old `slice`.
