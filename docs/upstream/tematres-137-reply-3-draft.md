@@ -1,6 +1,7 @@
 <!--
 POSTED 2026-11-19: https://github.com/tematres/TemaTres-Vocabulary-Server/issues/137#issuecomment-7008561221
 (body posted with paragraphs unwrapped; otherwise as below).
+Edited 2026-11-19 12:46 UTC (Björn): "We have that change ready … if you want it" became "That change is now #146".
 DRAFT reply (a comment) on tematres/TemaTres-Vocabulary-Server#137, to Diego Ferreyra's answer of 2026-11-18 12:25 UTC
 (https://github.com/tematres/TemaTres-Vocabulary-Server/issues/137#issuecomment-6978491901).
 Reader: Diego Ferreyra, TemaTres's maintainer, researcher in knowledge organisation at UBA.
@@ -33,8 +34,8 @@ Thank you, Diego.
 internal and external mappings. Two small things:
 
 - sort them by date and then by id from the start. When many rows share one date, as after an import, the result
-  limit (200 by default) can otherwise pick different rows from one call to the next. We have that change ready for
-  `termsSince` and `relationsSince`, if you want it;
+  limit (200 by default) can otherwise pick different rows from one call to the next. That change is now #146 for
+  `termsSince` and `relationsSince`;
 - keep private notes out of `notesSince`, as the SKOS export does.
 
 **The API without a session.** Glad it fits the RSS idea. We will come back with it as a small PR.
