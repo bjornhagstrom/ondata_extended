@@ -44,7 +44,9 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
     ...(options.hostPolicies
       ? { hostPolicies: Object.fromEntries(Object.entries(options.hostPolicies).map(([host, policy]) => [host.toLowerCase(), policy])) }
       : {}),
-    shrinkableKeys: ["concepts", "results", "narrower", "related", "broader", "altLabels", "notes", "mappings"],
+    // The core shrinks top-level lists only; one concept's lists sit inside `concept` and are fitted by the profile
+    // (fitConceptAnswer in tools.ts).
+    shrinkableKeys: ["concepts"],
     telemetryFields: ["vocab", "query", "prefix", "id", "limit", "response_format"],
     untrustedSourceLabel: "the vocabulary service",
     honestUserAgent: `Vocab-MCP-Server/${PROFILE_VERSION}`,

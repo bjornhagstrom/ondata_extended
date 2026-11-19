@@ -73,7 +73,17 @@ describe("ecosystem_get_extension", () => {
     const { http, calls } = fakeHttp(() => response("# T\n\nThis extension exposes and harvests DCAT metadata in CKAN portals."));
     const r = await tool("ecosystem_get_extension").handler!({ extension: "ckan/ckanext-dcat", ...args }, context(http));
     expect(calls.map((c) => c.url)).toEqual(["https://raw.githubusercontent.com/ckan/ckanext-dcat/HEAD/README.md"]);
-    expect(calls[0].opts).toEqual({ fixedUpstream: true, userAgent: "honest", cache: { ttlSeconds: 86_400 }, retry: { attempts: 1 } });
+    expect(calls[0].opts).toEqual({ fixedUpstream: true, userAgent: "honest", cache: { ttlSeconds: 86_400, accept: expect.any(Function) }, retry: { attempts: 1 } });
+    // Only a README is cached, not an HTML page in its place.
+    const accept = calls[0].opts!.cache!.accept!;
+    expect(accept({ status: 200, headers: { "content-type": "text/plain; charset=utf-8" }, text: "# T\n\nProse." })).toBe(true);
+    expect(accept({ status: 200, headers: { "content-type": "text/html" }, text: "Blocked" })).toBe(false);
+    expect(accept({ status: 200, headers: {}, text: "  <!DOCTYPE html><html><body>Sign in</body></html>" })).toBe(false);
+    expect(accept({ status: 200, headers: {}, text: "<HTML>" })).toBe(false);
+    // What must still be cached: a README with no prose, and READMEs that open with HTML of their own.
+    expect(accept({ status: 200, headers: { "content-type": "text/plain" }, text: "# Title\n\n```\npip install x\n```\n" })).toBe(true);
+    expect(accept({ status: 200, headers: { "content-type": "text/plain" }, text: '<p align="center"><img src="logo.png"></p>\n\nProse.' })).toBe(true);
+    expect(accept({ status: 200, headers: { "content-type": "text/plain" }, text: "<!-- badges -->\n# T\n\nProse." })).toBe(true);
     expect(text(r)).toContain("This extension exposes and harvests DCAT metadata");
     expect(text(r)).toContain("untrusted content from the extension repositories on GitHub");
   });
@@ -101,6 +111,26 @@ describe("ecosystem_get_extension", () => {
     const r2 = await tool("ecosystem_get_extension").handler!({ extension: "ckan/ckanext-dcat", ...args }, context(down.http));
     expect(text(r2)).toContain("The README could not be read from GitHub just now.");
     expect(text(r2)).not.toContain("network down");
+  });
+
+  it("a README that opens with HTML of its own is still read for its opening", async () => {
+    const readme = fakeHttp(() => ({ ...response('<h1 align="center">ckanext-dcat</h1>\n\nThis extension exposes and harvests DCAT metadata in CKAN portals.'), headers: { "content-type": "text/plain; charset=utf-8" } }));
+    const r = await tool("ecosystem_get_extension").handler!({ extension: "ckan/ckanext-dcat", ...args }, context(readme.http));
+    expect(text(r)).toContain("This extension exposes and harvests DCAT metadata");
+  });
+
+  it("an HTML page in the README's place is not shown as its opening, and is said to be unreadable", async () => {
+    const page = fakeHttp(() => ({ ...response("<!DOCTYPE html><html><body><p>Please sign in to continue to the network.</p></body></html>"), headers: { "content-type": "text/html" } }));
+    const r = await tool("ecosystem_get_extension").handler!({ extension: "ckan/ckanext-dcat", ...args }, context(page.http));
+    expect(page.calls).toHaveLength(1);
+    expect(text(r)).toContain("The README could not be read from GitHub just now.");
+    expect(text(r)).not.toContain("sign in");
+    expect(text(r)).not.toContain("HTTP 200");
+    // The same in JSON, and with only one of the two signals (a text/plain header, a leading html tag).
+    const plain = fakeHttp(() => ({ ...response("<html><body><p>Please sign in to continue to the network.</p></body></html>"), headers: { "content-type": "text/plain" } }));
+    const j = JSON.parse(text(await tool("ecosystem_get_extension").handler!({ extension: "ckan/ckanext-dcat", include_readme: true, response_format: "json" }, context(plain.http))));
+    expect(j.readme_opening).toBeNull();
+    expect(j.readme_note).toContain("could not be read");
   });
 
   it("makes no request with include_readme false, or for a repository not on GitHub", async () => {
