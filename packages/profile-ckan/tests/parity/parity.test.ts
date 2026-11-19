@@ -95,6 +95,49 @@ for (const caseId of ["sparql-bad-query-md", "sparql-bad-query-json"]) {
   };
 }
 
+/**
+ * Tool list entries that differ from ondata's at 09e8cdc on purpose: each gives ondata's entry
+ * with exactly the change of the ported upstream commit applied; the rest must still be equal.
+ */
+type ToolEntry = { description: string; inputSchema: { properties: Record<string, unknown> } };
+function replaceOnce(text: string, from: string, to: string): string {
+  expect(text.split(from)).toHaveLength(2);
+  return text.replace(from, to);
+}
+const LIST_DEVIATIONS: Record<string, { id: string; expected(theirs: ToolEntry, all: Record<string, ToolEntry>): ToolEntry }> = {
+  /** D16: ondata 81fad15 (#600) gives ckan_find_portals `response_format`, the schema every other tool uses. */
+  ckan_find_portals: {
+    id: "D16",
+    expected(theirs, all) {
+      const responseFormat = all.ckan_tag_list.inputSchema.properties.response_format;
+      expect(responseFormat).toBeDefined();
+      return {
+        ...theirs,
+        description: replaceOnce(theirs.description,
+          "  - limit (number): Max results to return (default 10, max 50)\n",
+          "  - limit (number): Max results to return (default 10, max 50)\n  - response_format ('markdown' | 'json'): Output format (default: 'markdown')\n"),
+        inputSchema: { ...theirs.inputSchema, properties: { ...theirs.inputSchema.properties, response_format: responseFormat } }
+      };
+    }
+  },
+  /** D17: ondata bbb4a26 (#603) lets ckan_datastore_search take `q` as a string or { column: word }. */
+  ckan_datastore_search: {
+    id: "D17",
+    expected(theirs) {
+      return {
+        ...theirs,
+        description: replaceOnce(theirs.description,
+          "  - q (string): Full-text search query (optional)\n",
+          "  - q (string | object): Full-text search (optional). A string searches all fields; an object such as { \"column\": \"word\" } searches only that column. Some portals refuse whole-table full-text search on large tables but accept the column form\n"),
+        inputSchema: { ...theirs.inputSchema, properties: { ...theirs.inputSchema.properties, q: {
+          anyOf: [{ type: "string" }, { type: "object", additionalProperties: { type: "string" } }],
+          description: "Full-text search: a string searches all fields; an object { \"column\": \"word\" } searches only that column (accepted by some portals that refuse full-text search on large tables)"
+        } } }
+      };
+    }
+  }
+};
+
 describe.runIf(ondataAvailable() && recordings.length > 0)("parity with ondata/ckan-mcp-server 09e8cdc", () => {
   describe("ondata replays its own recording exactly (harness determinism)", () => {
     for (const rec of recordings) {
@@ -126,7 +169,9 @@ describe.runIf(ondataAvailable() && recordings.length > 0)("parity with ondata/c
       const ours = await (await ourClient())[list]();
       expect(Object.keys(ours).sort()).toEqual(Object.keys(theirs).sort());
       for (const [name, entry] of Object.entries(ours)) {
-        expect({ name, entry }).toEqual({ name, entry: theirs[name] });
+        const deviation = list === "listTools" ? LIST_DEVIATIONS[name] : undefined;
+        const expected = deviation ? deviation.expected(theirs[name] as ToolEntry, theirs as Record<string, ToolEntry>) : theirs[name];
+        expect({ name, entry }).toEqual({ name, entry: expected });
       }
     });
   }

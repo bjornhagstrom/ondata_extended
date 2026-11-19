@@ -990,3 +990,28 @@ find.
   characters, exact values, a late space), `contract.test.ts` (a long description, exact value); mutations caught at
   both cut sites.
 
+
+## 2026-11-19: ondata's CKAN changes since cb2119d reviewed (upstream watch, issue #1)
+
+23 commits on ondata/ckan-mcp-server between `cb2119d` and `c3d7dc0` (origin/main on 2026-11-19): three code
+commits, ported below, two release commits, and eighteen data and docs commits (`chore(data):` telemetry and download
+updates, two `docs(log):` live-check notes), which the watch ignores. The watch baseline moves to `c3d7dc0`. The
+parity reference stays at `09e8cdc` (the recordings and the clone are unchanged).
+
+- **Ported: `9e52cfa`** (#598): `ckan_find_portals` reads null registry fields as empty (the `language` filter failed
+  on every call: 3 of 945 active portals have no default locale); data.gov.au routed to its `/data` API base, Data.NSW
+  added to `portals.json`; the "Full JSON metadata" links and `api_json_url` built on the routed base
+  (`getPortalActionBase`, in `packages/profile-ckan/src/utils/portal-config.ts`). Deviation D15. ondata has no test
+  for the links; two new ones in `package-show-formatting.test.ts`.
+- **Ported: `81fad15`** (#600): data.europa.eu in `portals.json` as a migrated portal whose notice says it is not
+  CKAN and points to `sparql_query`; `ckan_find_portals` takes `response_format` (JSON through the core's JSON result,
+  errors through `formatError`). Deviation D16; the `tools/list` entry is checked against ondata's with exactly this
+  change applied. ondata's `docs/JSON-OUTPUT.md` change has no counterpart here.
+- **Ported: `bbb4a26`** (#603): `ckan_datastore_search` `q` as a string or `{ column: word }` (sent JSON-encoded); a
+  409 hint on `datastore_search` for "full text search is not supported". Deviation D17, `tools/list` checked as D16.
+- **Dismissed: `ae9cab2`, `2f84a9d`** (v0.4.143, v0.4.144): version bumps and release notes, releasing #598 and #600;
+  no other runtime change. Our version is our own (D13).
+- `portals.json` is now byte-identical to ondata's at `c3d7dc0`; the tool texts of `ckan_find_portals` and
+  `ckan_datastore_search` and the new hint are ondata's, byte for byte. 14 ondata tests (grep count) ported with
+  unchanged expectations, each failing with its change reverted except two that pin existing behaviour; five new
+  tests for branches ondata does not test (`docs/test-parity.md`). Reviewed by `mcp-reviewer` before the commit. D15 to D17 leave the deviation list when the parity baseline moves past them.

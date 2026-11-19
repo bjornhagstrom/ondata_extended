@@ -2,7 +2,7 @@
 // Reach: the fake network moved from axios to fetch (helpers.ts) and the tool is called through
 // the CKAN profile on the core; ondata's axios timeout (ECONNABORTED) becomes a fetch that never
 // answers until the 50 ms CKAN_TIMEOUT_MS aborts it, its 404 rejection a 404 response.
-// Expectations unchanged.
+// Expectations unchanged. Includes the test added in ondata 81fad15 (#600, D16).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { __setDnsResolverForTests } from "@ondata-extended/core";
 import { ckanClient, fetchedUrl, jsonResponse, mockFetch, stubPublicDns } from "./helpers.js";
@@ -50,6 +50,17 @@ describe("ckan_status_show on a site that is not the CKAN API", () => {
     expect(result.isError).toBe(true);
     expect(text).toContain("stopped being a CKAN portal");
     expect(text).not.toContain("ckan_find_portals");
+  });
+
+  it("on data.europa.eu says it is not CKAN, not that it is offline", async () => {
+    mockFetch(async () => jsonResponse({}, { status: 404 }));
+
+    const result = await callStatus("https://data.europa.eu");
+    const text = result.content[0].text;
+
+    expect(result.isError).toBe(true);
+    expect(text).toContain("not a CKAN portal");
+    expect(text).not.toContain("offline");
   });
 
   it("routes open.toronto.ca to its CKAN API host", async () => {

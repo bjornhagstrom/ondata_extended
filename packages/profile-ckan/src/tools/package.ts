@@ -1,7 +1,8 @@
 /**
  * CKAN Package (Dataset) tools
  *
- * Ported from ondata/ckan-mcp-server src/tools/package.ts at 09e8cdc (MIT, see NOTICE.md).
+ * Ported from ondata/ckan-mcp-server src/tools/package.ts at 09e8cdc (MIT, see NOTICE.md),
+ * with the JSON metadata links on the routed API base of ondata 9e52cfa (#598, D15).
  */
 
 import { z } from "zod";
@@ -14,7 +15,7 @@ import { addDemoFooter, wrapUntrusted } from "../utils/formatting.js";
 import { getDatasetSchema, renderSchemaFields, formatFieldsMarkdown, type RenderedField } from "../utils/scheming.js";
 import { getDatasetViewUrl, extractSourcePortal } from "../utils/url-generator.js";
 import { resolveSearchQuery, stripAccents, hasAccents, isPlainMultiTermQuery, buildOrQuery, mayNeedTextWrapping, hasExplicitBooleanOperator } from "../utils/search.js";
-import { getPortalHvdConfig, getPortalApiPath, requiresMultilingualNormalization } from "../utils/portal-config.js";
+import { getPortalHvdConfig, getPortalActionBase, requiresMultilingualNormalization } from "../utils/portal-config.js";
 
 /**
  * Session cache for auto-detected parser mode on unknown portals.
@@ -510,7 +511,7 @@ export const formatPackageShowMarkdown = (result: CkanPackage, serverUrl: string
   let markdown = `# Dataset: ${sanitizeInline(result.title || result.name)}\n\n`;
   markdown += `**Server**: ${serverUrl}\n`;
   markdown += `**Link**: ${getDatasetViewUrl(serverUrl, result)}\n`;
-  markdown += `**Full JSON metadata**: ${serverUrl.replace(/\/$/, '')}${getPortalApiPath(serverUrl)}/package_show?id=${encodeURIComponent(result.id)}\n\n`;
+  markdown += `**Full JSON metadata**: ${getPortalActionBase(serverUrl)}/package_show?id=${encodeURIComponent(result.id)}\n\n`;
 
   markdown += `## Basic Information\n\n`;
   markdown += `- **ID**: \`${sanitizeInline(result.id)}\`\n`;
@@ -614,7 +615,7 @@ export const formatPackageShowMarkdown = (result: CkanPackage, serverUrl: string
       } else {
         markdown += `- **DataStore**: ❓ Not reported by portal\n`;
       }
-      markdown += `- **Full JSON metadata**: ${serverUrl.replace(/\/$/, '')}${getPortalApiPath(serverUrl)}/resource_show?id=${encodeURIComponent(resource.id)}\n`;
+      markdown += `- **Full JSON metadata**: ${getPortalActionBase(serverUrl)}/resource_show?id=${encodeURIComponent(resource.id)}\n`;
       markdown += '\n';
     }
   }
@@ -822,11 +823,11 @@ export function compactPackageShow(result: CkanPackage, serverUrl?: string): obj
       datastore_active: r.datastore_active ?? null,
       created: r.created || null,
       last_modified: r.last_modified || null,
-      ...(serverUrl ? { api_json_url: `${serverUrl.replace(/\/$/, '')}${getPortalApiPath(serverUrl)}/resource_show?id=${r.id}` } : {})
+      ...(serverUrl ? { api_json_url: `${getPortalActionBase(serverUrl)}/resource_show?id=${r.id}` } : {})
     })),
     ...(serverUrl ? {
       view_url: getDatasetViewUrl(serverUrl, result),
-      api_json_url: `${serverUrl.replace(/\/$/, '')}${getPortalApiPath(serverUrl)}/package_show?id=${result.id}`
+      api_json_url: `${getPortalActionBase(serverUrl)}/package_show?id=${result.id}`
     } : {})
   };
 }

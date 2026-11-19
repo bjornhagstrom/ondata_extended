@@ -1,13 +1,14 @@
 /**
  * Portal Discovery tool — finds CKAN portals via datashades.info registry
  *
- * Ported from ondata/ckan-mcp-server src/tools/portal-discovery.ts at 09e8cdc (MIT, see NOTICE.md).
+ * Ported from ondata/ckan-mcp-server src/tools/portal-discovery.ts at 09e8cdc (MIT, see NOTICE.md),
+ * with ondata 9e52cfa (#598, null registry fields, D15) and 81fad15 (#600, response_format, D16).
  */
 
 import { z } from "zod";
 import type { EngineContext } from "@ondata-extended/profile-contract";
-import { cappedStructured } from "@ondata-extended/core";
-import { defineTool } from "../types.js";
+import { cappedStructured, formatError } from "@ondata-extended/core";
+import { ResponseFormat, ResponseFormatSchema, defineTool } from "../types.js";
 import { formatCkanError } from "../utils/http.js";
 import { fetchAsResponse } from "../utils/fetch.js";
 import { addDemoFooter, SHRINKABLE_KEYS } from "../utils/formatting.js";
@@ -16,7 +17,7 @@ const DATASHADES_URL = "https://datashades.info/api/portal/list";
 
 interface DatashadesPortal {
   Href: string;
-  SiteInfo: { site_title: string; locale_default: string };
+  SiteInfo: { site_title: string; locale_default: string | null };
   Coordinates: { country_name: string };
   Version: string;
   Plugins: string[];
@@ -99,10 +100,11 @@ function filterPortals(
 ): DatashadesPortal[] {
   const filtered = portals
     .filter(p => p.status === "active" && p.Href)
-    .filter(p => !params.country || p.Coordinates.country_name.toLowerCase().includes(params.country.toLowerCase()))
-    .filter(p => !params.query || p.SiteInfo.site_title.toLowerCase().includes(params.query.toLowerCase()))
+    // The registry has active portals with null fields (locale_default on 3 of 945, 2026-11-15)
+    .filter(p => !params.country || (p.Coordinates?.country_name ?? "").toLowerCase().includes(params.country.toLowerCase()))
+    .filter(p => !params.query || (p.SiteInfo?.site_title ?? "").toLowerCase().includes(params.query.toLowerCase()))
     .filter(p => params.min_datasets === undefined || p.DatasetsNumber >= params.min_datasets)
-    .filter(p => !params.language || p.SiteInfo.locale_default.toLowerCase().startsWith(params.language.toLowerCase()))
+    .filter(p => !params.language || (p.SiteInfo?.locale_default ?? "").toLowerCase().startsWith(params.language.toLowerCase()))
     .filter(p => !params.has_datastore || (p.Plugins || []).includes("datastore"));
 
   return deduplicateByHostname(filtered)
@@ -115,7 +117,7 @@ function formatMarkdown(portals: DatashadesPortal[], total: number, _limit: numb
   if (portals.length === 0) return "No CKAN portals found matching the given filters.";
 
   const rows = portals.map(p =>
-    `| [${p.SiteInfo.site_title || p.Href}](${p.Href}) | ${p.Coordinates.country_name} | ${p.Version} | ${p.DatasetsNumber.toLocaleString()} | ${p.SiteInfo.locale_default} | ${(p.Plugins || []).includes("datastore") ? "✅" : "❌"} |`
+    `| [${p.SiteInfo.site_title || p.Href}](${p.Href}) | ${p.Coordinates.country_name} | ${p.Version} | ${p.DatasetsNumber.toLocaleString()} | ${p.SiteInfo.locale_default ?? ""} | ${(p.Plugins || []).includes("datastore") ? "✅" : "❌"} |`
   ).join("\n");
 
   return `# CKAN Portals
@@ -150,6 +152,7 @@ Args:
   - language (string): Portal default locale code (e.g. "it", "en", "pt_BR", "fr")
   - has_datastore (boolean): If true, return only portals with DataStore enabled (supports SQL queries)
   - limit (number): Max results to return (default 10, max 50)
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
   Ranked list of matching portals with URL, country, CKAN version, dataset count, and DataStore status.
@@ -161,7 +164,8 @@ Typical workflow: ckan_find_portals (discover portal URL) → ckan_status_show (
     min_datasets: z.coerce.number().int().min(0).optional().describe("Minimum number of datasets"),
     language: z.string().optional().describe("Portal default locale code (e.g. 'it', 'en', 'pt_BR')"),
     has_datastore: z.boolean().optional().describe("If true, return only portals with DataStore plugin (required for SQL queries)"),
-    limit: z.coerce.number().int().min(1).max(50).optional().default(10).describe("Max results (default 10, max 50)")
+    limit: z.coerce.number().int().min(1).max(50).optional().default(10).describe("Max results (default 10, max 50)"),
+    response_format: ResponseFormatSchema
   },
   strictInput: true,
   annotations: {
@@ -183,6 +187,20 @@ Typical workflow: ckan_find_portals (discover portal URL) → ckan_status_show (
         limit: params.limit
       });
 
+      const portals = results.map(p => ({
+        url: p.Href,
+        title: p.SiteInfo.site_title,
+        country: p.Coordinates.country_name,
+        version: p.Version,
+        datasets: p.DatasetsNumber,
+        locale: p.SiteInfo.locale_default,
+        has_datastore: (p.Plugins || []).includes("datastore")
+      }));
+
+      if (params.response_format === ResponseFormat.JSON) {
+        return ctx.output.json({ portals });
+      }
+
       const markdown = formatMarkdown(results, active.length, params.limit);
 
       // Text channel is Markdown, so cap the structured payload on its own. The 50-result
@@ -190,19 +208,11 @@ Typical workflow: ckan_find_portals (discover portal URL) → ckan_status_show (
       // datashades.info and have no length bound (#39).
       return {
         content: [{ type: "text", text: ctx.output.truncateText(addDemoFooter(ctx, markdown)) }],
-        structuredContent: cappedStructured({ portals: results.map(p => ({
-          url: p.Href,
-          title: p.SiteInfo.site_title,
-          country: p.Coordinates.country_name,
-          version: p.Version,
-          datasets: p.DatasetsNumber,
-          locale: p.SiteInfo.locale_default,
-          has_datastore: (p.Plugins || []).includes("datastore")
-        }))}, ctx.limits.characterLimit, SHRINKABLE_KEYS) as Record<string, unknown>
+        structuredContent: cappedStructured({ portals }, ctx.limits.characterLimit, SHRINKABLE_KEYS) as Record<string, unknown>
       };
     } catch (error) {
       return {
-        content: [{ type: "text", text: `Could not fetch portal list from datashades.info:\n${formatCkanError(error, "ckan_find_portals")}` }],
+        content: [{ type: "text", text: formatError(`Could not fetch portal list from datashades.info:\n${formatCkanError(error, "ckan_find_portals")}`, params.response_format === ResponseFormat.JSON) }],
         isError: true
       };
     }
