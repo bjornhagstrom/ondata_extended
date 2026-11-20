@@ -1015,3 +1015,14 @@ parity reference stays at `09e8cdc` (the recordings and the clone are unchanged)
   `ckan_datastore_search` and the new hint are ondata's, byte for byte. 14 ondata tests (grep count) ported with
   unchanged expectations, each failing with its change reverted except two that pin existing behaviour; five new
   tests for branches ondata does not test (`docs/test-parity.md`). Reviewed by `mcp-reviewer` before the commit. D15 to D17 leave the deviation list when the parity baseline moves past them.
+
+## 2026-11-20: D10 (undeclared gzip) is not worth reporting to ondata
+
+Checked whether ondata's Worker users meet the gap D10 closes (a gzip body without `Content-Encoding` is unpacked by
+ondata's Node path, not by its Worker). ondata added the magic-byte unpacking on 2026-02-01 ("Fix compressed datastore
+responses", v0.4.29) for the DataStore of dati.comune.messina.it. Two requests on 2026-11-20 (honest User-Agent, two
+seconds apart): with `Accept-Encoding: identity` (ondata's Worker) Messina answers plain JSON; with `gzip, deflate,
+br` (ondata's Node path) it answers Brotli and says so in `Content-Encoding: br`. No portal in our 133 recorded
+requests to 9 hosts sends undeclared gzip either. So no user-facing failure is known; D10 stays a deviation, not a
+report. Revisit only if a portal is seen sending gzip without the header.
+
