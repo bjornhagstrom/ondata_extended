@@ -1,5 +1,6 @@
 /**
- * Ported from ondata/ckan-mcp-server src/utils/portal-config.ts at 09e8cdc (MIT, see NOTICE.md).
+ * Ported from ondata/ckan-mcp-server src/utils/portal-config.ts at 09e8cdc (MIT, see NOTICE.md),
+ * with `getPortalActionBase` of ondata 9e52cfa (#598, D15).
  */
 
 import portalsConfig from '../portals.json';
@@ -133,6 +134,23 @@ export function getPortalSparqlConfig(serverUrl: string): SparqlConfig | null {
 export function getPortalApiPath(serverUrl: string): string {
   const portal = getPortalConfig(serverUrl);
   return portal?.api_path || '/api/3/action';
+}
+
+/**
+ * The action endpoint base a request to `serverUrl` really goes to: configured
+ * portals are routed by hostname, as `makeCkanRequest` does, so a link built from
+ * the caller's spelling can miss the API (data.gov.au answers only under /data).
+ * (ondata 9e52cfa, #598)
+ */
+export function getPortalActionBase(serverUrl: string): string {
+  let base = serverUrl;
+  try {
+    base = getPortalApiUrlForHostname(new URL(serverUrl).hostname) ?? serverUrl;
+  } catch {
+    // Keep the provided URL if parsing fails
+  }
+  base = base.replace(/\/$/, '');
+  return `${base}${getPortalApiPath(base)}`;
 }
 
 export function requiresMultilingualNormalization(serverUrl: string): boolean {

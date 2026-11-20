@@ -110,3 +110,24 @@ describe("temporal coverage (dct:temporal)", () => {
     expect((compactPackageShow({ ...base } as any) as any).temporal_coverage).toEqual([]);
   });
 });
+
+// New here (ondata 9e52cfa, #598, D15, has no test for these links): the "Full JSON metadata"
+// links and api_json_url are built on the API base the request is routed to, so a caller who
+// writes https://data.gov.au gets the /data API that answers, not the 404 under /api/3.
+describe("JSON metadata links on the routed API base", () => {
+  it("point data.gov.au at /data/api/3/action in Markdown and JSON", () => {
+    const result = packageShowFixture.result as any;
+    const markdown = formatPackageShowMarkdown(result, "https://data.gov.au");
+    expect(markdown).toContain(`**Full JSON metadata**: https://data.gov.au/data/api/3/action/package_show?id=${encodeURIComponent(result.id)}`);
+    expect(markdown).toContain("- **Full JSON metadata**: https://data.gov.au/data/api/3/action/resource_show?id=res-1");
+
+    const compact = compactPackageShow(result, "https://data.gov.au") as any;
+    expect(compact.api_json_url).toBe(`https://data.gov.au/data/api/3/action/package_show?id=${result.id}`);
+    expect(compact.resources[0].api_json_url).toBe(`https://data.gov.au/data/api/3/action/resource_show?id=${compact.resources[0].id}`);
+  });
+
+  it("keep an unknown portal's own spelling", () => {
+    const result = packageShowFixture.result as any;
+    expect(formatPackageShowMarkdown(result, "http://demo.ckan.org/")).toContain(`**Full JSON metadata**: http://demo.ckan.org/api/3/action/package_show?id=${encodeURIComponent(result.id)}`);
+  });
+});

@@ -3,7 +3,8 @@
  *
  * Ported from ondata/ckan-mcp-server src/utils/http.ts at 09e8cdc (MIT, see NOTICE.md). The
  * error classes, `extractCkanErrorMessage`, `httpError` and `formatCkanError` are ondata's,
- * unchanged. `makeCkanRequest` keeps ondata's fetch path (the one its Worker runs: identity
+ * unchanged, plus the `datastore_search` 409 hint of ondata bbb4a26 (#603, D17) and the `"col"::float`
+ * wording of 3369eac (D14). `makeCkanRequest` keeps ondata's fetch path (the one its Worker runs: identity
  * encoding, browser User-Agent with one honest retry for an Anubis page, 30 s timeout covering
  * the body, five redirect hops, result cache with ondata's TTL table) but sends through the
  * core HTTP client, which owns the SSRF guards, size caps, rate limit and Anubis retry.
@@ -176,6 +177,10 @@ export function formatCkanError(error: unknown, _toolName: string): string {
     }
   } else if (status === 409 && action === 'datastore_search_sql') {
     hint = '→ The portal rejected the SQL (reason above). Check table and column names with `ckan_datastore_search` (limit 1), then fix the query.';
+  } else if (status === 409 && action === 'datastore_search' && /full text search is not supported/i.test(error.ckanReason ?? '')) {
+    // ckanext-canada (open.canada.ca) refuses a plain-string q on tables over its row limit;
+    // a column-scoped q is not affected.
+    hint = '→ This portal refuses full-text search over the whole table on large tables. Search one column instead: `q: {"column":"word"}` (column names from `limit: 0`). Otherwise use `filters` for exact matches, or `ckan_datastore_search_sql` with `WHERE "column" ILIKE \'%word%\'`.';
   } else if (status === 409 || status === 422) {
     hint = '→ Portal rejected the request — parameters may conflict; simplify filters and retry.';
   } else if (status === 503 || status === 502 || status === 504) {

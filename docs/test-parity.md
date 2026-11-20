@@ -122,7 +122,7 @@ error, a missing resource, a missing group, resources of a second portal, each i
 | `tests/integration/quality.test.ts` | 29 | `quality-integration.test.ts` | `package_show` (axios there) and the MQA calls (fetch) both reach the fake `fetch` through the core: CKAN API calls answered from a queue the former axios mocks fill, the rest by the MQA mock the tests configure and assert as before; mock answers are real `Response` objects; `getMqaQuality` takes the context first |
 | `tests/integration/analyze.test.ts` | 15 | `analyze-integration.test.ts` | axios mocks → fake `fetch`; the formatter called through an untyped alias (partial datasets) |
 | `tests/integration/sparql.test.ts` | 27 (+15 from `3369eac`, D14) | `sparql-integration.test.ts` | real `Response` objects; ondata's AbortError case runs on the core's own deadline here, and its stalled-body case on a 400 whose body stalls; three more cases pin the 4 KB boundary, a body above 64 KiB and a stall after 4 KB, and the cap and string-literal cases are sharpened (ondata's pass without the change); request headers read with `fetchedHeaders` (the core passes a `Headers` object); method and body still asserted with `toHaveBeenCalledWith` |
-| `tests/integration/portal-discovery.test.ts` | 4 | `portal-discovery.test.ts` | ondata's module cache is the engine's: calls that must share it use one client; DNS stubbed |
+| `tests/integration/portal-discovery.test.ts` | 4 (more since 09e8cdc: see "Ported ahead of the baseline") | `portal-discovery.test.ts` | ondata's module cache is the engine's: calls that must share it use one client; DNS stubbed |
 | `tests/unit/sanitize-inline.test.ts` 45-71 | 1 | `sanitize-inline-ckan.test.ts` | import path |
 
 76 ondata tests ported in round 4, all green, no expectation changed, nothing skipped. New tests:
@@ -144,6 +144,30 @@ second portal, three offline (not SELECT, http endpoint, MQA on another portal):
 09e8cdc is now ported or listed above with its reason. The parity check now also compares `prompts/list` and
 `resources/templates/list` with ondata's, and all three lists must have the same entries (the port is complete): all
 121 cases pass on all three passes, none is `todo`.
+
+### Ported ahead of the baseline (ondata after `09e8cdc`)
+
+ondata's tests for the changes ported ahead of the baseline move (D14 above in round 4; D15 to D17 here, 2026-11-19),
+added to the files that hold the same ondata file's earlier tests:
+
+| ondata commit and test file | Tests | Here | How the reach changed |
+|---|---|---|---|
+| `9e52cfa` (#598) `tests/unit/portal-config.test.ts` | 3 | `portal-config.test.ts` | import path |
+| `9e52cfa` (#598) `tests/integration/portal-discovery.test.ts` | 1 | `portal-discovery.test.ts` | as the file's earlier tests |
+| `81fad15` (#600) `tests/unit/portal-config.test.ts` | 1 (3 with `it.each`) | `portal-config.test.ts` | import path |
+| `81fad15` (#600) `tests/integration/portal-discovery.test.ts` | 3 | `portal-discovery.test.ts` | as the file's earlier tests |
+| `81fad15` (#600) `tests/integration/status-hint.test.ts` | 1 | `status-hint.test.ts` | ondata's 404 rejection (axios) → a 404 response |
+| `81fad15` (#600) `tests/unit/http.test.ts` (`formatCkanError`) | 2 | `http.test.ts` | import path |
+| `bbb4a26` (#603) `tests/integration/datastore-q-column.test.ts` | 3 | `datastore-q-column.test.ts` | the tool called through the whole profile on the core; axios mock → fake `fetch`; the `q` sent read from the URL the portal receives; the 409 rejection → a 409 response with the same body |
+
+14 ondata tests (grep count) ported, all green, no expectation changed. Each fails with its change reverted (checked
+2026-11-19), except two that pin behaviour that was already there: `keeps a string q as is` and `a plain error
+mentioning data.europa.eu (MQA path) keeps its own message`. The rows above for these files count only the tests at
+`09e8cdc`. ondata has no test for the `getPortalActionBase` links in `ckan_package_show`, for the null country and
+title filters, for a null locale in the output or for an empty `q` object; five new tests cover them (below), each
+failing with its line reverted. The parity check's `tools/list` comparison expects ondata's `09e8cdc` entries with exactly the D16 and D17
+changes applied (`LIST_DEVIATIONS` in `parity.test.ts`); no recorded case's observation changes (no case reaches
+data.gov.au, Data.NSW, data.europa.eu as a CKAN server, `response_format` on `ckan_find_portals` or an object `q`).
 
 ### The CKAN deployment
 
@@ -209,6 +233,9 @@ asserts the original texts unchanged.
 | `packages/core/tests/engine.test.ts` (parliament round 4) | +2 | `jsonResponse: false` answers as an SSE stream; a failed call logged as an error from an SSE answer |
 | `packages/core/tests/client.test.ts` (example profile) | +1 | `Authorization`, `Proxy-Authorization` and `Cookie` dropped on a redirect to another origin, kept on the same origin (fails without the rule) |
 | `packages/core/tests/client.test.ts` (ondata `3369eac`, D14) | +6 | `errorBodyPrefixBytes`: the head of an error body above the error cap (dropped without the option), an answer at once when the body stalls after the prefix, what had arrived when it stalls before, never more than the error cap and only whole bytes (10.5, NaN), a cut multi-byte character dropped, and an empty body at the deadline without the option |
+| `packages/profile-ckan/tests/package-show-formatting.test.ts` (ondata `9e52cfa`, D15) | +2 | the "Full JSON metadata" links and `api_json_url` on the routed API base: data.gov.au given as `https://data.gov.au` links `/data/api/3/action` in Markdown and JSON (dataset and resource), an unknown portal keeps its spelling |
+| `packages/profile-ckan/tests/portal-discovery.test.ts` (ondata `9e52cfa`, D15) | +2 | null `country_name` and `site_title` with the `country` and `query` filters; a portal with no locale listed with an empty Markdown cell and `locale: null` in JSON |
+| `packages/profile-ckan/tests/datastore-q-column.test.ts` (ondata `bbb4a26`, D17) | +1 | an empty `q` object sends no `q` |
 | `packages/profile-example/tests/akn.test.ts` | 7 | paths, the file-name pattern, entity decoding, reading two files recorded from GitHub (2026-11-10) |
 | `packages/profile-example/tests/contract.test.ts` | 8 | both tools against a fake `ctx.http`: URL, headers and options asked for, the token on the API only, the 1000-entry notice, 404 and non-listing answers, other statuses, the cut at `max_chars` on a code point, error hints by host |
 | `packages/profile-example/tests/profile.test.ts` | 8 | both tools end to end through MCP with recorded GitHub answers: registration, rows, Markdown and JSON, an unknown bill's hint, no request for a bad file name, the token only to api.github.com and never in output |
@@ -242,6 +269,9 @@ this core, which had dropped that first-hop check.
 | D12 | The Worker log line's `cache_hit` comes from this call's requests. ondata read a module-level "last request" value, so a tool call that made no CKAN request could log the previous call's value. | Telemetry per server instance (no state shared between concurrent requests in an isolate). | `cache_hit` is absent when the call made no request, and never another call's. | None. |
 | D13 | `initialize` (serverInfo) and `/health` report our version (`0.1.0`) instead of ondata's `0.4.138`; the Workers service notices (two headers, the Markdown footer) are the deployment's settings, ondata's texts by default. | A release of ours is not ondata's release; a test deployment must not claim to be ondata's demo instance. | A client that reads the version sees ours. ondata deploying this code keeps its notices without changes. | None. |
 | D14 | ondata's SPARQL fix `3369eac` (#593, 2026-11-12, after the baseline) is ported ahead of the baseline move: a `#` inside an IRI or string literal is no longer read as a comment (a `PREFIX rdfs: <...#> SELECT` on one line was refused), a failed query carries the endpoint's own reason from the first 4 KB of the body (HTML pages left out, at most 300 characters), a timeout reads "The endpoint did not answer within 15 seconds (timeout)..." instead of `This operation was aborted`, and the telemetry files "endpoint error (NNN)" as `upstream_http`. The `datastore_search_sql` 403 hint names `"col"::float` for `CAST` (same commit). As in ondata, only the first 4 KB of the error body are read (the core's `errorBodyPrefixBytes`, added for this): the rest is never downloaded, a body above the core's 64 KiB error cap keeps its reason, a body that stalls after 4 KB gives the reason at once, and one that stalls earlier gives what had arrived by the deadline (tested in the core and the profile). | Follow ondata (upstream watch, issue #1). | Clearer SPARQL errors; Wikidata queries with a namespace `#` on the SELECT line now run. The parity cases `sparql-bad-query-*` differ from `09e8cdc` by the appended reason only (checked in `parity.test.ts`). | None. Leaves the list when the baseline moves past `3369eac`. |
+| D15 | ondata's `9e52cfa` (#598, 2026-11-15) ported ahead of the baseline: `ckan_find_portals` reads a null `locale_default`, `country_name` or `site_title` in the registry as empty (the `language` filter failed for every language with `Cannot read properties of null`, reported as "Could not fetch portal list"; a null locale shows as an empty table cell); `portals.json` routes data.gov.au to `https://data.gov.au/data` (its `/api/3` answers 404) and adds Data.NSW (`https://data.nsw.gov.au/data`); the "Full JSON metadata" links and `api_json_url` of `ckan_package_show` are built on the routed API base (`getPortalActionBase`), not on the caller's spelling. | Follow ondata (upstream watch, issue #1). | data.gov.au and Data.NSW answer under any of their spellings; their links work; the language filter works. No recorded parity case changes. | None. Leaves the list when the baseline moves past `9e52cfa`. |
+| D16 | ondata's `81fad15` (#600, 2026-11-17) ported ahead of the baseline: `portals.json` marks data.europa.eu as not CKAN (a `migrated` notice pointing to `sparql_query` with `endpoint_url https://data.europa.eu/sparql`), so CKAN tools on any of its URLs say so instead of a bare 404 or `success=false`; `ckan_find_portals` takes `response_format` (`json` returns `{portals}` with `structuredContent` equal to it; errors as `{"error", "_error": true}`), its description gains the argument line. | Follow ondata. | A JSON caller of `ckan_find_portals` is no longer refused by the strict schema. The `tools/list` entry differs from `09e8cdc` by the description line and the `response_format` property, the same schema as the other tools' (checked in `parity.test.ts`). No recorded case changes (the recorded call has no `response_format`). | None. Leaves the list when the baseline moves past `81fad15`. |
+| D17 | ondata's `bbb4a26` (#603, 2026-11-18) ported ahead of the baseline: `ckan_datastore_search` takes `q` as a string or an object `{ "column": "word" }`, sent to CKAN JSON-encoded (an empty object sends no `q`); a 409 on `datastore_search` whose reason says "full text search is not supported" gets a hint for the column form, then `filters` or SQL `ILIKE`, instead of "parameters may conflict". | Follow ondata. | Large tables on portals such as open.canada.ca can be searched by column. The `tools/list` entry differs from `09e8cdc` by the `q` line of the description and the `q` property (string or string map, new description), checked in `parity.test.ts`. No recorded case changes. | None. Leaves the list when the baseline moves past `bbb4a26`. |
 
 Parliament profile (italianparliament-mcp at `fd46810`), round 1:
 

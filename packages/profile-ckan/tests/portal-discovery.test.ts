@@ -3,7 +3,8 @@
 // core (`ckanClient`). ondata's cache was module-level and reset with `__resetCacheForTests`;
 // here it belongs to the engine, so calls that must share it go through one client (one engine),
 // and a fresh client starts with an empty cache. DNS is stubbed to a public address (the core
-// checks the first hop). Expectations unchanged.
+// checks the first hop). Expectations unchanged. Includes the tests added in ondata 9e52cfa (#598, D15)
+// and 81fad15 (#600, D16).
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { __setDnsResolverForTests } from "@ondata-extended/core";
 import { ckanClient, stubPublicDns } from "./helpers.js";
@@ -57,6 +58,58 @@ describe("ckan_find_portals", () => {
     expect(result.content[0].text).not.toContain("open.canada.ca");
   });
 
+  // datashades.info lists active portals with no default locale (3 of 945 on
+  // 2026-11-15): the language filter crashed on them, for every language.
+  it("filters by language when a portal has no locale", async () => {
+    const noLocale = { ...portal("https://ckan.example.org", "No locale", "Italy"), SiteInfo: { site_title: "No locale", locale_default: null } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ portals: [
+        noLocale,
+        portal("https://dati.comune.milano.it", "Open Data Comune di Milano", "Italy")
+      ] }), { status: 200, headers: { "content-type": "application/json" } })
+    ));
+
+    const result = await callFindPortals({ language: "it" });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("dati.comune.milano.it");
+    expect(result.content[0].text).not.toContain("ckan.example.org");
+  });
+
+  // New here (not in ondata 9e52cfa, which tests only the language filter): the other two
+  // filters and the output read null registry fields as empty too.
+  it("filters by country and title when a portal has null fields", async () => {
+    const nulls = { ...portal("https://ckan.example.org", "x", "x"), SiteInfo: { site_title: null, locale_default: null }, Coordinates: { country_name: null } };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ portals: [
+        nulls,
+        portal("https://dati.comune.milano.it", "Open Data Comune di Milano", "Italy")
+      ] }), { status: 200, headers: { "content-type": "application/json" } })
+    ));
+
+    for (const args of [{ country: "Italy" }, { query: "Milano" }]) {
+      const result = await callFindPortals(args);
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("dati.comune.milano.it");
+      expect(result.content[0].text).not.toContain("ckan.example.org");
+    }
+  });
+
+  it("lists a portal with no locale with an empty cell in Markdown and null in JSON", async () => {
+    const noLocale = { ...portal("https://ckan.example.org", "No locale", "Italy"), SiteInfo: { site_title: "No locale", locale_default: null } };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ portals: [noLocale] }), { status: 200, headers: { "content-type": "application/json" } })
+    ));
+
+    const md = await callFindPortals({ country: "Italy" });
+    expect(md.isError).toBeFalsy();
+    expect(md.content[0].text).toContain("| [No locale](https://ckan.example.org) | Italy | 2.10 | 100 |  | ✅ |");
+    expect(md.content[0].text).not.toContain("null");
+
+    const json = await callFindPortals({ country: "Italy", response_format: "json" });
+    expect(JSON.parse(json.content[0].text).portals[0].locale).toBeNull();
+  });
+
   it("reports a non-2xx registry answer as an error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("down", { status: 503, statusText: "Service Unavailable" })));
 
@@ -64,6 +117,46 @@ describe("ckan_find_portals", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("503");
+  });
+
+  // Every other tool takes response_format; clients sent it here too and the strict
+  // schema rejected the call (2 events on 2026-11-17).
+  describe("response_format", () => {
+    const registry = () => new Response(JSON.stringify({ portals: [
+      portal("https://dati.comune.milano.it", "Open Data Comune di Milano", "Italy")
+    ] }), { status: 200, headers: { "content-type": "application/json" } });
+
+    it("json returns the portal list as parseable JSON", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(registry()));
+
+      const result = await callFindPortals({ country: "Italy", response_format: "json" }) as Awaited<ReturnType<typeof callFindPortals>> & { structuredContent?: unknown };
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.portals[0].url).toBe("https://dati.comune.milano.it");
+      expect(parsed.portals[0].has_datastore).toBe(true);
+      expect(result.structuredContent).toEqual(parsed);
+    });
+
+    it("markdown keeps the table", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(registry()));
+
+      const result = await callFindPortals({ country: "Italy", response_format: "markdown" });
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("| Portal |");
+    });
+
+    it("json errors stay JSON", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("down", { status: 503, statusText: "Service Unavailable" })));
+
+      const result = await callFindPortals({ country: "Italy", response_format: "json" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed._error).toBe(true);
+      expect(parsed.error).toContain("503");
+    });
   });
 
   describe("registry cache", () => {

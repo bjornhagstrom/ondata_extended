@@ -4,7 +4,8 @@
  * Ported from ondata/ckan-mcp-server at 09e8cdc (MIT, see NOTICE.md):
  *  - tests/unit/http.test.ts 364-946 (makeCkanRequest, redirect validation, CKAN_PRIVATE_HOSTS,
  *    Anubis retry), 947-1024 (cache integration), 1054-1111 (audit logging), 1112-1473 (formatCkanError);
- *  - tests/unit/cache.test.ts 64-84 (getTtlForAction).
+ *  - tests/unit/cache.test.ts 64-84 (getTtlForAction);
+ *  - the two formatCkanError tests for data.europa.eu added in 81fad15 (#600, D16).
  *
  * How the reach changed (docs/test-parity.md, principle 1): ondata mocked axios and, for its Workers
  * path, stubbed `fetch` and hid `process.versions.node`. There is one path here, through the core
@@ -658,6 +659,23 @@ describe("formatCkanError", () => {
       expect(result).not.toContain("retry later");
       expect(result).not.toContain("ckan_package_search");
     }
+  });
+
+  // ondata 81fad15 (#600, D16)
+  it('data.europa.eu gets the not-CKAN notice on 404 and on success=false', () => {
+    const notFound = new CkanApiError('CKAN API error (404): Not Found', 404, 'package_search', 'https://data.europa.eu/data');
+    const noSuccess = new CkanApiError('CKAN API returned success=false for action "package_search".', undefined, 'package_search', 'https://data.europa.eu/euodp/en/data/');
+    for (const err of [notFound, noSuccess]) {
+      const result = formatCkanError(err, 'ckan_package_search');
+      expect(result).toContain('not a CKAN portal');
+      expect(result).toContain('sparql_query');
+    }
+  });
+
+  it('a plain error mentioning data.europa.eu (MQA path) keeps its own message', () => {
+    // MQA calls data.europa.eu through safeFetch, which throws plain Errors: no notice.
+    const result = formatCkanError(new Error('MQA API error: Network error'), 'ckan_get_mqa_quality');
+    expect(result).toBe('MQA API error: Network error');
   });
 
   it("a working portal keeps the status-based hint", () => {
