@@ -231,6 +231,114 @@ describe("what the snapshot cannot answer goes to the live service", () => {
   });
 });
 
+describe("scheme information with a snapshot", () => {
+  const SCHEME = `${LIVE}?task=fetchVocabularyData&output=json`;
+  /** The live service answers its scheme (with TemaTres's term count); everything else as before. */
+  beforeEach(() => {
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url !== SCHEME) return base(input, init);
+      requested.push({ url, headers: new Headers(init?.headers) });
+      return new Response(JSON.stringify({ result: { title: "UNESCO Thesaurus", author: "UNESCO", lang: "en", uri: "https://vocab.hagstrom.nu/unesco/", cant_terms: "40" }, resume: { cant_result: 1, version: "TemaTres 4.0" } }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+  });
+
+  it("adds the number of concepts a loaded snapshot holds, next to the live service's term count", async () => {
+    const c = await client();
+    await ok(c, "vocab_search_concepts", { query: "universal" }); // loads the snapshot
+    const r = await ok(c, "vocab_scheme_info", {});
+    expect(r.scheme).toMatchObject({ title: "UNESCO Thesaurus", termCount: 40, conceptCount: 17 });
+    expect(r.scheme.conceptCount).toBe(parseSnapshot(SAMPLE)!.byUri.size);
+    expect(r.scheme.ext.snapshot).toEqual({ lastModified: "Tue, 17 Nov 2026 16:05:55 GMT" });
+    const m = await c.callTool({ name: "vocab_scheme_info", arguments: {} });
+    const text = (m.content as { text: string }[])[0].text;
+    expect(text).toContain("- **Concepts**: 17 (in the vocabulary's snapshot of Tue, 17 Nov 2026 16:05:55 GMT)\n");
+    expect(text).toContain("- **Terms, preferred and alternative**: 40 (not the number of concepts)\n");
+  });
+
+  it("does not load the snapshot for it, and gives no concept count while none is loaded", async () => {
+    const c = await client();
+    const r = await ok(c, "vocab_scheme_info", {});
+    expect(dumpRequests()).toEqual([]);
+    expect(r.scheme.termCount).toBe(40);
+    expect(r.scheme).not.toHaveProperty("conceptCount");
+    expect(r.scheme.ext).not.toHaveProperty("snapshot");
+  });
+
+  it("gives no concept count from a snapshot cut at the most concepts read", () => {
+    const lines = Array.from({ length: 200_001 }, (_, i) => `{"uri":"https://a.example/${i}","prefLabel":{"en":"c${i}"}}`).join("\n");
+    const cut = parseSnapshot(lines)!;
+    expect(cut.byUri.size).toBe(200_000);
+    expect(cut.complete).toBe(false);
+    expect(parseSnapshot(SAMPLE)!.complete).toBe(true);
+  });
+
+  it("scheme information from a loaded but cut snapshot gives no concept count", async () => {
+    dump.body = Array.from({ length: 200_001 }, (_, i) => `{"uri":"${URI}${i + 1}","prefLabel":{"en":"c${i}"}}`).join("\n");
+    const c = await client();
+    await ok(c, "vocab_search_concepts", { query: "c1" }); // loads the snapshot
+    expect(dumpRequests().length).toBeGreaterThan(0);
+    const r = await ok(c, "vocab_scheme_info", {});
+    expect(r.scheme.termCount).toBe(40);
+    expect(r.scheme).not.toHaveProperty("conceptCount");
+    expect(r.scheme.ext).not.toHaveProperty("snapshot");
+    const m = await c.callTool({ name: "vocab_scheme_info", arguments: {} });
+    expect((m.content as { text: string }[])[0].text).toContain("(not the number of concepts, which is not known here)");
+  }, 30_000);
+});
+
+describe("a random concept with a snapshot", () => {
+  const IDS = SAMPLE.trim().split("\n").map((l) => (JSON.parse(l) as { uri: string }).uri.slice(URI.length));
+
+  it("is picked among the snapshot's concepts without a request to the live service", async () => {
+    const c = await client();
+    vi.spyOn(Math, "random").mockReturnValue(IDS.indexOf("5") / IDS.length);
+    const r = await ok(c, "vocab_random_concept", {});
+    expect(r.concept).toEqual((await ok(c, "vocab_get_concept", { id: "5" })).concept);
+    expect(r.concept.prefLabel).toBe("Universal education");
+    expect(r.source).toEqual({ title: "unesco-test", uri: "https://vocab.hagstrom.nu/unesco/" });
+    expect(dumpRequests()).toHaveLength(1);
+    expect(liveRequests()).toEqual([]);
+  });
+
+  it("gives every concept of the snapshot the same chance; one it cannot answer whole is read live by its id", async () => {
+    const c = await client({ VOCAB_ALLOWED_DOMAINS: "vocab.hagstrom.nu", VOCAB_RATE_LIMIT_ENABLED: "false" }); // the clock stands still here
+    const picked: string[] = [];
+    for (let k = 0; k < IDS.length; k++) {
+      vi.spyOn(Math, "random").mockReturnValue((k + 0.5) / IDS.length);
+      const before = liveRequests().length;
+      const r = await call(c, "vocab_random_concept", {});
+      const live = liveRequests().slice(before);
+      // From the snapshot, or (a relation outside it) the live service asked for that same concept and nothing random.
+      picked.push(r.isError ? new URL(live[0].url).searchParams.get("arg")! : r.body.concept.id);
+      expect(live.every((q) => task(q) !== "randomTerm")).toBe(true);
+    }
+    expect(picked).toEqual(IDS);
+  });
+
+  it("a picked concept the live service no longer has (removed since the file was written) lets the live service pick", async () => {
+    dump.body = JSON.stringify({ uri: `${URI}7`, prefLabel: { en: "Seven" }, broader: [`${URI}999`] }); // a relation outside the file
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("task=fetchTerm&arg=7")) {
+        requested.push({ url, headers: new Headers(init?.headers) });
+        return new Response(JSON.stringify({ resume: { status: "available", cant_result: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return base(input, init);
+    }));
+    await call(await client(), "vocab_random_concept", {});
+    expect(liveRequests().map(task)).toContain("randomTerm"); // not "the vocabulary may be empty"
+  });
+
+  it("without a snapshot, the live service picks", async () => {
+    dump.status = 404;
+    await call(await client(), "vocab_random_concept", {});
+    expect(liveRequests().map(task)).toEqual(["randomTerm"]);
+  });
+});
+
 describe("keeping the snapshot current", () => {
   it("asks again only after a minute, conditionally, and keeps the copy on 304", async () => {
     const c = await client();

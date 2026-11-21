@@ -108,6 +108,34 @@
     }
   },
   {
+    "name": "vocab_random_concept",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "response_format": {
+          "default": "markdown",
+          "enum": [
+            "markdown",
+            "json"
+          ],
+          "type": "string"
+        },
+        "vocab": {
+          "maxLength": 500,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    }
+  },
+  {
     "name": "vocab_related",
     "inputSchema": {
       "$schema": "http://json-schema.org/draft-07/schema#",

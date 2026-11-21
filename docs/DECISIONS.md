@@ -1026,3 +1026,50 @@ br` (ondata's Node path) it answers Brotli and says so in `Content-Encoding: br`
 requests to 9 hosts sends undeclared gzip either. So no user-facing failure is known; D10 stays a deviation, not a
 report. Revisit only if a portal is seen sending gzip without the header.
 
+
+## 2026-11-21: TemaTres's term count is not a concept count; a tool for a random concept
+
+- **Why**: `vocab_scheme_info` gave TemaTres's `cant_terms` as the number of concepts (`scheme.conceptCount`,
+  Markdown `- **Concepts**: N`). `cant_terms` counts every accepted term, alternative (non-preferred) terms included
+  (`ARRAYcantTerms4Thes`, fun.sql.php: `count(*)` over `tema` with `estado_id = 13`): Svada has 23 concepts and 16
+  alternative terms, and `cant_terms` is 39. A model told a user "the vocabulary has 39 concepts".
+- **What, scheme information** (a JSON shape change in our own profile; rule 4 does not apply, but clients of the
+  production service see it):
+  - `scheme.conceptCount` (from `cant_terms`) is now `scheme.termCount`; Markdown `- **Terms, preferred and
+    alternative**: 39 (not the number of concepts)` replaces `- **Concepts**: 39`. The tool description says that
+    `termCount` is not the number of concepts.
+  - `scheme.conceptCount` is given only where the number is known: when the vocabulary's snapshot is loaded, the
+    number of concepts it holds, with `scheme.ext.snapshot.lastModified`; Markdown `- **Concepts**: 17 (in the
+    vocabulary's snapshot of <Last-Modified>)`. Scheme information never loads the snapshot for this (it reads only a
+    copy already in memory, through the same URL guards), and a file cut at the 200,000 concepts read gives no count.
+  - Before/after (rule 8), Svada from the recorded answers: JSON `"conceptCount": 39` → `"termCount": 39`; Markdown
+    line as above; nothing else changes. Migration: a client that read `conceptCount` reads `termCount` for the same
+    number, and treats it as terms.
+- **What, `vocab_random_concept`**: one concept picked at random, answered as `vocab_get_concept` (the same concept
+  JSON and Markdown, the source, JSON fitted by `fitConceptAnswer`). Arguments `vocab` and `response_format`.
+  Read-only, not idempotent (a new entry in the frozen surface, `tests/frozen-tools.json`; nothing existing changes).
+  - The adapter contract gets an optional `randomConcept`; a backend without it, or one that cannot pick, gives
+    `RandomConceptNotOfferedError` ("does not offer a random concept", with a hint to browse or search instead).
+  - TemaTres: services.php `randomTerm` (in TemaTres 3.6.1 and 4.0; SQLrandomTerms picks one accepted, preferred term,
+    `ORDER BY rand()`), added to the adapter's task list and asked without the HTTP cache (a cached pick would always
+    be the same one), then the concept by its id as `vocab_get_concept` reads it. A TemaTres without the task answers
+    with its XML page for an unknown task ("invalid task param"); that, and only that, becomes the not-offered error.
+  - Snapshot: when a snapshot is loaded, a concept is picked among its concepts with equal chance, without a request;
+    one the snapshot cannot answer whole (a relation outside it) is read live by its id. Without a snapshot the live
+    service picks.
+  - Server instructions name the tool for "show me a random term". Smoke: one case with a known part of the answer
+    (`source.title`), since the concept varies.
+- **Reviewed** (mcp-reviewer, 2026-11-21): no BLOCKER. Fixed: `randomTerm` was tested only against a shape the test
+  wrote, so the real answer is now recorded (`fixtures/tematres/random-term.body`, TemaTres 4.0) and the tests build
+  on it, with a row in `docs/tematres-api-derisking.md`; a cut snapshot giving no concept count now has a test through
+  `vocab_scheme_info`; a concept picked from the snapshot that the live service no longer has now lets the live
+  service pick, instead of "the vocabulary may be empty"; the description and the Markdown line say that without
+  `conceptCount` the number of concepts is not known and must not be derived from `termCount`; `docs/vocab-service.md`
+  names the random tool's concept id in the log and that its pick is not cached. The snapshot's count is the number of
+  lines it could read (a line without a usable label or URI is skipped), recorded as such.
+- **Meta-terms.** The recorded `randomTerm` answer was a meta-term ("Styrning och regler", `isMetaTerm: 1`, a grouping
+  term): TemaTres picks among them too, and the SKOS export (so the snapshot) carries them as ordinary concepts
+  without the flag. Both paths therefore may give a grouping term. Kept on purpose (Björn, 2026-11-21): a grouping
+  term is a concept in the SKOS export, the answer shows its narrower concepts, and the snapshot could only guess
+  which concepts are grouping terms, so skipping them on one path would make the two paths disagree.
+

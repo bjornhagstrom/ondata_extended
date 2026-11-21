@@ -82,20 +82,37 @@ const md = async (c: Client, name: string, args: Record<string, unknown>) => {
   return { text: (r.content as { text: string }[])[0].text, isError: r.isError === true };
 };
 
-describe("the eight tools", () => {
-  it("are registered with the vocab_ prefix and read-only annotations", async () => {
+describe("the nine tools", () => {
+  it("are registered with the vocab_ prefix and read-only annotations; only the random concept is not idempotent", async () => {
     const tools = (await (await client()).listTools()).tools;
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "vocab_broader", "vocab_get_concept", "vocab_narrower", "vocab_related",
+      "vocab_broader", "vocab_get_concept", "vocab_narrower", "vocab_random_concept", "vocab_related",
       "vocab_scheme_info", "vocab_search_concepts", "vocab_suggest", "vocab_top_concepts"
     ]);
-    for (const t of tools) expect(t.annotations?.readOnlyHint).toBe(true);
+    for (const t of tools) {
+      expect(t.annotations?.readOnlyHint, t.name).toBe(true);
+      expect(t.annotations?.destructiveHint, t.name).toBe(false);
+      expect(t.annotations?.idempotentHint, t.name).toBe(t.name !== "vocab_random_concept");
+    }
   });
 
   it("vocab_scheme_info describes the scheme and leaves out the admin address", async () => {
     const out = await json(await client(), "vocab_scheme_info", {});
-    expect(out.scheme).toMatchObject({ title: "Svada - termer och begrepp", uri: "https://begrepp.hagstrom.nu/", languages: ["sv"], conceptCount: 39, software: "TemaTres 3.6.1" });
+    expect(out.scheme).toMatchObject({ title: "Svada - termer och begrepp", uri: "https://begrepp.hagstrom.nu/", languages: ["sv"], software: "TemaTres 3.6.1" });
     expect(JSON.stringify(out)).not.toContain("adminEmail");
+  });
+
+  it("vocab_scheme_info gives TemaTres's cant_terms as a term count, alternative terms included, never as the number of concepts", async () => {
+    // Svada: 23 concepts and 16 alternative terms; cant_terms counts both.
+    const c = await client();
+    const out = await json(c, "vocab_scheme_info", {});
+    expect(out.scheme.termCount).toBe(39);
+    expect(out.scheme).not.toHaveProperty("conceptCount");
+    const { text } = await md(c, "vocab_scheme_info", {});
+    expect(text).toContain("- **Terms, preferred and alternative**: 39 (not the number of concepts, which is not known here)\n");
+    expect(text).not.toContain("**Concepts**");
+    const desc = (await c.listTools()).tools.find((t) => t.name === "vocab_scheme_info")!.description!;
+    expect(desc).toContain("not the number of concepts");
   });
 
   it("vocab_search_concepts keeps the service's order and reports a matched alternative label", async () => {
@@ -203,6 +220,88 @@ describe("the eight tools", () => {
     const m = await md(await client(), "vocab_scheme_info", {});
     expect(m.isError).toBe(true);
     expect(m.text).toContain("may not be a TemaTres vocabulary service");
+  });
+});
+
+describe("vocab_random_concept", () => {
+  const RANDOM = `${S}?task=randomTerm&output=json`;
+  /** randomTerm's real answer (recorded from begrepp.hagstrom.nu, TemaTres 4.0), with the picked id put in. */
+  const RECORDED = readFileSync(join(FIX, "random-term.body"), "utf8");
+  const picks = (...ids: string[]) => {
+    let n = 0;
+    overrides.set(RANDOM, () => {
+      const id = ids[Math.min(n++, ids.length - 1)];
+      const body = JSON.parse(RECORDED);
+      body.result.term.term_id = id;
+      return jsonAnswer(JSON.stringify(body))();
+    });
+  };
+
+  it("reads the recorded answer's shape: the term under result.term", () => {
+    expect(JSON.parse(RECORDED)).toMatchObject({ result: { term: { term_id: "34", string: "Styrning och regler" } }, resume: { version: "TemaTres 4.0" } });
+  });
+  const randomRequests = () => requested.filter((u) => u === RANDOM).length;
+
+  it("asks the service for a random term on every call, past the HTTP cache, and answers that concept as vocab_get_concept does", async () => {
+    picks("2", "10");
+    const c = await client(); // the engine's HTTP cache on, as in production
+    const first = await json(c, "vocab_random_concept", {});
+    const second = await json(c, "vocab_random_concept", {});
+    expect(randomRequests()).toBe(2);
+    expect(first.concept.id).toBe("2");
+    expect(second.concept.id).toBe("10");
+    expect(first).toEqual(await json(c, "vocab_get_concept", { id: "2" }));
+    expect(first.source).toMatchObject({ title: "Svada - termer och begrepp", creator: "Testredaktion" });
+    expect(new URL(requested.find((u) => u === RANDOM)!).searchParams.has("arg")).toBe(false);
+  });
+
+  it("answers in Markdown as vocab_get_concept does, with the source line", async () => {
+    picks("10");
+    const c = await client();
+    const random = await md(c, "vocab_random_concept", {});
+    expect(random.isError).toBe(false);
+    expect(random.text).toBe((await md(c, "vocab_get_concept", { id: "10" })).text);
+    expect(random.text).toMatch(/\n---\nSource: Svada - termer och begrepp, by Testredaktion\./);
+  });
+
+  it("fits a large concept in JSON as vocab_get_concept does, keeping its source", async () => {
+    picks("10");
+    overrides.set(`${S}?task=fetchDown&arg=10&output=json`, jsonAnswer(envelope("fetchDown", "10",
+      Object.fromEntries(Array.from({ length: 3000 }, (_, i) => [String(1000 + i), { term_id: String(1000 + i), lang: "sv", string: `Underbegrepp nummer ${i}`, isMetaTerm: "0" }])))));
+    const c = await client({ VOCAB_CACHE_ENABLED: "false", VOCAB_RATE_LIMIT_ENABLED: "false" });
+    const r = await c.callTool({ name: "vocab_random_concept", arguments: { response_format: "json" } });
+    const text = (r.content as { text: string }[])[0].text;
+    expect(r.isError).toBeFalsy();
+    expect(text.length).toBeLessThanOrEqual(50000);
+    const out = JSON.parse(text);
+    expect(out).toMatchObject({ vocab: "svada", _truncated: true, _cut: { narrower: { total: 3000 } } });
+    expect(out.concept.id).toBe("10");
+    expect(out.source.title).toBe("Svada - termer och begrepp");
+  });
+
+  it("says clearly that a TemaTres without the randomTerm task offers no random concept, with a hint", async () => {
+    const xml = recorded.get(`${S}?task=bogus&output=json`)!;
+    overrides.set(RANDOM, () => new Response(xml.body, { status: 200, headers: { "content-type": xml.contentType } }));
+    const m = await md(await client(), "vocab_random_concept", {});
+    expect(m.isError).toBe(true);
+    expect(m.text).toContain('The vocabulary service of "svada" does not offer a random concept.');
+    expect(m.text).toContain("vocab_top_concepts");
+    expect(requested.some((u) => u.includes("task=fetchTerm"))).toBe(false);
+  });
+
+  it("an XML answer that is not TemaTres's unknown-task page stays a protocol error", async () => {
+    overrides.set(RANDOM, () => new Response("<?xml version='1.0'?><x/>", { status: 200, headers: { "content-type": "text/xml" } }));
+    const m = await md(await client(), "vocab_random_concept", {});
+    expect(m.isError).toBe(true);
+    expect(m.text).not.toContain("does not offer a random concept");
+    expect(m.text).toContain("may not be a TemaTres vocabulary service");
+  });
+
+  it("an empty vocabulary is an error, not a crash", async () => {
+    overrides.set(RANDOM, jsonAnswer(envelope("randomTerm", "", undefined)));
+    const m = await md(await client(), "vocab_random_concept", {});
+    expect(m.isError).toBe(true);
+    expect(m.text).toContain("gave no concept to pick");
   });
 });
 
@@ -321,10 +420,12 @@ describe("the source of every answer", () => {
   const LINE = /\n---\nSource: Svada - termer och begrepp, by Testredaktion\. .*begrepp\.hagstrom\.nu.* \(last changed 2026-10-21 19:19:20\)$/;
   const CALLS: [string, Record<string, unknown>][] = [
     ["vocab_search_concepts", { query: "data" }], ["vocab_suggest", { prefix: "da" }], ["vocab_get_concept", { id: "10" }],
-    ["vocab_broader", { id: "10" }], ["vocab_narrower", { id: "36" }], ["vocab_related", { id: "2" }], ["vocab_top_concepts", {}]
+    ["vocab_broader", { id: "10" }], ["vocab_narrower", { id: "36" }], ["vocab_related", { id: "2" }], ["vocab_top_concepts", {}],
+    ["vocab_random_concept", {}]
   ];
   let now = 1_800_000_000_000;
   beforeEach(() => {
+    overrides.set(`${S}?task=randomTerm&output=json`, jsonAnswer(envelope("randomTerm", "", { term: { term_id: "10", lang: "sv", string: "x", isMetaTerm: "0" } })));
     now = 1_800_000_000_000;
     vi.spyOn(Date, "now").mockImplementation(() => now);
   });
@@ -1141,6 +1242,7 @@ describe("concept URIs", () => {
     expect(text).toContain("'svada' (Svada - termer och begrepp)");
     expect(text).toContain("instead of answering from memory or searching the web");
     expect(text).toContain("name the source as each answer gives it (the vocabulary, its creator and its URI)");
+    expect(text).toContain('random concept ("show me a random term"), use vocab_random_concept rather than picking an id');
     expect(text.endsWith("\n\nSvada is for project X.")).toBe(true);
     const none = skosInstructions([]);
     expect(none).toContain("given by its base URL");

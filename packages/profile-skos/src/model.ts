@@ -65,6 +65,12 @@ export interface SchemeInfo {
   uri: string;
   title: string;
   languages: string[];
+  /**
+   * The number of terms as the backend counts them: preferred and alternative (non-preferred) terms together, so not
+   * the number of concepts (TemaTres's `cant_terms`).
+   */
+  termCount?: number;
+  /** The number of concepts, only where it is known (e.g. counted in a loaded snapshot). */
   conceptCount?: number;
   created?: string;
   modified?: string;
@@ -99,4 +105,17 @@ export interface VocabularyAdapter {
   narrower(ctx: EngineContext, instance: VocabularyInstance, id: string): Promise<ConceptRef[] | null>;
   related(ctx: EngineContext, instance: VocabularyInstance, id: string): Promise<ConceptRef[] | null>;
   topConcepts(ctx: EngineContext, instance: VocabularyInstance): Promise<ConceptRef[]>;
+  /**
+   * One concept picked at random, never from a cache; null when the vocabulary has none. Optional: a backend that
+   * cannot pick one leaves it out or throws RandomConceptNotOfferedError.
+   */
+  randomConcept?(ctx: EngineContext, instance: VocabularyInstance): Promise<Concept | null>;
+}
+
+/** The vocabulary service cannot pick a random concept (the backend has no such call, or this version lacks it). */
+export class RandomConceptNotOfferedError extends Error {
+  constructor(vocab: string) {
+    super(`The vocabulary service of "${vocab}" does not offer a random concept.`);
+    this.name = "RandomConceptNotOfferedError";
+  }
 }

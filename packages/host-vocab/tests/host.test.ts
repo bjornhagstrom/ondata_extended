@@ -67,14 +67,14 @@ describe("worker routes", () => {
     expect(test).toContain(en.statusTest);
   });
 
-  it("/mcp lists the eight vocab_ tools", async () => {
+  it("/mcp lists the nine vocab_ tools", async () => {
     const res = await worker.fetch(new Request("https://v.example/mcp", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
     }), {});
     const body = await res.json() as { result: { tools: { name: string }[] } };
-    expect(body.result.tools).toHaveLength(8);
+    expect(body.result.tools).toHaveLength(9);
     expect(body.result.tools.every((t) => t.name.startsWith("vocab_"))).toBe(true);
   });
 });

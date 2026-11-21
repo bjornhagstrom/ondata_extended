@@ -26,7 +26,8 @@ All calls are GET requests to the public read-only instance, made with curl. No 
 
 | Task | Probe | Shape | Notes |
 |---|---|---|---|
-| `fetchVocabularyData` | – | `result` = flat object (title, author, lang, uri, createDate, lastMod, status, cant_terms …) | `uri` = `https://begrepp.hagstrom.nu/` = ConceptScheme URI |
+| `fetchVocabularyData` | – | `result` = flat object (title, author, lang, uri, createDate, lastMod, status, cant_terms …) | `uri` = `https://begrepp.hagstrom.nu/` = ConceptScheme URI; `cant_terms` counts preferred and alternative terms (Svada: 23 + 16 = 39) |
+| `randomTerm` | – | `result.term` = one term object (term_id, code, lang, string, isMetaTerm, date_create) | Recorded 2026-11-21 on TemaTres 4.0 (`fixtures/tematres/random-term.body`); `Cache-Control: no-store`; picks accepted preferred terms only, meta-terms (`isMetaTerm: 1`) included; listed in the 3.6.1 task help (`invalid-task.body`) |
 | `fetchTopTerms` | – | 3 terms (35, 36, 34), all `isMetaTerm:"1"` | The top level consists only of meta-terms (groupings) |
 | `search` | `data` → 13, `zzzqqq` → 0 | `{term_id,string,isMetaTerm,no_term_string,index,order}` | `no_term_string` = matched altLabel or `false`; `index` = path `|36|10` |
 | `suggestDetails` | `da` → 13 | like search, without `index` | Also matches altLabels |

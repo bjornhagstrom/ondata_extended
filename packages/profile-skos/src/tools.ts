@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import type { EngineContext, InstanceEntry, ToolResult, ToolSpec } from "@ondata-extended/profile-contract";
-import type { Concept, ConceptRef, Note, SearchHit, VocabularyAdapter, VocabularyInstance } from "./model.js";
+import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Note, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "./model.js";
 import { createResolver, type VocabExt } from "./vocabularies.js";
 import { localId } from "./ids.js";
 
@@ -40,7 +40,8 @@ export function skosInstructions(entries: Entries, extra?: string): string {
     "instead of answering from memory or searching the web: vocab_search_concepts first, then vocab_get_concept. In the " +
     "answer, use the vocabulary's preferred terms, quote definitions and scope notes as given, and name the source as each " +
     "answer gives it (the vocabulary, its creator and its URI), with the concept URIs, so the answer can be checked and " +
-    "attributed. If the vocabulary has no matching concept, say so rather than filling the gap from memory. For " +
+    "attributed. If the vocabulary has no matching concept, say so rather than filling the gap from memory. For a " +
+    "random concept (\"show me a random term\"), use vocab_random_concept rather than picking an id. For " +
     "general questions about words that do not involve these vocabularies, the tools are not needed.";
   return extra?.trim() ? `${text}\n\n${extra.trim()}` : text;
 }
@@ -60,6 +61,8 @@ const idArg = z.string().min(1).max(500)
 const limitArg = z.number().int().min(1).max(200).default(50).describe("Maximum number of concepts to return (1-200, default 50)");
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const;
+/** Read-only, but each call may answer differently. */
+const READ_ONLY_RANDOM = { ...READ_ONLY, idempotentHint: false } as const;
 
 function resolve(entries: Entries, vocab: string | undefined): { instance: VocabularyInstance; adapter: VocabularyAdapter } {
   return createResolver(entries).resolve(vocab);
@@ -134,6 +137,13 @@ class ConceptNotFoundError extends Error {
   constructor(id: string, vocab: string) {
     super(`No concept with id "${id}" in vocabulary "${vocab}".`);
     this.name = "ConceptNotFoundError";
+  }
+}
+
+class NoRandomConceptError extends Error {
+  constructor(vocab: string) {
+    super(`The vocabulary service of "${vocab}" gave no concept to pick: the vocabulary may be empty.`);
+    this.name = "NoRandomConceptError";
   }
 }
 
@@ -596,7 +606,7 @@ function sourceMarkdown(ctx: EngineContext, s: Source): string {
 }
 
 /**
- * The eight tools for a deployment's vocabularies: `entries` are the known vocabularies (ids usable as `vocab`), the
+ * The nine tools for a deployment's vocabularies: `entries` are the known vocabularies (ids usable as `vocab`), the
  * first is the default. Any other vocabulary is reachable by its base URL when the deployment's allow-list lets the
  * request through.
  */
@@ -674,6 +684,28 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     }
   };
 
+  const randomConcept: ToolSpec<{ vocab: typeof vocabArg; response_format: typeof formatArg }> = {
+    name: "vocab_random_concept",
+    title: "Random concept",
+    description:
+      "One concept of the vocabulary picked at random, answered as vocab_get_concept answers (labels, notes, relations, path). " +
+      "Use it when the user asks for a random term or concept (e.g. \"show me a random term\"), instead of guessing an id. " +
+      "Each call may give another concept.",
+    inputSchema: { vocab: vocabArg, response_format: formatArg },
+    annotations: { title: "Random concept", ...READ_ONLY_RANDOM },
+    async handler(args, ctx) {
+      const { instance, adapter } = resolve(entries, args.vocab);
+      const pick = adapter.randomConcept?.bind(adapter);
+      if (!pick) throw new RandomConceptNotOfferedError(instance.id);
+      const [concept, source] = await withSource(sourceOf, ctx, instance, adapter, () => pick(ctx, instance));
+      if (!concept) throw new NoRandomConceptError(instance.id);
+      ctx.telemetry.note({ concept_id: concept.id });
+      const answer = { vocab: instance.id, concept, source };
+      return respond(ctx, args.response_format, args.response_format === "json" ? fitConceptAnswer(answer, ctx.limits.characterLimit) : answer,
+        () => conceptMarkdown(ctx, concept, instance), sourceMarkdown(ctx, source));
+    }
+  };
+
   function relationTool(
     name: string,
     title: string,
@@ -729,8 +761,10 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     name: "vocab_scheme_info",
     title: "Vocabulary information",
     description:
-      "About the vocabulary itself (skos:ConceptScheme): title, URI, languages, number of concepts, dates, creator and the software it runs on. " +
-      "Call it first to see what a vocabulary covers.",
+      "About the vocabulary itself (skos:ConceptScheme): title, URI, languages, size, dates, creator and the software it runs on. " +
+      "Call it first to see what a vocabulary covers. Size: `termCount` counts preferred and alternative terms together, so it is " +
+      "not the number of concepts; `conceptCount` is given only where the number of concepts is known. When it is absent, the " +
+      "number of concepts is not known here: say so, and do not derive it from `termCount`.",
     inputSchema: { vocab: vocabArg, response_format: formatArg },
     annotations: { title: "Vocabulary information", ...READ_ONLY },
     async handler(args, ctx) {
@@ -740,7 +774,15 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
         const o = ctx.output;
         let md = `# ${o.sanitizeInline(info.title || instance.id)}\n\n- **URI**: ${o.safeUrlText(info.uri)}\n- **Id here**: ${o.sanitizeInline(instance.id)}\n`;
         if (info.languages.length) md += `- **Languages**: ${info.languages.map((l) => o.sanitizeInline(l)).join(", ")}\n`;
-        if (info.conceptCount !== undefined) md += `- **Concepts**: ${info.conceptCount}\n`;
+        if (info.conceptCount !== undefined) {
+          const snap = info.ext.snapshot as { lastModified?: unknown } | undefined;
+          const from = snap ? ` (in the vocabulary's snapshot${typeof snap.lastModified === "string" ? ` of ${o.sanitizeInline(snap.lastModified)}` : ""})` : "";
+          md += `- **Concepts**: ${info.conceptCount}${from}\n`;
+        }
+        if (info.termCount !== undefined) {
+          md += `- **Terms, preferred and alternative**: ${info.termCount} (not the number of concepts` +
+            `${info.conceptCount === undefined ? ", which is not known here" : ""})\n`;
+        }
         if (info.created) md += `- **Created**: ${o.sanitizeInline(info.created)}\n`;
         if (info.modified) md += `- **Modified**: ${o.sanitizeInline(info.modified)}\n`;
         if (info.creator) md += `- **Creator**: ${o.sanitizeInline(info.creator)}\n`;
@@ -753,7 +795,7 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     }
   };
 
-  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo];
+  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo, randomConcept];
 }
 
 export { ConceptNotFoundError };

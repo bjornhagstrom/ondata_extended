@@ -111,6 +111,15 @@
       }
     },
     {
+      "name": "a random concept is a whole concept answer with its source (which concept varies)",
+      "tool": "vocab_random_concept",
+      "args": {},
+      "expect": {
+        "jsonPath": "source.title",
+        "equals": "Svada - termer och begrepp"
+      }
+    },
+    {
       "name": "unknown concept is an error with a hint",
       "tool": "vocab_get_concept",
       "args": {

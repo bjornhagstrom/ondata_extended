@@ -2,13 +2,14 @@
  * The SKOS vocabulary profile. Tools are prefixed `vocab_` and speak SKOS; backends are
  * adapters (TemaTres first).
  *
- * MVP: eight tools (src/tools.ts) over one adapter (TemaTres).
+ * Nine tools (src/tools.ts) over one adapter (TemaTres), optionally answered from a snapshot (src/snapshot.ts).
  */
 
 import type { HostPolicy, InstanceEntry, Profile } from "@ondata-extended/profile-contract";
 import { TemaTresProtocolError } from "./adapters/tematres/client.js";
 import { ConceptNotFoundError, ForeignConceptUriError, createSkosTools, skosInstructions } from "./tools.js";
 import { UnknownVocabularyError, type VocabExt } from "./vocabularies.js";
+import { RandomConceptNotOfferedError } from "./model.js";
 
 export const PROFILE_ID = "skos";
 export const TOOL_PREFIX = "vocab_";
@@ -56,6 +57,9 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
       }
       if (error instanceof ConceptNotFoundError) {
         return "→ Find the concept's id with vocab_search_concepts or vocab_suggest; ids are local to one vocabulary.";
+      }
+      if (error instanceof RandomConceptNotOfferedError) {
+        return "→ Pick a concept another way: browse from vocab_top_concepts, or find one with vocab_search_concepts.";
       }
       if (error instanceof UnknownVocabularyError) {
         return error.noDefault

@@ -12,9 +12,9 @@
  */
 
 import type { EngineContext } from "@ondata-extended/profile-contract";
-import type { Concept, ConceptRef, Label, Mapping, Note, SchemeInfo, SearchHit, VocabularyAdapter, VocabularyInstance } from "../../model.js";
+import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Label, type Mapping, type Note, type SchemeInfo, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "../../model.js";
 import { htmlToText } from "../../text.js";
-import { TTL, asBool, asId, asText, callTask, inOrder } from "./client.js";
+import { TTL, TemaTresProtocolError, asBool, asId, asText, callTask, inOrder } from "./client.js";
 
 const NOTE_TYPES: Record<string, Note["type"]> = {
   DF: "definition",
@@ -157,7 +157,8 @@ export const temaTresAdapter: VocabularyAdapter = {
       uri: base,
       title: String(r.title ?? ""),
       languages: asText(r.lang) ? [String(r.lang)] : [],
-      ...(Number.isFinite(Number(r.cant_terms)) ? { conceptCount: Number(r.cant_terms) } : {}),
+      // cant_terms counts every accepted term, alternative (non-preferred) terms included: not the number of concepts.
+      ...(asText(String(r.cant_terms ?? "")) && Number.isFinite(Number(r.cant_terms)) ? { termCount: Number(r.cant_terms) } : {}),
       ...(asText(r.createDate) ? { created: String(r.createDate) } : {}),
       ...(asText(r.lastMod) ? { modified: String(r.lastMod) } : {}),
       ...(asText(r.author) ? { creator: String(r.author) } : {}),
@@ -292,6 +293,22 @@ export const temaTresAdapter: VocabularyAdapter = {
     ]);
     if (!term.rows[0]) return null;
     return direct.rows.filter((r) => r.relation_type === "RT").map((r) => refWithExt(r, base, false));
+  },
+
+  /**
+   * services.php `randomTerm` (TemaTres SQLrandomTerms: one accepted, preferred term, ORDER BY rand()), never cached,
+   * then the concept as getConcept gives it. A TemaTres without the task answers with its XML page for an unknown task.
+   */
+  async randomConcept(ctx, instance) {
+    let picked;
+    try {
+      picked = await callTask(ctx, instance.baseUrl, "randomTerm", undefined, 0);
+    } catch (error) {
+      if (error instanceof TemaTresProtocolError && error.unknownTask) throw new RandomConceptNotOfferedError(instance.id);
+      throw error;
+    }
+    const id = asId(picked.rows[0]?.term_id);
+    return isNumericId(id) ? temaTresAdapter.getConcept(ctx, instance, id) : null;
   },
 
   async topConcepts(ctx, instance) {
