@@ -223,7 +223,9 @@ export const temaTresAdapter: VocabularyAdapter = {
       if (PRIVATE_NOTE_TYPES.has(sourceType)) continue;
       const lang = asText(n.note_lang);
       conceptNotes.push({
-        type: NOTE_TYPES[sourceType] ?? "note",
+        // Own keys only, in the declaration and in the built-in codes: a code such as "constructor" is no note type.
+        type: (Object.hasOwn(instance.noteTypes ?? {}, sourceType) ? instance.noteTypes![sourceType]
+          : Object.hasOwn(NOTE_TYPES, sourceType) ? NOTE_TYPES[sourceType] : undefined) ?? "note",
         value: htmlToText(String(n.note_text ?? "")),
         ...(lang ? { lang } : {}),
         sourceType

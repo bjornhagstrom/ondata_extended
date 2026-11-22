@@ -9,7 +9,7 @@
 
 import type { InstanceEntry } from "@ondata-extended/profile-contract";
 import { createInstanceRegistry } from "@ondata-extended/core";
-import type { VocabularyAdapter, VocabularyInstance } from "./model.js";
+import type { Note, VocabularyAdapter, VocabularyInstance } from "./model.js";
 import { temaTresAdapter } from "./adapters/tematres/adapter.js";
 import { withSnapshot } from "./snapshot.js";
 
@@ -24,6 +24,11 @@ export interface VocabExt {
    * minute; the adapter answers what the snapshot cannot (src/snapshot.ts). Its host must be allowed like any other.
    */
   snapshotUrl?: string;
+  /**
+   * The SKOS note property of the instance's own note types, by the backend's code, as its SKOS export writes them
+   * (e.g. `{ CH: "changeNote" }`). The adapter's defaults apply to the rest.
+   */
+  noteTypes?: Readonly<Record<string, Note["type"]>>;
 }
 
 export const ADAPTERS: Record<string, VocabularyAdapter> = { [temaTresAdapter.id]: temaTresAdapter };
@@ -61,7 +66,8 @@ export function createResolver(entries: readonly InstanceEntry<VocabExt>[] = [])
             baseUrl: entry.baseUrl,
             adapter: entry.ext.adapter,
             ...(entry.ext.defaultLang ? { defaultLang: entry.ext.defaultLang } : {}),
-            ...(entry.ext.conceptUriBase ? { conceptUriBase: entry.ext.conceptUriBase } : {})
+            ...(entry.ext.conceptUriBase ? { conceptUriBase: entry.ext.conceptUriBase } : {}),
+            ...(entry.ext.noteTypes ? { noteTypes: entry.ext.noteTypes } : {})
           },
           adapter: entry.ext.snapshotUrl ? withSnapshot(adapter, entry.ext.snapshotUrl) : adapter
         };

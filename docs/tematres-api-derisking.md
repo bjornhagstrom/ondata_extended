@@ -39,7 +39,7 @@ All calls are GET requests to the public read-only instance, made with curl. No 
 | `fetchDown` | 36 → 6 | `relation_type:"NT"`, `relation_type_id`, `relation_code/label` (sub-relations), `hasMoreDown` | |
 | `fetchRelated` | 2 → 4 | `relation_type:"RT"` | |
 | `fetchAlt` | 2 → `dataspace` | `relation_type:"UF"` | `lang` is inherited from the term: English altLabels are tagged `sv` (data quality in the instance, not an API bug) |
-| `fetchNotes` | 2 → 1 note | `{note_id,note_type:"DF",note_lang,note_text}` | **`note_text` is HTML** (`<h4>`, `<p>`, `<ul>`, links). Convert to text and treat as untrusted content |
+| `fetchNotes` | 2 → 1 note; 55 → 2 notes (DF, and CH, Svada's own type, recorded 2026-11-23) | `{note_id,note_type:"DF",note_lang,note_text}` | **`note_text` is HTML** (`<h4>`, `<p>`, `<ul>`, links). Convert to text and treat as untrusted content |
 | `fetchDirectTerms` | 10 | all direct relations (here RT) | |
 | `fetchRelatedTerms` | `2,4` | union of related, id+string only | |
 | `fetchCentralTerms` | – | `{term_id,string,width}` | |

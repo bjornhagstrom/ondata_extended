@@ -351,6 +351,45 @@ describe("paths the recorded instance has no data for (synthetic answers)", () =
     expect(JSON.stringify(concept)).not.toContain("PRIVATE EDITORIAL");
   });
 
+  it("maps an instance's own note types as the deployment declares them, and keeps a private note hidden", async () => {
+    overrides.set(`${S}?task=fetchNotes&arg=2&output=json`, jsonAnswer(envelope("fetchNotes", "2", {
+      "1": { term_id: "2", note_id: "1", note_type: "CH", note_lang: "sv", note_text: "2026-11-22: Kort definition ändrad." },
+      "2": { term_id: "2", note_id: "2", note_type: "NP", note_lang: "sv", note_text: "PRIVATE EDITORIAL" },
+      "3": { term_id: "2", note_id: "3", note_type: "NA", note_lang: "sv", note_text: "scope" }
+    })));
+    const declared = [{ ...SVADA[0], ext: { ...SVADA[0].ext, noteTypes: { CH: "changeNote", NP: "note", NA: "example" } as const } }];
+    const { concept } = await json(await client({}, declared), "vocab_get_concept", { id: "2" });
+    expect(concept.notes.map((n: { type: string; sourceType: string }) => `${n.type}/${n.sourceType}`)).toEqual(["changeNote/CH", "example/NA"]);
+    expect(JSON.stringify(concept)).not.toContain("PRIVATE EDITORIAL");
+    const m = await md(await client({}, declared), "vocab_get_concept", { id: "2" });
+    expect(m.text).toContain("Change note");
+    // Without the declaration CH is a plain note, as before; an inherited key never counts as a declaration.
+    const plain = await json(await client(), "vocab_get_concept", { id: "2" });
+    expect(plain.concept.notes.map((n: { type: string }) => n.type)).toEqual(["note", "scopeNote"]);
+    const proto = [{ ...SVADA[0], ext: { ...SVADA[0].ext, noteTypes: Object.create({ CH: "changeNote" }) } }];
+    const inherited = await json(await client({}, proto), "vocab_get_concept", { id: "2" });
+    expect(inherited.concept.notes.map((n: { type: string }) => n.type)).toEqual(["note", "scopeNote"]);
+  });
+
+  it("gives Svada's recorded change note (concept 55, code CH) as changeNote when declared", async () => {
+    // The real fetchNotes answer for Svada's concept 55 (fixtures/tematres/notes-55.body), served for concept 2.
+    overrides.set(`${S}?task=fetchNotes&arg=2&output=json`, jsonAnswer(readFileSync(join(FIX, "notes-55.body"), "utf8")));
+    const declared = [{ ...SVADA[0], ext: { ...SVADA[0].ext, noteTypes: { CH: "changeNote" } as const } }];
+    const { concept } = await json(await client({}, declared), "vocab_get_concept", { id: "2" });
+    expect(concept.notes.map((n: { type: string; sourceType: string }) => `${n.type}/${n.sourceType}`)).toEqual(["definition/DF", "changeNote/CH"]);
+  });
+
+  it("takes no inherited key of the built-in codes as a note type", async () => {
+    overrides.set(`${S}?task=fetchNotes&arg=2&output=json`, jsonAnswer(envelope("fetchNotes", "2", {
+      "1": { term_id: "2", note_id: "1", note_type: "constructor", note_lang: "sv", note_text: "a" },
+      "2": { term_id: "2", note_id: "2", note_type: "__proto__", note_lang: "sv", note_text: "b" },
+      "3": { term_id: "2", note_id: "3", note_type: "toString", note_lang: "sv", note_text: "c" }
+    })));
+    const { concept } = await json(await client(), "vocab_get_concept", { id: "2" });
+    expect(concept.notes.map((n: { type: string }) => n.type)).toEqual(["note", "note", "note"]);
+    expect((await md(await client(), "vocab_get_concept", { id: "2" })).text).not.toContain("undefined");
+  });
+
   it("keeps relation types other than BT, RT and UF in ext instead of dropping them", async () => {
     overrides.set(`${S}?task=fetchDirectTerms&arg=2&output=json`, jsonAnswer(envelope("fetchDirectTerms", "2", {
       "4": { term_id: "4", lang: "sv", string: "Deltagare", isMetaTerm: "0", relation_type_id: "2", relation_type: "RT" },

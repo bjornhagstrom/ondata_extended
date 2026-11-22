@@ -92,6 +92,11 @@ export interface VocabularyInstance {
   defaultLang?: string;
   /** The text before the id in this instance's concept URIs, when known. */
   conceptUriBase?: string;
+  /**
+   * The SKOS note property of the instance's own note types, by the backend's code (e.g. a TemaTres note type `CH` that
+   * the instance exports as skos:changeNote). Used before the adapter's defaults; a private type stays hidden.
+   */
+  noteTypes?: Readonly<Record<string, Note["type"]>>;
 }
 
 /** One backend. Every method returns SKOS-model data; a missing concept is `null`, not an error. */

@@ -1074,3 +1074,21 @@ report. Revisit only if a portal is seen sending gzip without the header.
   term is a concept in the SKOS export, the answer shows its narrower concepts, and the snapshot could only guess
   which concepts are grouping terms, so skipping them on one path would make the two paths disagree.
 
+## 2026-11-23: An instance's own note types; Svada's change notes as skos:changeNote
+
+- **Why**: TemaTres's web service gives a custom note type by its code only. Svada's change notes (`CH`) came out as
+  plain notes (`note`) when a concept was read live (concept 55, recorded as `fixtures/tematres/notes-55.body`), while its SKOS export, and so the
+  snapshot, has them as `skos:changeNote`. The same concept read two ways gave two note types.
+- **What**: a deployment may declare the SKOS property of an instance's own note codes (`VocabExt.noteTypes`, e.g.
+  `{ CH: "changeNote" }`); the TemaTres adapter uses it before its built-in codes, and only for the instance's own
+  keys (an inherited key is no declaration). Private notes (`NP`) stay hidden. Both hosts declare it for Svada.
+- **Before/after** (rule 8): a live answer for a concept with a `CH` note gives that note `type: "changeNote"`
+  instead of `type: "note"`, and in Markdown the heading `## Change note (sv)` instead of `## Note (sv)`; nothing else
+  changes. A snapshot answer is unchanged.
+- **Only CH for Svada**: the live/snapshot difference recorded for `ED` and `EX` (2026-11-18 entry) does not arise
+  there: Svada's dump of 2026-11-23 holds 27 change notes and no editorial notes or examples. Another instance with
+  such codes declares them the same way.
+- **Also**: a code that is an inherited key of the built-in table (`constructor`, `__proto__`) was taken as a note
+  type (JSON without `type`, Markdown heading `undefined`); now only the table's own keys count, as for the
+  declaration.
+
