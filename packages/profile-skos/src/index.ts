@@ -75,7 +75,11 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
           return "→ Propose the batch again with vocab_propose_changes and show it to the user; a new batch needs the user's ok again.";
         }
         if (error.code === "batchUsed") return "→ The batch is already written: read the changed concepts back with vocab_get_concept.";
-        if (error.code === "notApplied") return "→ Read the concepts back with vocab_get_concept to see whether anything changed, and tell the user.";
+        if (error.code === "notApplied" || error.code === "unknownOutcome") {
+          return "→ The batch may or may not have been written: do not apply it again. Read the concepts back with vocab_get_concept to see what changed, and tell the user.";
+        }
+        if (error.code === "unreadableProposal") return "→ Nothing can be applied from this dry run. Tell the user; do not apply its id.";
+        if (error.code === "unavailable") return "→ Nothing was written. Retry the dry run later.";
         if (error.code === "unauthorized" || error.code === "forbidden") return "→ Tell the user: this server's write access must be checked by its operator.";
         return "→ Tell the user the service refused the change; do not retry with a different batch on your own.";
       }

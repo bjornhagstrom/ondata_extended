@@ -14,6 +14,7 @@ import { ChangesNotOfferedError, type ChangeOperation, type ChangeProposal, type
 import { createResolver, type VocabExt } from "./vocabularies.js";
 import { htmlToText } from "./text.js";
 import { FRESH_MS } from "./fresh.js";
+import { refusalText } from "./adapters/tematres/write.js";
 
 type Entries = readonly InstanceEntry<VocabExt>[];
 
@@ -28,7 +29,7 @@ const noteType = z.string().regex(/^[A-Za-z]{2,8}$/).describe("The vocabulary's 
 const selector = z.union([
   z.object({ heading: label, paragraph: z.number().int().min(1).max(100).describe("1 = the first paragraph under the heading") }).strict(),
   z.object({ heading: label, listItemContaining: label }).strict()
-]).describe("Where in the note: a paragraph under a heading (e.g. { heading: 'Kort definition', paragraph: 1 }), or the list item under a heading that contains a text");
+]).describe("Where in the note: a paragraph under a heading (e.g. { heading: 'Definition', paragraph: 1 }), or the list item under a heading that contains a text");
 const text = z.string().min(1).max(MAX_TEXT);
 
 const operation = z.discriminatedUnion("op", [
@@ -75,6 +76,9 @@ function titleOf(op: string): string {
   return Object.hasOwn(OP_TITLES, op) ? OP_TITLES[op as ChangeOperation["op"]] : "Change";
 }
 
+/** The tags of an HTML text with their attributes, in order: what `htmlToText` leaves out. */
+const markupOf = (html: string): string => (html.match(/<[^>]*>/g) ?? []).join("");
+
 function changeMarkdown(ctx: EngineContext, c: ProposedChange): string {
   const o = ctx.output;
   const who = c.prefLabel ? `${o.sanitizeInline(c.prefLabel)}${c.conceptId ? ` (id \`${o.sanitizeInline(c.conceptId)}\`)` : ""}` : c.conceptId ? `concept \`${o.sanitizeInline(c.conceptId)}\`` : "";
@@ -89,29 +93,56 @@ function changeMarkdown(ctx: EngineContext, c: ProposedChange): string {
   const after = c.after !== undefined ? htmlToText(c.after) : undefined;
   if (before !== undefined) md += `\n**Before**\n\n${o.wrapUntrusted(before)}\n`;
   if (after !== undefined) md += `\n**After**\n\n${o.wrapUntrusted(after)}\n`;
-  if (before !== undefined && before === after && c.before !== c.after) {
-    md += "\nThe text reads the same; only its markup (e.g. a link's attributes) changes. The JSON format shows both as stored.\n";
+  // The text above hides markup; when the markup written differs from the markup replaced, show it as stored.
+  if (c.after !== undefined && markupOf(c.after) !== markupOf(c.before ?? "")) {
+    if (before !== undefined && before === after) md += "\nThe text reads the same; only its markup changes.\n";
+    md += `\n**After, as stored (markup included)**\n\n${o.wrapUntrusted(c.after)}\n`;
   }
   if (c.changeNote) md += `\n**Change note the service will write**\n\n${o.wrapUntrusted(htmlToText(c.changeNote))}\n`;
   return md;
 }
 
-function proposalMarkdown(ctx: EngineContext, vocab: string, p: ChangeProposal): string {
+const APPLY_NOTE = "Nothing has been written. Show these changes to the user. Apply them with vocab_apply_changes and this " +
+  "batch id only after the user has approved this batch explicitly; an approval covers this batch only.";
+const CONFLICT_NOTE = "This batch cannot be applied: do not call vocab_apply_changes with its id. Show the conflicts to the user " +
+  "and ask how to resolve each one; then propose a corrected batch.";
+const TOO_LARGE_NOTE = "The proposal is too large to show in full, so it must not be applied: do not call vocab_apply_changes with " +
+  "its id. Propose the changes in smaller batches, and show each to the user.";
+
+/** The conflicts and what to do, first, so that no cut can lose them. */
+function proposalHead(ctx: EngineContext, vocab: string, p: ChangeProposal, withId: boolean): string {
   const o = ctx.output;
   let md = `# Proposed changes to ${o.sanitizeInline(vocab)}: nothing written yet\n\n`;
-  md += `- **Batch id**: \`${o.sanitizeInline(p.batchId)}\`\n`;
-  if (p.expiresAt) md += `- **Valid until**: ${o.sanitizeInline(p.expiresAt)}\n`;
-  md += `- **Changes**: ${p.changes.length}\n`;
-  for (const c of p.changes) md += changeMarkdown(ctx, c);
+  if (withId) md += `- **Batch id**: \`${o.sanitizeInline(p.batchId)}\`\n`;
+  if (withId && p.expiresAt) md += `- **Valid until**: ${o.sanitizeInline(p.expiresAt)}\n`;
+  md += `- **Changes**: ${p.changes.length}\n- **Conflicts**: ${p.conflicts.length}\n`;
   if (p.conflicts.length) {
-    md += `\n## Conflicts (${p.conflicts.length})\n\n`;
-    md += p.conflicts.map((c) => `- Change ${c.index + 1}: ${o.sanitizeInline(c.code)}${c.message ? ` — ${o.sanitizeInline(c.message)}` : ""}`).join("\n") + "\n";
-    md += "\nThis batch cannot be applied. Show the conflicts to the user and ask how to resolve each one; then propose a corrected batch.\n";
-  } else {
-    md += "\nNothing has been written. Show these changes to the user. Apply them with vocab_apply_changes and this batch id only " +
-      "after the user has approved this batch explicitly; an approval covers this batch only.\n";
+    md += `\n## Conflicts\n\n`;
+    md += p.conflicts.map((c) => `- Change ${c.index + 1}: ${o.sanitizeInline(c.code)}: ${refusalText(c.code)}`).join("\n") + "\n";
+    md += `\n${CONFLICT_NOTE}\n`;
   }
   return md;
+}
+
+function proposalMarkdown(ctx: EngineContext, vocab: string, p: ChangeProposal): string {
+  let md = proposalHead(ctx, vocab, p, true);
+  for (const c of p.changes) md += changeMarkdown(ctx, c);
+  if (!p.conflicts.length) md += `\n${APPLY_NOTE}\n`;
+  return md;
+}
+
+/** The proposal as the tool answers it; one too large to show whole is answered without its id. */
+function proposalAnswer(ctx: EngineContext, format: "markdown" | "json", vocab: string, p: ChangeProposal): ToolResult {
+  const limit = ctx.limits.characterLimit;
+  if (format === "json") {
+    const answer = { vocab, written: false, applicable: p.conflicts.length === 0, ...p };
+    if (JSON.stringify(answer).length <= limit) return ctx.output.json(answer);
+    const { batchId: _omitted, expiresAt: _also, ...rest } = p;
+    return ctx.output.json({ vocab, written: false, applicable: false, tooLarge: true, note: TOO_LARGE_NOTE, changeCount: rest.changes.length, conflicts: rest.conflicts });
+  }
+  const md = proposalMarkdown(ctx, vocab, p);
+  if (md.length <= limit) return ctx.output.text(md);
+  return ctx.output.text(`${proposalHead(ctx, vocab, p, false)}\n${TOO_LARGE_NOTE}\n`);
 }
 
 function resultMarkdown(ctx: EngineContext, vocab: string, r: ChangeResult): string {
@@ -131,13 +162,14 @@ export function createChangeTools(entries: Entries): ToolSpec<any>[] {
   if (writable.length === 0) return [];
   const ids = writable.map((e) => e.id);
   const resolver = createResolver(entries);
-  const vocabArg = z.string().max(500).optional()
-    .describe(`The vocabulary to change, by id: ${ids.map((id) => `'${id}'`).join(", ")}.${ids.length === 1 ? " Omit for that one." : ""}`);
+  // Always named, never a default: the reading tools' default may be another vocabulary with the same numeric ids.
+  const vocabArg = z.string().min(1).max(500)
+    .describe(`The vocabulary to change, by id: ${ids.map((id) => `'${id}'`).join(", ")}. The same vocabulary the concepts were read from.`);
 
-  function resolveWritable(vocab: string | undefined) {
-    const wanted = vocab?.trim() || (ids.length === 1 ? ids[0] : "");
+  function resolveWritable(vocab: string) {
+    const wanted = vocab.trim();
     // By id only: a base URL, even of a writable vocabulary, is not accepted.
-    if (!ids.includes(wanted)) throw new NotWritableVocabularyError(vocab?.trim() ?? "", ids);
+    if (!ids.includes(wanted)) throw new NotWritableVocabularyError(wanted, ids);
     const { instance, adapter } = resolver.resolve(wanted);
     if (!instance.write || !adapter.proposeChanges || !adapter.applyChanges) throw new ChangesNotOfferedError(instance.id);
     return { instance, adapter };
@@ -170,7 +202,7 @@ export function createChangeTools(entries: Entries): ToolSpec<any>[] {
       const { instance, adapter } = resolveWritable(args.vocab);
       const proposal = await adapter.proposeChanges!(ctx, instance, { reason: args.reason, source: args.source, operations: args.operations });
       ctx.telemetry.note({ batch_id: proposal.batchId, operations: args.operations.length, conflicts: proposal.conflicts.length });
-      return respond(ctx, args.response_format, { vocab: instance.id, written: false, ...proposal }, () => proposalMarkdown(ctx, instance.id, proposal));
+      return proposalAnswer(ctx, args.response_format, instance.id, proposal);
     }
   };
 

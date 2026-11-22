@@ -6,13 +6,16 @@
  * builds one (JSON, `{ action: "dryRun", batch }` and `{ action: "apply", batchId }`, a Bearer key, error codes); the
  * agreed format replaces it here, and only here. Nothing in a deployment points at it until then.
  *
- * The key is read from the core config at call time, sent only in the Authorization header (the core drops it on a
- * redirect, but a write never follows one: the endpoint is exactly where the deployment says), and never written into an answer, an error or the telemetry. An error answer is reduced to
- * its code; the service's own message text is not repeated.
+ * The key is read from the core config at call time and must be printable ASCII without spaces (anything else is
+ * treated as no key, so a malformed value can never reach an error message). It is sent only in the Authorization
+ * header of an HTTPS request that follows no redirect, and never written into an answer, an error or the telemetry.
+ * An error answer is reduced to its code, shown with our own text; the service's message is never repeated.
+ *
+ * A dry run is read fail-closed: an answer that does not account for every operation, or that cannot be read whole, is
+ * an error, never a proposal with fewer changes or conflicts than the batch has.
  */
 
 import type { EngineContext } from "@ondata-extended/profile-contract";
-import { TransportError } from "@ondata-extended/core";
 import {
   ChangeRefusedError,
   ChangesNotOfferedError,
@@ -40,33 +43,51 @@ const REFUSALS: Record<string, string> = {
   batchUnknown: "No proposed batch has this id.",
   invalidOperation: "The vocabulary service did not accept an operation of the batch.",
   tooLarge: "The batch is larger than the vocabulary service accepts.",
-  rateLimited: "The vocabulary service has had too many write requests; it asks to wait."
+  rateLimited: "The vocabulary service has had too many write requests; it asks to wait.",
+  unavailable: "The vocabulary service did not answer the dry run; nothing was written."
 };
 const GENERIC_REFUSAL = "The vocabulary service refused the change.";
+const UNKNOWN_OUTCOME = "The vocabulary service did not say whether the batch was written.";
+
+/** Our text for a code from the service. */
+export function refusalText(code: string): string {
+  return Object.hasOwn(REFUSALS, code) ? REFUSALS[code] : GENERIC_REFUSAL;
+}
+
+/** Codes with which the service says it wrote nothing. */
+const NOTHING_WRITTEN = new Set(Object.keys(REFUSALS));
 
 const MAX_TEXT = 100_000;
-const asStr = (v: unknown, max = MAX_TEXT): string | undefined => (typeof v === "string" && v.length <= max ? v : undefined);
-const asIndex = (v: unknown): number | undefined => (Number.isInteger(v) && (v as number) >= 0 ? (v as number) : undefined);
 const CODE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const BATCH_ID = /^[A-Za-z0-9_-]{8,128}$/;
+/** RFC 6750's token characters, in practice: printable ASCII without spaces. */
+const KEY = /^[\x21-\x7e]{1,1024}$/;
+
+class UnreadableAnswer extends Error {}
 
 function writeAccess(ctx: EngineContext, instance: VocabularyInstance): { url: string; key: string } {
   const write = instance.write;
   const key = write ? ctx.config.get(write.keySetting)?.trim() : undefined;
-  if (!write || !key) throw new ChangesNotOfferedError(instance.id);
+  if (!write || !key || !KEY.test(key)) throw new ChangesNotOfferedError(instance.id);
+  let https = false;
+  try {
+    https = new URL(write.url).protocol === "https:";
+  } catch {
+    https = false;
+  }
+  if (!https) throw new ChangesNotOfferedError(instance.id);
   return { url: write.url, key };
 }
 
-async function post(ctx: EngineContext, instance: VocabularyInstance, body: unknown): Promise<Record<string, unknown>> {
+type Answer = { status: number; obj: Record<string, unknown> | undefined };
+
+async function post(ctx: EngineContext, instance: VocabularyInstance, body: unknown): Promise<Answer> {
   const { url, key } = writeAccess(ctx, instance);
   const res = await ctx.http.request(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body)
-  }, { userAgent: "honest", httpsOnly: true, retry: { attempts: 1 }, maxHops: 0 });
-  if ((res.status >= 520 && res.status <= 527) || res.status === 530) {
-    throw new TransportError(`Network error: the vocabulary service could not be reached (HTTP ${res.status})`, url, true, "edge");
-  }
+  }, { userAgent: "honest", retry: { attempts: 1 }, maxHops: 0 });
   let parsed: unknown;
   try {
     parsed = JSON.parse(res.text ?? "");
@@ -74,32 +95,43 @@ async function post(ctx: EngineContext, instance: VocabularyInstance, body: unkn
     parsed = undefined;
   }
   const obj = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
-  if (res.status < 200 || res.status >= 300 || !obj) {
-    const code = typeof obj?.code === "string" && CODE.test(obj.code) ? obj.code : res.status === 401 ? "unauthorized" : res.status === 403 ? "forbidden" : res.status === 429 ? "rateLimited" : `http${res.status}`;
-    throw new ChangeRefusedError(code, Object.hasOwn(REFUSALS, code) ? REFUSALS[code] : GENERIC_REFUSAL);
-  }
-  return obj;
+  return { status: res.status, obj };
 }
+
+/** The service's code for a refusal, if it gave a well-formed one. */
+function codeOf(a: Answer): string | undefined {
+  if (typeof a.obj?.code === "string" && CODE.test(a.obj.code)) return a.obj.code;
+  if (a.status === 401) return "unauthorized";
+  if (a.status === 403) return "forbidden";
+  if (a.status === 429) return "rateLimited";
+  return undefined;
+}
+
+const str = (v: unknown, what: string, max = MAX_TEXT): string => {
+  if (typeof v !== "string" || v.length > max) throw new UnreadableAnswer(what);
+  return v;
+};
+const optStr = (v: unknown, what: string, max = MAX_TEXT): string | undefined => (v === undefined || v === null ? undefined : str(v, what, max));
+const index = (v: unknown, count: number): number => {
+  if (!Number.isInteger(v) || (v as number) < 0 || (v as number) >= count) throw new UnreadableAnswer("index");
+  return v as number;
+};
 
 function selectorOf(v: unknown): NoteSelector | undefined {
-  if (!v || typeof v !== "object") return undefined;
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "object") throw new UnreadableAnswer("selector");
   const s = v as Record<string, unknown>;
-  const heading = asStr(s.heading, 500);
-  if (heading === undefined) return undefined;
+  const heading = str(s.heading, "selector", 500);
   if (Number.isInteger(s.paragraph)) return { heading, paragraph: s.paragraph as number };
-  const item = asStr(s.listItemContaining, 500);
-  return item === undefined ? undefined : { heading, listItemContaining: item };
+  return { heading, listItemContaining: str(s.listItemContaining, "selector", 500) };
 }
 
-function changeOf(v: unknown): ProposedChange | undefined {
-  if (!v || typeof v !== "object") return undefined;
+function changeOf(v: unknown, count: number): ProposedChange {
+  if (!v || typeof v !== "object") throw new UnreadableAnswer("change");
   const o = v as Record<string, unknown>;
-  const index = asIndex(o.index);
-  const op = asStr(o.op, 64);
-  if (index === undefined || !op) return undefined;
-  const out: ProposedChange = { index, op: op as ProposedChange["op"] };
+  const out: ProposedChange = { index: index(o.index, count), op: str(o.op, "op", 64) as ProposedChange["op"] };
   for (const key of ["conceptId", "conceptUri", "prefLabel", "noteType", "before", "after", "changeNote"] as const) {
-    const s = asStr(o[key]);
+    const s = optStr(o[key], key);
     if (s !== undefined) out[key] = s;
   }
   const selector = selectorOf(o.selector);
@@ -107,46 +139,69 @@ function changeOf(v: unknown): ProposedChange | undefined {
   return out;
 }
 
-function conflictOf(v: unknown): ChangeConflict | undefined {
-  if (!v || typeof v !== "object") return undefined;
+function conflictOf(v: unknown, count: number): ChangeConflict {
+  if (!v || typeof v !== "object") throw new UnreadableAnswer("conflict");
   const o = v as Record<string, unknown>;
-  const index = asIndex(o.index);
-  const code = typeof o.code === "string" && CODE.test(o.code) ? o.code : undefined;
-  if (index === undefined || !code) return undefined;
-  const message = asStr(o.message, 1000);
-  return { index, code, ...(message ? { message } : {}) };
-}
-
-function batchIdOf(v: unknown): string {
-  if (typeof v !== "string" || !BATCH_ID.test(v)) throw new ChangeRefusedError("badAnswer", "The vocabulary service gave no usable batch id.");
-  return v;
+  const code = str(o.code, "code", 64);
+  if (!CODE.test(code)) throw new UnreadableAnswer("code");
+  // The service's message is not kept: a conflict is shown with our text for its code.
+  return { index: index(o.index, count), code };
 }
 
 export async function proposeChanges(ctx: EngineContext, instance: VocabularyInstance, batch: ChangeBatch): Promise<ChangeProposal> {
   const a = await post(ctx, instance, { action: "dryRun", batch });
-  const changes = Array.isArray(a.changes) ? a.changes : Array.isArray(a.operations) ? a.operations : [];
-  return {
-    batchId: batchIdOf(a.batchId),
-    ...(asStr(a.expiresAt, 64) ? { expiresAt: a.expiresAt as string } : {}),
-    changes: changes.map(changeOf).filter((c): c is ProposedChange => c !== undefined),
-    conflicts: (Array.isArray(a.conflicts) ? a.conflicts : []).map(conflictOf).filter((c): c is ChangeConflict => c !== undefined)
-  };
+  if (a.status < 200 || a.status >= 300 || !a.obj) {
+    const code = codeOf(a) ?? (a.status >= 500 ? "unavailable" : `http${a.status}`);
+    throw new ChangeRefusedError(code, refusalText(code));
+  }
+  const count = batch.operations.length;
+  try {
+    const batchId = str(a.obj.batchId, "batchId", 128);
+    if (!BATCH_ID.test(batchId)) throw new UnreadableAnswer("batchId");
+    if (!Array.isArray(a.obj.changes) || !Array.isArray(a.obj.conflicts)) throw new UnreadableAnswer("lists");
+    const changes = a.obj.changes.map((c) => changeOf(c, count));
+    const conflicts = a.obj.conflicts.map((c) => conflictOf(c, count));
+    // Every operation accounted for, once, in order: by a change or by a conflict.
+    const covered = new Set([...changes.map((c) => c.index), ...conflicts.map((c) => c.index)]);
+    if (covered.size !== count || changes.some((c, i) => i > 0 && c.index <= changes[i - 1].index)) throw new UnreadableAnswer("coverage");
+    const expiresAt = optStr(a.obj.expiresAt, "expiresAt", 64);
+    return { batchId, ...(expiresAt ? { expiresAt } : {}), changes, conflicts };
+  } catch (error) {
+    if (error instanceof UnreadableAnswer) {
+      throw new ChangeRefusedError("unreadableProposal", "The vocabulary service's dry run could not be read whole; nothing can be applied from it.");
+    }
+    throw error;
+  }
 }
 
 export async function applyChanges(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<ChangeResult> {
-  let a: Record<string, unknown>;
+  writeAccess(ctx, instance); // no key or no HTTPS: nothing is sent, nothing to read fresh
+  let a: Answer;
   try {
     a = await post(ctx, instance, { action: "apply", batchId });
-  } finally {
-    // Whatever the answer (a timeout may come after the write), read this vocabulary fresh for a while.
+  } catch (error) {
+    // Sent, but no answer (a timeout, a lost connection, a guard after the fact): it may have been written.
+    if ((error as { name?: string } | null)?.name === "SsrfGuardError") throw error;
     markWritten(instance.baseUrl);
+    throw new ChangeRefusedError("unknownOutcome", UNKNOWN_OUTCOME);
   }
-  if (a.applied !== true) throw new ChangeRefusedError("notApplied", "The vocabulary service did not confirm that the batch was written.");
-  const ids = Array.isArray(a.changedConceptIds) ? a.changedConceptIds : [];
-  const dump = asStr(a.dump, 300);
-  const logId = typeof a.logId === "string" || typeof a.logId === "number" ? String(a.logId).slice(0, 64) : undefined;
+  const code = a.status >= 200 && a.status < 300 ? undefined : codeOf(a);
+  if (code && NOTHING_WRITTEN.has(code) && a.status >= 400 && a.status < 500) {
+    throw new ChangeRefusedError(code, refusalText(code));
+  }
+  // From here on the batch may have been written: read this vocabulary fresh for a while, whatever follows.
+  markWritten(instance.baseUrl);
+  if (a.status < 200 || a.status >= 300 || !a.obj || a.obj.applied !== true) {
+    throw new ChangeRefusedError(a.obj?.applied === false ? "notApplied" : "unknownOutcome", a.obj?.applied === false
+      ? "The vocabulary service did not confirm that the batch was written."
+      : UNKNOWN_OUTCOME);
+  }
+  // Written: the rest is reported as far as it can be read, never turned into a refusal.
+  const ids = Array.isArray(a.obj.changedConceptIds) ? a.obj.changedConceptIds : [];
+  const dump = typeof a.obj.dump === "string" && a.obj.dump.length <= 300 ? a.obj.dump : undefined;
+  const logId = typeof a.obj.logId === "string" || typeof a.obj.logId === "number" ? String(a.obj.logId).slice(0, 64) : undefined;
   return {
-    batchId: batchIdOf(a.batchId ?? batchId),
+    batchId,
     applied: true,
     ...(dump ? { dump } : {}),
     changedConceptIds: ids.map((id) => String(id)).filter((id) => /^\d{1,12}$/.test(id)),

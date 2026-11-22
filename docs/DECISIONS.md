@@ -1101,18 +1101,43 @@ report. Revisit only if a portal is seen sending gzip without the header.
 - **What**:
   - `vocab_propose_changes` (a dry run: before, after and the change note per change, conflicts, a batch id; writes
     nothing) and `vocab_apply_changes` (the batch id only; `destructiveHint: true`). Offered only when a deployment
-    gives a vocabulary `write: { url, keySetting }`, and only for those vocabularies, by id; a base URL is refused, so
-    a call never writes to a service the deployment did not name. No deployment has it yet.
-  - The key is read from the core config at call time (`<PREFIX>_<keySetting>`), sent only in the Authorization
-    header, never in an instance object, an answer, an error or the telemetry. A write follows no redirect and is not
-    retried. A refusal shows its code with our text, never the service's message.
+    gives a vocabulary `write: { url, keySetting }`, and only for those vocabularies, named by id in every call (no
+    default: the reading tools' default may be another vocabulary with the same numeric ids; a base URL is refused, so
+    a call never writes to a service the deployment did not name). No deployment has it yet.
+  - The key is read from the core config at call time (`<PREFIX>_<keySetting>`) and must be printable ASCII without
+    spaces; anything else counts as no key, so a malformed value never reaches an error message (a header value with a
+    line break would). Sent only in the Authorization header, only over HTTPS; never in an instance object, an answer,
+    an error or the telemetry. A write follows no redirect and is sent once, whatever the host's retry policy.
+  - A refusal is answered with our text for its code; the service's message is never shown, neither for a refusal nor
+    for a conflict.
+  - The dry run is read fail-closed: an answer that does not account for every operation (by a change or a conflict),
+    or that cannot be read whole, is an error with no id. A proposal too large to show whole is answered without its
+    id. Conflicts come first, so no cut can lose them; a proposal with conflicts says not to apply it. Stopping such an
+    apply is the service's job (the handoff asks for it); the MCP holds no state between the calls.
+  - Markup is shown as stored whenever the markup written differs from the markup replaced (the plain text would hide
+    a script or a dropped link attribute).
   - Apply takes no text, so nothing read from the vocabulary can shape a write: what is written is what the dry run
     showed. The descriptions say to change only what the user's material gives, to show the dry run, and to apply only
-    after the user's explicit ok for that batch.
-  - After an apply (also a failed or lost one) the vocabulary is read live for five minutes (the live answers' cache
-    TTL): no snapshot, no cache read or write (`src/fresh.ts`). Every cached answer is then older than the write by more
-    than its TTL. Per isolate; another isolate may answer from its cache until it expires, as before any write.
-  - The wire format is provisional and kept in `src/adapters/tematres/write.ts` alone.
-- **Not yet**: a deployment with write access (first the test copy on vocab.hagstrom.nu, Svada only with Björn's ok),
-  the agreed format, smoke cases and evals for the change tools, and the frozen surface (the tools are absent from every
-  deployment until then).
+    after the user's explicit ok for that batch. A confirmed write is reported as written even if the rest of the
+    answer is odd; an answer that does not say (a 5xx, an unreadable 2xx, no answer) is "may or may not have been
+    written", with the hint to read back and not to apply again.
+  - After an apply that may have written (not after a refusal that says nothing was written, nor when nothing was sent)
+    the vocabulary is read live for an hour, the longest TTL of a cached live answer (TemaTres's scheme data): no
+    snapshot, no cache read or write (`src/fresh.ts`), and the source line's memory reads the scheme again once. Every
+    cached answer is then older than the write by more than its TTL. Per isolate; another isolate may answer from its
+    cache until it expires, as before any write.
+  - The wire format is provisional and kept in `src/adapters/tematres/write.ts` alone. The operation set follows the
+    TemaTres proposal (`createMetaTerm`, note type codes, the three statuses); it is generalized when a second backend
+    writes.
+- **Who may call them**: the decision of 2026-11-14 to run without authentication rests on read-only tools and no
+  secret in either Worker. A deployment with write access holds a key, and anyone with its URL could propose and
+  apply. So write access is configured only on an endpoint that is not public (at the least the secret path, and only
+  after deciding whether that is enough), never on the public ecosystem or demo endpoints. To be decided with Björn
+  before the first deployment with `write`.
+- **Reviewed**: mcp-reviewer, 2026-11-22: one blocker (a malformed key echoed by the runtime's header check) and eight
+  should-fixes (fail-open dry-run parsing, truncation losing conflicts, a confirmed write reported as refused, the
+  fresh window shorter than the scheme TTL and the source memory, `httpsOnly` without effect, markup hidden, no test
+  for no-retry, a deployment's example in profile text), all fixed with a test each that fails without the fix.
+- **Not yet**: a deployment with write access (first the test copy on vocab.hagstrom.nu, Svada only with Björn's ok;
+  see who may call), the agreed format, smoke cases and evals for the change tools, and the frozen surface (the tools
+  are absent from every deployment until then).

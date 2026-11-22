@@ -31,7 +31,7 @@ export interface VocabExt {
   noteTypes?: Readonly<Record<string, Note["type"]>>;
   /**
    * Write access to this vocabulary: the backend's write endpoint (HTTPS, allowed like any other host) and the name of
-   * the config setting that holds its key, e.g. `WRITE_KEY_SVADA` (so `VOCAB_WRITE_KEY_SVADA` in the environment). Only
+   * the config setting that holds its key, e.g. `WRITE_KEY_EXAMPLE` (so `VOCAB_WRITE_KEY_EXAMPLE` with the prefix `VOCAB`). Only
    * then are the change tools offered, and only for vocabularies listed with it.
    */
   write?: { url: string; keySetting: string };
