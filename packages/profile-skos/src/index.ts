@@ -2,7 +2,7 @@
  * The SKOS vocabulary profile. Tools are prefixed `vocab_` and speak SKOS; backends are
  * adapters (TemaTres first).
  *
- * Nine reading tools (src/tools.ts), and two change tools where a vocabulary is writable (src/change-tools.ts), over one adapter (TemaTres), optionally answered from a snapshot (src/snapshot.ts).
+ * Nine reading tools (src/tools.ts), and two change tools where a vocabulary is writable and the deployment offers them (src/change-tools.ts), over one adapter (TemaTres), optionally answered from a snapshot (src/snapshot.ts).
  */
 
 import type { HostPolicy, InstanceEntry, Profile } from "@ondata-extended/profile-contract";
@@ -35,6 +35,12 @@ export interface SkosProfileOptions {
    * server that asked for gentle use. The core applies them to every request to that host.
    */
   hostPolicies?: Readonly<Record<string, HostPolicy>>;
+  /**
+   * Offer the change tools (vocab_propose_changes, vocab_apply_changes) for the vocabularies with write access. Off by
+   * default: a deployment turns it on only for a service that no one reaches without logging in (core `login`), never
+   * for an open one. A vocabulary's write access alone does not offer them.
+   */
+  offerChanges?: boolean;
 }
 
 export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
@@ -42,7 +48,7 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
     id: PROFILE_ID,
     version: PROFILE_VERSION,
     toolPrefix: TOOL_PREFIX,
-    tools: createSkosTools(options.vocabularies ?? []),
+    tools: createSkosTools(options.vocabularies ?? [], { changes: options.offerChanges === true }),
     instructions: skosInstructions(options.vocabularies ?? [], options.instructions),
     ...(options.hostPolicies
       ? { hostPolicies: Object.fromEntries(Object.entries(options.hostPolicies).map(([host, policy]) => [host.toLowerCase(), policy])) }

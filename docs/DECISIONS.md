@@ -1131,9 +1131,7 @@ report. Revisit only if a portal is seen sending gzip without the header.
     writes.
 - **Who may call them**: the decision of 2026-11-14 to run without authentication rests on read-only tools and no
   secret in either Worker. A deployment with write access holds a key, and anyone with its URL could propose and
-  apply. So write access is configured only on an endpoint that is not public (at the least the secret path, and only
-  after deciding whether that is enough), never on the public ecosystem or demo endpoints. To be decided with Björn
-  before the first deployment with `write`.
+  apply. Decided 2026-11-22 (Björn): a password, see the next entry.
 - **Reviewed**: mcp-reviewer, 2026-11-22: one blocker (a malformed key echoed by the runtime's header check) and eight
   should-fixes (fail-open dry-run parsing, truncation losing conflicts, a confirmed write reported as refused, the
   fresh window shorter than the scheme TTL and the source memory, `httpsOnly` without effect, markup hidden, no test
@@ -1141,3 +1139,45 @@ report. Revisit only if a portal is seen sending gzip without the header.
 - **Not yet**: a deployment with write access (first the test copy on vocab.hagstrom.nu, Svada only with Björn's ok;
   see who may call), the agreed format, smoke cases and evals for the change tools, and the frozen surface (the tools
   are absent from every deployment until then).
+
+## 2026-11-22: The change tools sit behind a login, once, kept alive by refresh
+
+**Decision (Björn)**: writing through the MCP needs a password; he does not want to log in regularly.
+
+- **What**: a service of the several-service Worker may have a `login` (core `src/login.ts`). Its `/mcp` then answers
+  only a request with an access token; anything else gets 401 with where to log in (RFC 9728). The login is OAuth 2.1
+  with PKCE (S256), the way MCP clients (claude.ai, Claude Code) connect to a protected server: the client registers
+  itself (RFC 7591), sends the person to a page where they type the password, and gets an access token (one hour) and
+  a refresh token. Its endpoints sit under the service's path (`/<path>/authorize`, `/token`, `/register`); the
+  discovery documents at the addresses RFC 9728 and RFC 8414 derive from it. It works the same for a private service
+  at its secret path; the secret path then hides the service and the password guards it.
+- **Logged in once**: a refresh token lives 90 days unused and is replaced at every refresh, so a client used at
+  least once a quarter never asks again. The person logs in again only when the connector is added anew, or after
+  the password or the signing secret changes, which ends every login at once.
+- **Stateless, no library**: client ids, codes and tokens are HMAC-signed with a key derived from a signing secret, the
+  service's id and the password, and carry their expiry. No storage is needed, every isolate accepts what another
+  issued, and it runs on Workers and Node alike (Web Crypto only). Cloudflare's `workers-oauth-provider`, named to
+  Björn first, was not used: it needs a KV namespace (eventually consistent, up to a minute, for rotating refresh
+  tokens), wraps the whole Worker and fixes its routes when the Worker loads, which fits neither a secret path read at
+  request time nor the several-service handler. The price of statelessness: a code can be redeemed more than once in
+  its two minutes (PKCE still binds it to the client that asked), and a replaced refresh token stays valid until it
+  expires. Revocation is the password or the signing secret.
+- **Rules**: a password of at least 16 characters and a signing secret of 32-256 characters (generated at random),
+  both secrets of the deployment; otherwise the service is off (404, one warning without a value). Redirect addresses
+  are HTTPS, or HTTP to this machine for a command-line client; never a redirect to an address the client did not
+  register, and a broken request to log in is shown on our own page, never sent to the client's address (registration
+  is open, so a registered address is not a trusted one). Registration is open to anyone, so the login page names the
+  host the code goes to, and a deployment can list the only hosts a client may be sent to (`redirectHosts`, e.g.
+  claude.ai and localhost); a loopback address matches on any port (RFC 8252). The login page forbids framing, sends no
+  referrer and is not cached; the password is compared in constant time and never shown or logged. No rate limit on
+  the page (stateless): the password's length carries that.
+- **The profile**: the SKOS profile offers the change tools only with `offerChanges: true`, which a host sets only
+  for a service behind a login; a vocabulary's write access alone no longer offers them.
+- **Reviewed**: mcp-reviewer, 2026-11-22: no blocker; a phishing path (a stranger registers their own address and
+  sends the person a link to the genuine page) and missing tests, fixed with the host shown on the page, the
+  deployment's redirect hosts and the tests; an open redirect for broken requests, two limits that contradicted each
+  other, an unset login still listed, loopback ports and an optional `redirect_uri` at the token endpoint, all fixed
+  with a test each that fails without the fix.
+- **Not yet**: the host's write service (its login page text in `en`/`sv`, the secrets, the writable test
+  vocabulary) waits for the write API on vocab.hagstrom.nu; a live check that claude.ai and Claude Code register,
+  log in and refresh as expected.

@@ -2,7 +2,8 @@
  * The change tools: vocab_propose_changes (a dry run: the diff and a batch id, nothing written) and vocab_apply_changes
  * (writes the batch with that id, all or nothing).
  *
- * Offered only when the deployment gives at least one vocabulary write access (`VocabExt.write`), and then only for
+ * Offered only when the deployment turns them on (`offerChanges`, for a service behind a login) and gives at least one
+ * vocabulary write access (`VocabExt.write`), and then only for
  * those vocabularies, by id: a base URL is not accepted, so a call can never write to a service the deployment did not
  * name. apply takes only the id, never text, so nothing read from the vocabulary (a note, a label) can shape what is
  * written: what is written is what the dry run showed the user.

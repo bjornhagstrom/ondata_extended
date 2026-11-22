@@ -618,7 +618,8 @@ function sourceMarkdown(ctx: EngineContext, s: Source): string {
  * first is the default. Any other vocabulary is reachable by its base URL when the deployment's allow-list lets the
  * request through.
  */
-export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
+/** `changes`: offer the change tools for the writable vocabularies (only on a service behind a login). */
+export function createSkosTools(entries: Entries = [], { changes = false }: { changes?: boolean } = {}): ToolSpec<any>[] {
   const vocabArg = vocabArgBase.describe(vocabArgDescription(entries));
   const sourceOf = createSourceMemo(entries);
 
@@ -803,8 +804,8 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     }
   };
 
-  // The change tools only where the deployment gives a vocabulary write access (src/change-tools.ts).
-  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo, randomConcept, ...createChangeTools(entries)];
+  // The change tools only when the deployment offers them (a service behind a login) and gives a vocabulary write access (src/change-tools.ts).
+  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo, randomConcept, ...(changes ? createChangeTools(entries) : [])];
 }
 
 export { ConceptNotFoundError };

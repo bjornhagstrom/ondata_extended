@@ -52,7 +52,7 @@ afterEach(() => {
 async function client(vocabularies: readonly InstanceEntry<VocabExt>[] = WRITABLE, source: Record<string, string> = { VOCAB_WRITE_KEY_UNESCO_TEST: KEY }, hostPolicies?: Record<string, { retry: { attempts: number } }>) {
   const engine = createEngine({ configPrefixes: ["VOCAB"], configSource: source, cacheOrigin: "https://t.internal" });
   const server = createMcpServer({ name: "t", version: "0" });
-  registerProfiles(server, [createSkosProfile({ vocabularies, ...(hostPolicies ? { hostPolicies } : {}) })], engine);
+  registerProfiles(server, [createSkosProfile({ vocabularies, offerChanges: true, ...(hostPolicies ? { hostPolicies } : {}) })], engine);
   const [a, b] = InMemoryTransport.createLinkedPair();
   const c = new Client({ name: "t", version: "0" });
   await Promise.all([server.connect(a), c.connect(b)]);
@@ -333,6 +333,13 @@ describe("the change tools", () => {
     const plain = [{ ...WRITABLE[0], ext: { ...WRITABLE[0].ext, write: { url: "http://vocab.hagstrom.nu/unesco/services/write.php", keySetting: "WRITE_KEY_UNESCO_TEST" } } }];
     expect((await call(await client(plain), "vocab_propose_changes", BATCH)).text).toContain("not offered");
     expect(calls).toHaveLength(0);
+  });
+
+  it("offers no change tool unless the deployment turns them on, write access or not", () => {
+    const names = (offerChanges?: boolean) => createSkosProfile({ vocabularies: WRITABLE, ...(offerChanges === undefined ? {} : { offerChanges }) }).tools.map((t) => t.name);
+    expect(names()).not.toContain("vocab_propose_changes");
+    expect(names(false)).not.toContain("vocab_apply_changes");
+    expect(names(true)).toEqual(expect.arrayContaining(["vocab_propose_changes", "vocab_apply_changes"]));
   });
 
   it("refuses operations it does not know, extra fields and malformed ids before any request", async () => {

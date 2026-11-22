@@ -11,6 +11,10 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { summarizeToolError, takeTelemetry } from "./telemetry.js";
+import {
+  authorizationServerMetadata, authorize, hasAccess, loginConfigured, loginKeys, loginUrls, protectedResourceMetadata, register, token,
+  unauthorized, type ServiceLogin
+} from "./login.js";
 
 export interface AnalyticsEngineDataset {
   writeDataPoint(event: { blobs?: string[]; doubles?: number[]; indexes?: string[] }): void;
@@ -180,6 +184,12 @@ export interface WorkerService<Env> extends McpRoute<Env> {
   health(env: Env): Record<string, unknown>;
   path?: string;
   secretPath?(env: Env): string | undefined;
+  /**
+   * A login in front of /<path>/mcp (src/login.ts): an MCP client gets in only with an access token, which it gets
+   * when a person types the deployment's password once. Its endpoints sit under the same path. A service whose
+   * login is not set up (a missing or short password or signing secret) is off: it answers 404 like an unknown path.
+   */
+  login?: ServiceLogin<Env>;
 }
 
 export interface ServicesHostOptions<Env> {
@@ -194,7 +204,7 @@ const SERVICE_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const PUBLIC_PATH = /^[a-z0-9][a-z0-9-]{0,62}$/;
 /** At least 32 characters from a 64-character alphabet: about 192 bits when generated at random. */
 const SECRET_PATH = /^[A-Za-z0-9_-]{32,256}$/;
-const RESERVED_PATHS = new Set(["mcp", "health"]);
+const RESERVED_PATHS = new Set(["mcp", "health", ".well-known"]);
 
 /** Compares in time that depends on the secret's length only, not on how much of it matches. */
 function sameSecret(candidate: string, secret: string): boolean {
@@ -254,12 +264,25 @@ export function createServicesHandler<Env>(options: ServicesHostOptions<Env>) {
     return matches[0];
   }
 
+  /** Whether a service is on as far as its login goes (no login, or one that is set up); quiet, for the listings. */
+  const servedLogin = (s: WorkerService<Env>, env: Env) => !s.login || loginConfigured(s.login, env);
+
+  /** Whether a service's login is set up; says once, without any value, when it is not. */
+  function loginReady(s: WorkerService<Env>, env: Env): boolean {
+    if (!s.login || loginConfigured(s.login, env)) return true;
+    if (!warned.has(`login:${s.id}`)) {
+      warned.add(`login:${s.id}`);
+      console.warn(`Service "${s.id}" is off: its login needs a password of at least 16 characters and a signing secret of 32-256 characters of A-Z, a-z, 0-9, "_" and "-".`);
+    }
+    return false;
+  }
+
   return {
     async fetch(request: Request, env: Env): Promise<Response> {
       const url = new URL(request.url);
 
       if (request.method === "GET" && url.pathname === "/") {
-        const page = options.landing?.(request, env, publicServices);
+        const page = options.landing?.(request, env, publicServices.filter((s) => servedLogin(s, env)));
         return page ?? notFound();
       }
 
@@ -267,17 +290,41 @@ export function createServicesHandler<Env>(options: ServicesHostOptions<Env>) {
         return jsonResponse({
           status: "ok",
           ...options.health?.(env),
-          services: publicServices.map((s) => ({ id: s.id, endpoint: `/${s.path}/mcp` }))
+          services: publicServices.filter((s) => servedLogin(s, env)).map((s) => ({ id: s.id, endpoint: `/${s.path}/mcp` }))
         });
       }
 
-      const route = /^\/([^/]+)\/(mcp|health)$/.exec(url.pathname);
+      // A login's discovery documents, at the addresses RFC 9728 and RFC 8414 derive from the service's path.
+      const wellKnown = /^\/\.well-known\/(oauth-protected-resource|oauth-authorization-server|openid-configuration)\/([^/]+)(\/mcp)?$/.exec(url.pathname);
+      if (wellKnown) {
+        const [, doc, segment, mcp] = wellKnown;
+        const service = byPath.get(segment) ?? privateService(segment, env);
+        if (!service?.login || request.method !== "GET" || (doc === "oauth-protected-resource") !== (mcp !== undefined)) return notFound();
+        if (!loginReady(service, env)) return notFound();
+        const urls = loginUrls(request, segment);
+        return doc === "oauth-protected-resource" ? protectedResourceMetadata(urls) : authorizationServerMetadata(urls);
+      }
+
+      const route = /^\/([^/]+)\/(mcp|health|authorize|token|register)$/.exec(url.pathname);
       if (!route) return notFound();
       const [, segment, what] = route;
       const service = byPath.get(segment) ?? privateService(segment, env);
       if (!service) return notFound();
+      if (service.login && !loginReady(service, env)) return notFound();
 
       if (what === "health") return request.method === "GET" ? jsonResponse(service.health(env)) : notFound();
+      if (!service.login) return what === "mcp" ? serveMcp(request, env, service) : notFound();
+
+      const keys = (await loginKeys(service.login, env, service.id))!;
+      const urls = loginUrls(request, segment);
+      if (what === "authorize") return authorize(request, keys, service.login.page(request), urls.issuer);
+      if (what === "token") return token(request, keys, service.login);
+      if (what === "register") return register(request, keys, service.login.redirectHosts);
+      // The CORS preflight carries no token; everything else on /mcp needs one.
+      if (request.method !== "OPTIONS") {
+        const access = await hasAccess(request, keys);
+        if (!access.ok) return unauthorized(urls, access.tokenGiven);
+      }
       return serveMcp(request, env, service);
     }
   };
