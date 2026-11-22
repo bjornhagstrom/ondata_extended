@@ -11,6 +11,7 @@ import type { EngineContext, InstanceEntry, ToolResult, ToolSpec } from "@ondata
 import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Note, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "./model.js";
 import { createResolver, type VocabExt } from "./vocabularies.js";
 import { localId } from "./ids.js";
+import { createChangeTools } from "./change-tools.js";
 
 export { localId };
 
@@ -795,7 +796,8 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     }
   };
 
-  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo, randomConcept];
+  // The change tools only where the deployment gives a vocabulary write access (src/change-tools.ts).
+  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo, randomConcept, ...createChangeTools(entries)];
 }
 
 export { ConceptNotFoundError };

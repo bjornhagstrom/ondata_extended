@@ -2,14 +2,15 @@
  * The SKOS vocabulary profile. Tools are prefixed `vocab_` and speak SKOS; backends are
  * adapters (TemaTres first).
  *
- * Nine tools (src/tools.ts) over one adapter (TemaTres), optionally answered from a snapshot (src/snapshot.ts).
+ * Nine reading tools (src/tools.ts), and two change tools where a vocabulary is writable (src/change-tools.ts), over one adapter (TemaTres), optionally answered from a snapshot (src/snapshot.ts).
  */
 
 import type { HostPolicy, InstanceEntry, Profile } from "@ondata-extended/profile-contract";
 import { TemaTresProtocolError } from "./adapters/tematres/client.js";
 import { ConceptNotFoundError, ForeignConceptUriError, createSkosTools, skosInstructions } from "./tools.js";
 import { UnknownVocabularyError, type VocabExt } from "./vocabularies.js";
-import { RandomConceptNotOfferedError } from "./model.js";
+import { ChangeRefusedError, ChangesNotOfferedError, RandomConceptNotOfferedError } from "./model.js";
+import { NotWritableVocabularyError } from "./change-tools.js";
 
 export const PROFILE_ID = "skos";
 export const TOOL_PREFIX = "vocab_";
@@ -19,6 +20,7 @@ export * from "./model.js";
 export { createResolver, type VocabExt } from "./vocabularies.js";
 export { createSkosTools, localId, skosInstructions, vocabArgDescription } from "./tools.js";
 export { htmlToText } from "./text.js";
+export { createChangeTools, NotWritableVocabularyError } from "./change-tools.js";
 
 export interface SkosProfileOptions {
   /** The deployment's known vocabularies: ids usable as `vocab`; the first is the default. */
@@ -48,7 +50,8 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
     // The core shrinks top-level lists only; one concept's lists sit inside `concept` and are fitted by the profile
     // (fitConceptAnswer in tools.ts).
     shrinkableKeys: ["concepts"],
-    telemetryFields: ["vocab", "query", "prefix", "id", "limit", "response_format"],
+    // Never the operations or their texts: only the batch id of a change.
+    telemetryFields: ["vocab", "query", "prefix", "id", "limit", "response_format", "batch_id"],
     untrustedSourceLabel: "the vocabulary service",
     honestUserAgent: `Vocab-MCP-Server/${PROFILE_VERSION}`,
     describeError(error) {
@@ -60,6 +63,21 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
       }
       if (error instanceof RandomConceptNotOfferedError) {
         return "→ Pick a concept another way: browse from vocab_top_concepts, or find one with vocab_search_concepts.";
+      }
+      if (error instanceof NotWritableVocabularyError || error instanceof ChangesNotOfferedError) {
+        return "→ Only the vocabularies named in the `vocab` argument's description can be changed here, and only by id. Do not try another way to write.";
+      }
+      if (error instanceof ChangeRefusedError) {
+        if (error.code === "staleText" || error.code === "selectorNotFound" || error.code === "selectorAmbiguous" || error.code === "labelExists" || error.code === "unknownConcept") {
+          return "→ Read the concepts again with vocab_get_concept, show the user what differs, and ask how to proceed; then propose a corrected batch.";
+        }
+        if (error.code === "batchExpired" || error.code === "batchUnknown") {
+          return "→ Propose the batch again with vocab_propose_changes and show it to the user; a new batch needs the user's ok again.";
+        }
+        if (error.code === "batchUsed") return "→ The batch is already written: read the changed concepts back with vocab_get_concept.";
+        if (error.code === "notApplied") return "→ Read the concepts back with vocab_get_concept to see whether anything changed, and tell the user.";
+        if (error.code === "unauthorized" || error.code === "forbidden") return "→ Tell the user: this server's write access must be checked by its operator.";
+        return "→ Tell the user the service refused the change; do not retry with a different batch on your own.";
       }
       if (error instanceof UnknownVocabularyError) {
         return error.noDefault

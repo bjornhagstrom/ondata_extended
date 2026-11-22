@@ -29,6 +29,12 @@ export interface VocabExt {
    * (e.g. `{ CH: "changeNote" }`). The adapter's defaults apply to the rest.
    */
   noteTypes?: Readonly<Record<string, Note["type"]>>;
+  /**
+   * Write access to this vocabulary: the backend's write endpoint (HTTPS, allowed like any other host) and the name of
+   * the config setting that holds its key, e.g. `WRITE_KEY_SVADA` (so `VOCAB_WRITE_KEY_SVADA` in the environment). Only
+   * then are the change tools offered, and only for vocabularies listed with it.
+   */
+  write?: { url: string; keySetting: string };
 }
 
 export const ADAPTERS: Record<string, VocabularyAdapter> = { [temaTresAdapter.id]: temaTresAdapter };
@@ -67,7 +73,8 @@ export function createResolver(entries: readonly InstanceEntry<VocabExt>[] = [])
             adapter: entry.ext.adapter,
             ...(entry.ext.defaultLang ? { defaultLang: entry.ext.defaultLang } : {}),
             ...(entry.ext.conceptUriBase ? { conceptUriBase: entry.ext.conceptUriBase } : {}),
-            ...(entry.ext.noteTypes ? { noteTypes: entry.ext.noteTypes } : {})
+            ...(entry.ext.noteTypes ? { noteTypes: entry.ext.noteTypes } : {}),
+            ...(entry.ext.write ? { write: { url: entry.ext.write.url, keySetting: entry.ext.write.keySetting } } : {})
           },
           adapter: entry.ext.snapshotUrl ? withSnapshot(adapter, entry.ext.snapshotUrl) : adapter
         };

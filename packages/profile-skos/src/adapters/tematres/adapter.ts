@@ -15,6 +15,7 @@ import type { EngineContext } from "@ondata-extended/profile-contract";
 import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Label, type Mapping, type Note, type SchemeInfo, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "../../model.js";
 import { htmlToText } from "../../text.js";
 import { TTL, TemaTresProtocolError, asBool, asId, asText, callTask, inOrder } from "./client.js";
+import { applyChanges, proposeChanges } from "./write.js";
 
 const NOTE_TYPES: Record<string, Note["type"]> = {
   DF: "definition",
@@ -316,5 +317,9 @@ export const temaTresAdapter: VocabularyAdapter = {
   async topConcepts(ctx, instance) {
     const [base, a] = await Promise.all([conceptUriBase(ctx, instance), callTask(ctx, instance.baseUrl, "fetchTopTerms")]);
     return inOrder(a.rows).map((r) => refWithExt(r, base));
-  }
+  },
+
+  // Through the instance's write endpoint, when the deployment gives one (write.ts).
+  proposeChanges,
+  applyChanges
 };

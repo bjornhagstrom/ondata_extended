@@ -1092,3 +1092,27 @@ report. Revisit only if a portal is seen sending gzip without the header.
   type (JSON without `type`, Markdown heading `undefined`); now only the table's own keys count, as for the
   declaration.
 
+## 2026-11-22: Changes to a vocabulary through the MCP: prepared against a proposed format
+
+- **Why**: Björn wants Svada changed through the MCP. TemaTres has no write API; the two rounds of 2026-11-22 were made
+  with php-cli scripts on the server. The tematres-test project builds a write API (preliminary study and plan first,
+  the plan approved by Björn); the order and our requirements are in its handoff file of 2026-11-22. This side is
+  prepared meanwhile, against the format we proposed there, so that only one file changes when the format is agreed.
+- **What**:
+  - `vocab_propose_changes` (a dry run: before, after and the change note per change, conflicts, a batch id; writes
+    nothing) and `vocab_apply_changes` (the batch id only; `destructiveHint: true`). Offered only when a deployment
+    gives a vocabulary `write: { url, keySetting }`, and only for those vocabularies, by id; a base URL is refused, so
+    a call never writes to a service the deployment did not name. No deployment has it yet.
+  - The key is read from the core config at call time (`<PREFIX>_<keySetting>`), sent only in the Authorization
+    header, never in an instance object, an answer, an error or the telemetry. A write follows no redirect and is not
+    retried. A refusal shows its code with our text, never the service's message.
+  - Apply takes no text, so nothing read from the vocabulary can shape a write: what is written is what the dry run
+    showed. The descriptions say to change only what the user's material gives, to show the dry run, and to apply only
+    after the user's explicit ok for that batch.
+  - After an apply (also a failed or lost one) the vocabulary is read live for five minutes (the live answers' cache
+    TTL): no snapshot, no cache read or write (`src/fresh.ts`). Every cached answer is then older than the write by more
+    than its TTL. Per isolate; another isolate may answer from its cache until it expires, as before any write.
+  - The wire format is provisional and kept in `src/adapters/tematres/write.ts` alone.
+- **Not yet**: a deployment with write access (first the test copy on vocab.hagstrom.nu, Svada only with Björn's ok),
+  the agreed format, smoke cases and evals for the change tools, and the frozen surface (the tools are absent from every
+  deployment until then).
