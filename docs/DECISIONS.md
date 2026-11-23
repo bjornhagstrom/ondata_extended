@@ -1036,7 +1036,8 @@ report. Revisit only if a portal is seen sending gzip without the header.
 - **What, scheme information** (a JSON shape change in our own profile; rule 4 does not apply, but clients of the
   production service see it):
   - `scheme.conceptCount` (from `cant_terms`) is now `scheme.termCount`; Markdown `- **Terms, preferred and
-    alternative**: 39 (not the number of concepts)` replaces `- **Concepts**: 39`. The tool description says that
+    alternative**: 39 (not the number of concepts, which is not known here)` replaces `- **Concepts**: 39`; with a
+    loaded snapshot, which gives the number of concepts, the line ends at "(not the number of concepts)". The tool description says that
     `termCount` is not the number of concepts.
   - `scheme.conceptCount` is given only where the number is known: when the vocabulary's snapshot is loaded, the
     number of concepts it holds, with `scheme.ext.snapshot.lastModified`; Markdown `- **Concepts**: 17 (in the
