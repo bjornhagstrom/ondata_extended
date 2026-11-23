@@ -100,20 +100,24 @@ describe("one engine per isolate", () => {
     (await import("@ondata-extended/core")).__setDnsResolverForTests(async () => [{ address: "93.184.216.34", family: 4 }]);
     const starts: number[] = [];
     vi.stubGlobal("fetch", async (input: string | URL) => {
-      expect(new URL(String(input)).hostname).toBe("dati.senato.it");
-      starts.push(Date.now());
+      const host = new URL(String(input)).hostname;
+      expect(["dati.senato.it", "dati.camera.it"]).toContain(host);
+      if (host === "dati.senato.it") starts.push(Date.now());
       return new Response(JSON.stringify({ head: { vars: ["n"] }, results: { bindings: [{ n: { type: "literal", value: "1" } }] } }), {
         headers: { "content-type": "application/sparql-results+json" }
       });
     });
-    const call = (id: number) => rpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "sparql", arguments: { query: "SELECT ?n WHERE { ?s ?p ?n }", endpoint: "senato", limit: 1 } } });
-    for (const id of [1, 2]) {
-      const m = await message(await fresh.fetch(call(id), {}));
+    const call = (id: number, endpoint: string) => rpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "sparql", arguments: { query: "SELECT ?n WHERE { ?s ?p ?n }", endpoint, limit: 1 } } });
+    // The throttle spaces its releases; the first request of a process then loads the network layer before it sends,
+    // which would make that send late and the gap after it short. A call to Camera (not throttled, same network layer)
+    // does that first, so the first two Senato sends, the first reservation included, are measured warm.
+    for (const [id, endpoint] of [[1, "camera"], [2, "senato"], [3, "senato"]] as const) {
+      const m = await message(await fresh.fetch(call(id, endpoint), {}));
       expect(m.result.isError).toBeUndefined();
     }
     expect(starts).toHaveLength(2);
     expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(1950);
-  }, 15000);
+  }, 20000);
 });
 
 describe("P12: an exception while serving /mcp", () => {

@@ -112,7 +112,10 @@ export interface HttpClientSettings {
  * waits on another's promise. On Cloudflare Workers a timer can be dropped when the request that
  * set it ends (a tool that fails while a sibling call is still waiting, a client that disconnects);
  * a promise chain would then stall every later request to that host for the isolate's lifetime.
- * The spacing is scheduled against the clock: a timer that fires late can shorten the gap to the next.
+ * The spacing is scheduled against the clock: a timer that fires late can shorten the gap to the next. It is the
+ * spacing of the releases, not of the sends: work between a release and the send (on Node the first request's
+ * loading of the network layer, and each request's DNS check) delays that send, and the gap to the next send is
+ * shorter by as much as that work took longer than the next request's.
  */
 export function createHostThrottle(): (hostname: string, minIntervalMs: number, maxQueueMs?: number) => Promise<void> {
   const nextFree = new Map<string, number>();
