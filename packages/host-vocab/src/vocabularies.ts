@@ -14,6 +14,6 @@ export const VOCABULARIES: InstanceEntry<VocabExt>[] = [
   {
     id: "svada",
     baseUrl: "https://begrepp.hagstrom.nu/",
-    ext: { adapter: "tematres", defaultLang: "sv", title: "Svada - termer och begrepp", conceptUriBase: "https://begrepp.hagstrom.nu/skos/", snapshotUrl: "https://begrepp.hagstrom.nu/dumps/svada.ndjson" }
+    ext: { adapter: "tematres", defaultLang: "sv", title: "Svada - termer och begrepp", conceptUriBase: "https://begrepp.hagstrom.nu/skos/", snapshotUrl: "https://begrepp.hagstrom.nu/dumps/svada.ndjson", noteTypes: { CH: "changeNote" } }
   }
 ];

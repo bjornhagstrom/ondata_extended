@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { __setDnsResolverForTests } from "@ondata-extended/core";
 import en from "../src/i18n/en.json";
 import sv from "../src/i18n/sv.json";
-import { ECOSYSTEM, TEMATRES, VOCAB } from "../src/services.js";
+import { ECOSYSTEM, SVADA, TEMATRES, VOCAB } from "../src/services.js";
 
 const FIX = join(import.meta.dirname, "..", "..", "profile-skos", "tests", "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -292,5 +292,11 @@ describe("landing page", () => {
     const page = await (await w.fetch(new Request("https://s.example/?lang=sv"), ENV)).text();
     expect(page).toContain(`<html lang="sv">`);
     expect(page).toContain(sv.limits);
+  });
+});
+
+describe("Svada's own note types", () => {
+  it("declares its change notes (CH) as skos:changeNote, as its SKOS export writes them", () => {
+    expect(SVADA[0].ext.noteTypes).toEqual({ CH: "changeNote" });
   });
 });

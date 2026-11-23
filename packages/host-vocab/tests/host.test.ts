@@ -6,7 +6,7 @@ import worker, { landingPage } from "../src/worker.js";
 import en from "../src/i18n/en.json";
 import sv from "../src/i18n/sv.json";
 import { profile, SERVER_NAME } from "../src/server.js";
-import { INSTRUCTIONS } from "../src/vocabularies.js";
+import { INSTRUCTIONS, VOCABULARIES } from "../src/vocabularies.js";
 
 describe("language files", () => {
   it("have the same keys in en and sv", () => {
@@ -76,5 +76,11 @@ describe("worker routes", () => {
     const body = await res.json() as { result: { tools: { name: string }[] } };
     expect(body.result.tools).toHaveLength(9);
     expect(body.result.tools.every((t) => t.name.startsWith("vocab_"))).toBe(true);
+  });
+});
+
+describe("Svada's own note types", () => {
+  it("declares its change notes (CH) as skos:changeNote, as its SKOS export writes them", () => {
+    expect(VOCABULARIES[0].ext.noteTypes).toEqual({ CH: "changeNote" });
   });
 });
