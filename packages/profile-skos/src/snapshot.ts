@@ -8,14 +8,15 @@
  * request goes through the core's HTTP client and its guards.
  *
  * The snapshot answers only when it has every concept an answer names. Everything else goes to the vocabulary's own adapter, as
- * without a snapshot: scheme information, an id or a label the snapshot does not have (a concept added since the file
- * was written), a concept that refers to one the snapshot lacks, and every call while the snapshot cannot be loaded.
+ * without a snapshot: scheme information (to which a loaded snapshot adds the number of concepts it holds), an id or a
+ * label the snapshot does not have (a concept added since the file was written), a concept that refers to one the
+ * snapshot lacks, and every call while the snapshot cannot be loaded. A random concept is picked among the snapshot's.
  * A failed refresh keeps the copy it has and asks again a minute later. What the SKOS export does not carry (TemaTres
  * codes, meta-term flags, NB notes, note codes) is missing from snapshot answers; docs/DECISIONS.md lists it.
  */
 
 import type { EngineContext } from "@ondata-extended/profile-contract";
-import type { Concept, ConceptRef, Label, Mapping, Note, SearchHit, VocabularyAdapter, VocabularyInstance } from "./model.js";
+import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Label, type Mapping, type Note, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "./model.js";
 import { localId } from "./ids.js";
 import { htmlToText } from "./text.js";
 
@@ -59,6 +60,10 @@ interface SnapConcept {
 
 interface Snapshot {
   byUri: Map<string, SnapConcept>;
+  /** False when the file had more concepts than are read (MAX_CONCEPTS): the snapshot then gives no concept count. */
+  complete: boolean;
+  /** The concepts as a list, made on the first random pick. */
+  list?: SnapConcept[];
   /** Whether any line has `topConceptOf`; if none has, top concepts come from the live service. */
   hasTopConceptOf: boolean;
   lastModified?: string;
@@ -148,15 +153,16 @@ function parseLine(line: string): SnapConcept | null {
 export function parseSnapshot(text: string): Snapshot | null {
   const byUri = new Map<string, SnapConcept>();
   let hasTopConceptOf = false;
+  let complete = true;
   for (const line of text.split("\n")) {
-    if (byUri.size >= MAX_CONCEPTS) break;
     if (!line.trim()) continue;
     const c = parseLine(line);
     if (!c) continue;
+    if (byUri.size >= MAX_CONCEPTS && !byUri.has(c.uri)) { complete = false; break; }
     if (c.top) hasTopConceptOf = true;
     byUri.set(c.uri, c);
   }
-  return byUri.size ? { byUri, hasTopConceptOf } : null;
+  return byUri.size ? { byUri, complete, hasTopConceptOf } : null;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -232,6 +238,19 @@ export async function loadSnapshot(ctx: EngineContext, url: string): Promise<Sna
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * The snapshot at `url` if one is loaded, without loading, revalidating or waiting: for what may be added to an answer
+ * the live service gives anyway. Checked against this deployment's guards like loadSnapshot.
+ */
+function loadedSnapshot(ctx: EngineContext, url: string): Snapshot | null {
+  try {
+    ctx.http.validateUrl(url);
+  } catch {
+    return null;
+  }
+  return states.get(url)?.snapshot ?? null;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -390,7 +409,17 @@ export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAd
 
   return {
     id: live.id,
-    schemeInfo: (ctx, instance) => live.schemeInfo(ctx, instance),
+    async schemeInfo(ctx, instance) {
+      const info = await live.schemeInfo(ctx, instance);
+      // The live service may count alternative terms too; a loaded snapshot knows its concepts. Never loaded for this.
+      const s = loadedSnapshot(ctx, url);
+      if (!s?.complete) return info;
+      return {
+        ...info,
+        conceptCount: s.byUri.size,
+        ext: { ...info.ext, snapshot: { ...(s.lastModified ? { lastModified: s.lastModified } : {}) } }
+      };
+    },
     search: (ctx, instance, query) =>
       answer(ctx, (s) => nonEmpty(matches(s, instance, query, false)), () => live.search(ctx, instance, query)),
     suggest: (ctx, instance, prefix) =>
@@ -415,6 +444,27 @@ export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAd
         const c = find(s, id, instance);
         return c ? refs(s, c.related, instance) : undefined;
       }, () => live.related(ctx, instance, id)),
+    // Picked among the snapshot's concepts with equal chance, without a request; a concept the snapshot cannot answer
+    // whole (a relation outside it) is read from the live service, and if that service no longer has it, the service
+    // picks. Without a snapshot the live service picks.
+    async randomConcept(ctx, instance) {
+      const s = await loadSnapshot(ctx, url);
+      if (s) {
+        s.list ??= [...s.byUri.values()];
+        const c = s.list[Math.floor(Math.random() * s.list.length)];
+        const value = concept(s, c, instance);
+        ctx.telemetry.note({ source: value ? "snapshot" : "live" });
+        if (value) return value;
+        // Read live by its id; if the live service no longer has it (a concept removed since the file was written),
+        // let the live service pick, so the answer is never "no concept" for a vocabulary that has some.
+        const byId = await live.getConcept(ctx, instance, idOf(c.uri, instance));
+        if (byId || !live.randomConcept) return byId;
+        return live.randomConcept(ctx, instance);
+      }
+      ctx.telemetry.note({ source: "live" });
+      if (!live.randomConcept) throw new RandomConceptNotOfferedError(instance.id);
+      return live.randomConcept(ctx, instance);
+    },
     topConcepts: (ctx, instance) =>
       answer(ctx, (s) => {
         // Without topConceptOf the snapshot cannot tell a top concept from a concept outside the hierarchy (TemaTres

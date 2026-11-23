@@ -16,7 +16,7 @@ import { HttpStatusError, TransportError } from "@ondata-extended/core";
 export const TEMATRES_TASKS = [
   "fetchVocabularyData", "fetchTopTerms", "search", "suggestDetails", "fetch", "fetchSimilar",
   "fetchTerm", "fetchUp", "fetchDown", "fetchRelated", "fetchAlt", "fetchNotes",
-  "fetchTargetTerms", "fetchSourceTerms", "fetchURI", "fetchDirectTerms", "fetchCentralTerms"
+  "fetchTargetTerms", "fetchSourceTerms", "fetchURI", "fetchDirectTerms", "fetchCentralTerms", "randomTerm"
 ] as const;
 export type TemaTresTask = (typeof TEMATRES_TASKS)[number];
 
@@ -37,7 +37,8 @@ export interface TemaTresAnswer {
 
 /** The service answered, but not with a TemaTres JSON envelope. */
 export class TemaTresProtocolError extends Error {
-  constructor(message: string, readonly task: string) {
+  /** `unknownTask`: the service answered with TemaTres's XML page for a task it does not know ("invalid task param"). */
+  constructor(message: string, readonly task: string, readonly unknownTask = false) {
     super(message);
     this.name = "TemaTresProtocolError";
   }
@@ -61,7 +62,8 @@ export function parseEnvelope(task: string, contentType: string | undefined, tex
   if (ct.includes("xml") || trimmed.startsWith("<")) {
     throw new TemaTresProtocolError(
       `The vocabulary service did not answer task "${task}" as JSON (it sent XML or HTML, which TemaTres does for an unknown task).`,
-      task
+      task,
+      /<message>\s*(<!\[CDATA\[)?\s*invalid task param/i.test(text)
     );
   }
   let body: unknown;
@@ -115,6 +117,7 @@ function namesVocabulary(a: { headers: Record<string, string>; text: string }): 
   return hasText(r.title) || hasText(r.author) || hasText(r.publisher);
 }
 
+/** `ttlSeconds` 0: not cached (an answer that must differ on every call, such as randomTerm). */
 export async function callTask(
   ctx: EngineContext,
   baseUrl: string,
@@ -127,8 +130,8 @@ export async function callTask(
   }
   const url = servicesUrl(baseUrl, task, arg);
   // The profile's own name (Vocab-MCP-Server/<version>), not a browser's: a vocabulary server should see who calls it.
-  const cache = task === "fetchVocabularyData" ? { ttlSeconds, accept: namesVocabulary } : { ttlSeconds };
-  const res = await ctx.http.request(url, { method: "GET" }, { cache, userAgent: "honest" });
+  const cache = ttlSeconds <= 0 ? undefined : task === "fetchVocabularyData" ? { ttlSeconds, accept: namesVocabulary } : { ttlSeconds };
+  const res = await ctx.http.request(url, { method: "GET" }, { ...(cache ? { cache } : {}), userAgent: "honest" });
   if (res.status < 200 || res.status >= 300) {
     // An edge answering for an origin it could not reach: no answer from the service (as the core's json()).
     if ((res.status >= 520 && res.status <= 527) || res.status === 530) {

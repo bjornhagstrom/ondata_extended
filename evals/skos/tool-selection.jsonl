@@ -14,3 +14,5 @@
 {"id":"en-04","lang":"en","question":"Show me the full path from the top of the hierarchy to 'Dataägare'.","expect_tools":["vocab_search_concepts","vocab_get_concept"],"expect_concept":"10"}
 {"id":"en-05","lang":"en","question":"Is there a Swedish concept for 'data steward', and what is it related to?","expect_tools":["vocab_search_concepts","vocab_related"],"expect_concept":"25"}
 {"id":"en-06","lang":"en","question":"Find concepts about data sponsors.","expect_tools":["vocab_search_concepts"],"expect_concept":"26"}
+{"id":"sv-11","lang":"sv","question":"Visa mig ett slumpmässigt begrepp ur Svada.","expect_tools":["vocab_random_concept"],"expect_concept":null}
+{"id":"en-07","lang":"en","question":"Show me a random term from the vocabulary.","expect_tools":["vocab_random_concept"],"expect_concept":null}

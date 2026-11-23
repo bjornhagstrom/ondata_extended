@@ -14,7 +14,8 @@ scripts/smoke-vocab.mjs`. The rest of this page describes the one-service Worker
 - **Endpoint:** `https://<service host>/mcp` (Streamable HTTP). `/` is a landing page (English, Swedish with
   `?lang=sv`), `/health` a JSON status. The host is not announced; it is shared with invited users.
 - **Tools (frozen):** `vocab_search_concepts`, `vocab_get_concept`, `vocab_broader`, `vocab_narrower`,
-  `vocab_related`, `vocab_top_concepts`, `vocab_suggest`, `vocab_scheme_info`. All read-only. Their names,
+  `vocab_related`, `vocab_top_concepts`, `vocab_suggest`, `vocab_scheme_info`, `vocab_random_concept` (added
+  2026-11-21). All read-only; all but `vocab_random_concept` idempotent. Their names,
   arguments, types, ranges, defaults and annotation hints (read-only, idempotent and so on) are fixed by `packages/profile-skos/tests/frozen-tools.test.ts`;
   titles and descriptions may still be improved.
 - **Vocabularies:** only those approved for the service, listed in the deployment's own list (`packages/host-vocab/src/vocabularies.ts`; `packages/host-services/src/services.ts` for the several-service Worker)
@@ -38,7 +39,7 @@ scripts/smoke-vocab.mjs`. The rest of this page describes the one-service Worker
 - A vocabulary with a snapshot (`snapshotUrl`, an NDJSON file on its server) is answered from memory and revalidated
   at most once a minute with a conditional request; what the snapshot cannot answer goes to the server
   (`docs/DECISIONS.md`, 2026-11-18). Note that the core's cache does nothing on a `*.workers.dev` host.
-- Answers are cached; responses are capped in size, and a large JSON answer is shortened with a note rather than
+- Answers are cached (except `vocab_random_concept`'s pick, which must differ on every call); responses are capped in size, and a large JSON answer is shortened with a note rather than
   cut mid-value.
 - No access control: anyone with the URL can call it. What it serves is public vocabulary content, and the
   allowlist and rate limit bound what a caller can make it do. If the URL is misused, redeploy under another host.
@@ -59,7 +60,8 @@ Every deploy needs Björn's ok, each time.
 5. **Logs:** `npx wrangler tail -c packages/host-vocab/wrangler.toml --env production`, or Workers Observability in
    the Cloudflare dashboard. A log line per tool call holds the tool, its arguments `vocab`, `query`, `prefix`,
    `id`, `limit` and `response_format` (the profile's `telemetryFields`), the status with a short error summary,
-   the duration, whether the cache answered, for `vocab_get_concept` the concept id, and for a vocabulary with a snapshot
+   the duration, whether the cache answered, for `vocab_get_concept` and `vocab_random_concept` the concept id (for the random
+   tool the only record of which concept was served), and for a vocabulary with a snapshot
    `source` (`snapshot` or `live`) and, when a call loaded one, `snapshot_loaded` (its number of concepts); never a secret. The search text users type is logged, so tell
    invited users so.
 
