@@ -1126,7 +1126,7 @@ report. Revisit only if a portal is seen sending gzip without the header.
     snapshot, no cache read or write (`src/fresh.ts`), and the source line's memory reads the scheme again once. Every
     cached answer is then older than the write by more than its TTL. Per isolate; another isolate may answer from its
     cache until it expires, as before any write.
-  - The wire format is provisional and kept in `src/adapters/tematres/write.ts` alone. The operation set follows the
+  - The wire format is provisional (replaced by the agreed one, 2026-11-23 entry) and kept in `src/adapters/tematres/write.ts` alone. The operation set follows the
     TemaTres proposal (`createMetaTerm`, note type codes, the three statuses); it is generalized when a second backend
     writes.
 - **Who may call them**: the decision of 2026-11-14 to run without authentication rests on read-only tools and no
@@ -1181,3 +1181,43 @@ report. Revisit only if a portal is seen sending gzip without the header.
 - **Not yet**: the host's write service (its login page text in `en`/`sv`, the secrets, the writable test
   vocabulary) waits for the write API on vocab.hagstrom.nu; a live check that claude.ai and Claude Code register,
   log in and refresh as expected.
+
+## 2026-11-23: The change tools speak the write API's agreed format
+
+- **Why**: tematres-test's plan for the write API (`docs/skriv-api-plan.md` there, sections 2.1-2.8 and 14) set the
+  format, with our answers to its questions recorded in the handoff log of 2026-11-23. The provisional format of
+  2026-11-22 is replaced, in `src/adapters/tematres/write.ts` and in the tools' schema; nothing else changes.
+- **Request**: `POST <vocabulary>/write.php`, `{ action: "dryRun", vocabulary: <base URI>, reason, source, operations }`
+  (flat, not under `batch`) and `{ action: "apply", batchId }`. The tools take the plan's operation fields as they are:
+  a concept by `conceptId` (a number) or `conceptRef` (a concept the batch creates), a target likewise
+  (`targetId`/`targetRef`), a place in a note by `heading` and one of `paragraph`, `listItemContaining`,
+  `paragraphContaining`; `replaceNoteText` (words inside a paragraph, links kept), `addNote` with `sections` or
+  `paragraphs`, `moveConcept` with `expectedBroaderId`, `setStatus` with `expectedStatus`, and per operation
+  `reason`, `source`, `field` (`comment` on a new concept). Exactly one of each pair is checked before any request;
+  a label with `<`, `>` or `"` is refused here as the service would. Texts are plain text, never HTML.
+- **Dry run, fail-closed**: `ok: true` and `applicable` are required; `applicable` must be true exactly when there is
+  no conflict, and only then is there a batch id (with conflicts the answer has none, and ours neither). Every
+  operation still has to be accounted for. A new concept has no id until written; it is shown by its `conceptRef`.
+  The service's warning codes are shown with our text (`linkRemoved`), an unknown one by its code.
+- **Apply**: a 2xx with `applied: true` (and not `ok: false`) is a write, reported with the time, the backup, the changed concepts and the
+  new concepts' ids (`created`). A 4xx with a known code, and a 503 with `transactionsUnavailable`, `dumpFailed` or
+  `notInstalled` (refused before the transaction, the plan says), mean nothing was written: not marked, refused with our
+  text, the conflict's place (`index`) and the wait the service asks for (`Retry-After`) passed on. Anything else,
+  `serverError` and `outcomeUnknown` included, may have written: read fresh, "may or may not have been written".
+  `serverError` is counted so on purpose: the plan says nothing was written, but the MCP cannot tell a rollback from a
+  lost one, and the cost of the caution is one read back. `batchUsed` ("already written or used up", the plan says)
+  is refused as nothing written now, but the vocabulary is read fresh after it and the hint says to read back and
+  never to apply the batch again, since it may have been written earlier.
+- **Fields from the service** are read as strictly as the request: a new concept's `conceptRef` by the request's
+  pattern, `expiresAt` and `appliedAt` as ISO 8601 times (a malformed `expiresAt` makes the dry run unreadable, a
+  malformed `appliedAt` is left out of a confirmed write).
+- **Key**: exactly 64 hex characters, the API's form; anything else is no key and is never sent.
+- **Reviewed**: mcp-reviewer, 2026-11-23: no blocker; seven of ten operation kinds and four groups of hints untested,
+  and the too-large JSON answer's conflicts no longer asserted: tests added (every kind sent and compared field by
+  field). The `batchUsed` hint claimed a write; "nothing written" accepted for any 5xx with the three codes (now 503
+  only); `conceptRef` and `appliedAt` read loosely; a comment and two model-facing texts out of date: all fixed, each
+  with a test that fails without it. The reviewer could not read the plan (outside the repository); its open points
+  were checked against the plan by hand.
+- **Not used**: the API's `info` action. The tools are offered by the deployment's configuration (and a login); a key
+  without the right gets 403 `forbidden`, shown as such.
+

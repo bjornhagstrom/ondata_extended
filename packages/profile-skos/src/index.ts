@@ -74,13 +74,23 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
         return "→ Only the vocabularies named in the `vocab` argument's description can be changed here, and only by id. Do not try another way to write.";
       }
       if (error instanceof ChangeRefusedError) {
-        if (error.code === "staleText" || error.code === "selectorNotFound" || error.code === "selectorAmbiguous" || error.code === "labelExists" || error.code === "unknownConcept") {
+        const code = error.code;
+        if (["staleText", "selectorNotFound", "selectorAmbiguous", "labelExists", "unknownConcept", "noteNotStructured", "noteExists", "relationExists"].includes(code)) {
           return "→ Read the concepts again with vocab_get_concept, show the user what differs, and ask how to proceed; then propose a corrected batch.";
         }
-        if (error.code === "batchExpired" || error.code === "batchUnknown") {
+        if (code === "busy" || code === "rateLimited" || code === "dumpFailed") {
+          return "→ Nothing was written. Tell the user, and try the same step again later, not at once.";
+        }
+        if (code === "limitExceeded") return "→ Propose the changes in smaller batches, and show each to the user.";
+        if (code === "vocabularyMismatch" || code === "notInstalled" || code === "transactionsUnavailable" || code === "invalidJson" || code === "methodNotAllowed") {
+          return "→ Nothing was written. Tell the user: this server's write access must be checked by its operator.";
+        }
+        if (code === "batchExpired" || code === "unknownBatch") {
           return "→ Propose the batch again with vocab_propose_changes and show it to the user; a new batch needs the user's ok again.";
         }
-        if (error.code === "batchUsed") return "→ The batch is already written: read the changed concepts back with vocab_get_concept.";
+        if (error.code === "batchUsed") {
+          return "→ Do not apply this batch again. It may have been written earlier, or used up by a refused apply: read the concepts back with vocab_get_concept to see whether its changes are there, and tell the user; propose anew only if they are not.";
+        }
         if (error.code === "notApplied" || error.code === "unknownOutcome") {
           return "→ The batch may or may not have been written: do not apply it again. Read the concepts back with vocab_get_concept to see what changed, and tell the user.";
         }
