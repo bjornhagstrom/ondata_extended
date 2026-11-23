@@ -623,8 +623,8 @@ copy the 21 Worker parity tests are skipped, as the profile's parity tests are.
   - **Result: 21/21**; the only differences are P9, P10, P11, each asserted to be exactly that.
 - **`tests/host.test.ts` (10)**, without the reference copy: name, version, prefix; the info document; health bytes;
   the preflight; the bare 404 (`GET /mcp` included, no CORS); `POST /mcp` as SSE with the six tools; no log line for a
-  tool call; the Senato throttle across two separate `/mcp` requests (≥ 1950 ms; `fetch` stubbed, no request leaves
-  the process); P12 (a thrown exception gives `Internal error`, the message not echoed); `wrangler.toml` (name,
+  tool call; the Senato throttle across two separate `/mcp` requests after a warm-up call to Camera (≥ 1950 ms;
+  `fetch` stubbed, no request leaves the process); P12 (a thrown exception gives `Internal error`, the message not echoed); `wrangler.toml` (name,
   `send_metrics = false`, observability, no analytics binding).
 - **`tests/binary.test.ts` (1)**: builds `src/node.ts` as the package script does, runs it over stdio: `initialize`
   gives `serverInfo` `{ name: "italianparliament-mcp", version: "0.1.0" }`, `tools/list` the six tools in the

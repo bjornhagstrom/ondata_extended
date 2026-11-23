@@ -100,7 +100,13 @@ Classification S/B/R/T (02) of the tests: **open**.
 
 ## Project-specific cases and flaky patterns
 
-None yet. Add each with cause and fix.
+Add each with cause and fix.
+
+- **A wall-clock throttle measured from a cold first request** (host-parliament, "spaces Senato requests >= 2 s
+  apart", failed now and then under load). Cause: the throttle spaces its releases, and the first request of a Node
+  process loads the network layer between its release and its send, so that send is late and the gap to the next one
+  short. Fix: a warm-up call to an unthrottled host on the same network layer before the measured pair, so the first
+  reservation is still tested.
 
 ## Open questions
 
