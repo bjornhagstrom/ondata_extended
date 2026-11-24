@@ -1287,15 +1287,20 @@ report. Revisit only if a portal is seen sending gzip without the header.
   local gitleaks pre-commit hook, with `.gitleaksignore` for the checked test values; the routine is in
   [rotation-routine.md](rotation-routine.md).
 - **Deployed and tried** 2026-11-24 with Björn's ok: the services Worker runs the limit, and the vocabulary service
-  answers at its new path. The limit did not hold live: 32 wrong passwords from one address over a few minutes all got
-  401, while the same Worker under the local simulator gave 429 after five. Cloudflare calls the binding approximate
-  and eventually consistent, with no stated bound on how far it may run over, so this may be within what it promises.
-  The key held a NUL between the service id and the address, the first suspect; it now uses
-  ":" (a service id is lower-case letters, digits and "-"). Deployed and tried again the same evening: 12 wrong
-  passwords at one a second, all 401, from one address (stable, checked) and one Cloudflare location. So the NUL was
-  not enough to get a 429; whether it played any part in the first run is not known, nor is the cause. **The limit is not effective live**: the defence against guessing is still
-  the password's length (32 random characters). The code stays (it is correct under the simulator, and it switches
-  the service off if the binding is lost); a strict limit would need a Durable Object, which waits for Björn's choice.
+  answers at its new path. At first the limit seemed not to hold: 32 wrong passwords from one address over a few
+  minutes, each from a new `curl` process, all got 401, while the local simulator gave 429 after five. Changing the
+  key's NUL separator to ":" (a service id is lower-case letters, digits and "-") changed nothing.
+- **What it was** (found the same evening with a separate probe Worker, deleted afterwards, and then on the login):
+  the binding counts in the instance that serves the request and passes the count to other instances in the
+  background. Calls in one instance are counted exactly (six allowed, then only refusals, in one request and on one
+  kept-alive connection). Requests on new connections land on other instances, so refusals start late and leak: 30
+  probe requests at two a second gave the first refusal at the 19th; 40 login attempts four at a time on new
+  connections gave 26 × 401 and 14 × 429, the first ten all allowed. Our first trials (at most 14 a minute, each on a
+  new connection) stayed under that. On the login, eight attempts on one connection gave 401 six times, then 429.
+  So the limit works as Cloudflare describes it: exact for a browser, loose against a client that opens a new
+  connection per attempt. That is enough as a brake; the password's 32 random characters remain the main defence. A
+  strict limit would need a Durable Object, not needed now. Lesson: a security control is tried with the client it
+  is meant for, and a simulator's answer is not the platform's.
 - **Not changed**: GitHub's non-provider patterns could not be turned on for a personal repository (part of GitHub
   Secret Protection); the local hook covers them. A managed secret store (Cloudflare Secrets Store) or revocable
   tokens wait until more people deploy or more services share secrets.

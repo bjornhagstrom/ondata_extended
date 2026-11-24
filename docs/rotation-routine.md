@@ -88,5 +88,7 @@ cd /path/to/ondata_extended && (
   printf '#!/bin/sh\nexec gitleaks git --pre-commit --staged --redact --no-banner\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
   ```
 - GitHub secret scanning and push protection are on for the repository.
-- Password attempts on the write test's login are meant to be limited per client address (`[[ratelimits]]` in
-  `wrangler.toml`), but the limit has not held live (DECISIONS, 2026-11-24); the password's length is the defence.
+- Password attempts on the write test's login are limited per client address (`[[ratelimits]]` in `wrangler.toml`):
+  exactly on one connection, loosely across many (DECISIONS, 2026-11-24). The password's length is the main defence.
+  To try the limit, send the attempts on one kept-alive connection (`curl … --next …`); one new connection per attempt
+  measures how far the count lags, not whether it works.
