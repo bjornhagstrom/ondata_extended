@@ -71,4 +71,5 @@ cd /path/to/ondata_extended && V=$(security find-generic-password -s <entry> -w)
   printf '#!/bin/sh\nexec gitleaks git --pre-commit --staged --redact --no-banner\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
   ```
 - GitHub secret scanning and push protection are on for the repository.
-- Password attempts on the write test's login are limited per client address (`[[ratelimits]]` in `wrangler.toml`).
+- Password attempts on the write test's login are meant to be limited per client address (`[[ratelimits]]` in
+  `wrangler.toml`), but the limit has not held live (DECISIONS, 2026-11-24); the password's length is the defence.

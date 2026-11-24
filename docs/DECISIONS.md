@@ -1289,8 +1289,12 @@ report. Revisit only if a portal is seen sending gzip without the header.
 - **Deployed and tried** 2026-11-24 with Björn's ok: the services Worker runs the limit, and the vocabulary service
   answers at its new path. The limit did not hold live: 32 wrong passwords from one address over a few minutes all got
   401, while the same Worker under the local simulator gave 429 after five. Cloudflare calls the binding approximate,
-  but not to that degree. The key held a NUL between the service id and the address, the suspected cause; it now uses
-  ":" (a service id is lower-case letters, digits and "-").
+  but not to that degree. The key held a NUL between the service id and the address, the first suspect; it now uses
+  ":" (a service id is lower-case letters, digits and "-"). Deployed and tried again the same evening: 12 wrong
+  passwords at one a second, all 401, from one address (stable, checked) and one Cloudflare location. So the NUL was
+  not the cause, and the cause is unknown. **The limit is not effective live**: the defence against guessing is still
+  the password's length (32 random characters). The code stays (it is correct under the simulator, and it switches
+  the service off if the binding is lost); a strict limit would need a Durable Object, which waits for Björn's choice.
 - **Not changed**: GitHub's non-provider patterns could not be turned on for a personal repository (part of GitHub
   Secret Protection); the local hook covers them. A managed secret store (Cloudflare Secrets Store) or revocable
   tokens wait until more people deploy or more services share secrets.
