@@ -1092,3 +1092,170 @@ report. Revisit only if a portal is seen sending gzip without the header.
   type (JSON without `type`, Markdown heading `undefined`); now only the table's own keys count, as for the
   declaration.
 
+## 2026-11-22: Changes to a vocabulary through the MCP: prepared against a proposed format
+
+- **Why**: Björn wants Svada changed through the MCP. TemaTres has no write API; the two rounds of 2026-11-22 were made
+  with php-cli scripts on the server. The tematres-test project builds a write API (preliminary study and plan first,
+  the plan approved by Björn); the order and our requirements are in its handoff file of 2026-11-22. This side is
+  prepared meanwhile, against the format we proposed there, so that only one file changes when the format is agreed.
+- **What**:
+  - `vocab_propose_changes` (a dry run: before, after and the change note per change, conflicts, a batch id; writes
+    nothing) and `vocab_apply_changes` (the batch id only; `destructiveHint: true`). Offered only when a deployment
+    gives a vocabulary `write: { url, keySetting }`, and only for those vocabularies, named by id in every call (no
+    default: the reading tools' default may be another vocabulary with the same numeric ids; a base URL is refused, so
+    a call never writes to a service the deployment did not name). No deployment has it yet.
+  - The key is read from the core config at call time (`<PREFIX>_<keySetting>`) and must be printable ASCII without
+    spaces; anything else counts as no key, so a malformed value never reaches an error message (a header value with a
+    line break would). Sent only in the Authorization header, only over HTTPS; never in an instance object, an answer,
+    an error or the telemetry. A write follows no redirect and is sent once, whatever the host's retry policy.
+  - A refusal is answered with our text for its code; the service's message is never shown, neither for a refusal nor
+    for a conflict.
+  - The dry run is read fail-closed: an answer that does not account for every operation (by a change or a conflict),
+    or that cannot be read whole, is an error with no id. A proposal too large to show whole is answered without its
+    id. Conflicts come first, so no cut can lose them; a proposal with conflicts says not to apply it. Stopping such an
+    apply is the service's job (the handoff asks for it); the MCP holds no state between the calls.
+  - Markup is shown as stored whenever the markup written differs from the markup replaced (the plain text would hide
+    a script or a dropped link attribute).
+  - Apply takes no text, so nothing read from the vocabulary can shape a write: what is written is what the dry run
+    showed. The descriptions say to change only what the user's material gives, to show the dry run, and to apply only
+    after the user's explicit ok for that batch. A confirmed write is reported as written even if the rest of the
+    answer is odd; an answer that does not say (a 5xx, an unreadable 2xx, no answer) is "may or may not have been
+    written", with the hint to read back and not to apply again.
+  - After an apply that may have written (not after a refusal that says nothing was written, nor when nothing was sent)
+    the vocabulary is read live for an hour, the longest TTL of a cached live answer (TemaTres's scheme data): no
+    snapshot, no cache read or write (`src/fresh.ts`), and the source line's memory reads the scheme again once. Every
+    cached answer is then older than the write by more than its TTL. Per isolate; another isolate may answer from its
+    cache until it expires, as before any write.
+  - The wire format is provisional (replaced by the agreed one, 2026-11-23 entry) and kept in `src/adapters/tematres/write.ts` alone. The operation set follows the
+    TemaTres proposal (`createMetaTerm`, note type codes, the three statuses); it is generalized when a second backend
+    writes.
+- **Who may call them**: the decision of 2026-11-14 to run without authentication rests on read-only tools and no
+  secret in either Worker. A deployment with write access holds a key, and anyone with its URL could propose and
+  apply. Decided 2026-11-22 (Björn): a password, see the next entry.
+- **Reviewed**: mcp-reviewer, 2026-11-22: one blocker (a malformed key echoed by the runtime's header check) and eight
+  should-fixes (fail-open dry-run parsing, truncation losing conflicts, a confirmed write reported as refused, the
+  fresh window shorter than the scheme TTL and the source memory, `httpsOnly` without effect, markup hidden, no test
+  for no-retry, a deployment's example in profile text), all fixed with a test each that fails without the fix.
+- **Not yet**: a deployment with write access (first the test copy on vocab.hagstrom.nu, Svada only with Björn's ok;
+  see who may call), the agreed format, smoke cases and evals for the change tools, and the frozen surface (the tools
+  are absent from every deployment until then).
+
+## 2026-11-22: The change tools sit behind a login, once, kept alive by refresh
+
+**Decision (Björn)**: writing through the MCP needs a password; he does not want to log in regularly.
+
+- **What**: a service of the several-service Worker may have a `login` (core `src/login.ts`). Its `/mcp` then answers
+  only a request with an access token; anything else gets 401 with where to log in (RFC 9728). The login is OAuth 2.1
+  with PKCE (S256), the way MCP clients (claude.ai, Claude Code) connect to a protected server: the client registers
+  itself (RFC 7591), sends the person to a page where they type the password, and gets an access token (one hour) and
+  a refresh token. Its endpoints sit under the service's path (`/<path>/authorize`, `/token`, `/register`); the
+  discovery documents at the addresses RFC 9728 and RFC 8414 derive from it. It works the same for a private service
+  at its secret path; the secret path then hides the service and the password guards it.
+- **Logged in once**: a refresh token lives 90 days unused and is replaced at every refresh, so a client used at
+  least once a quarter never asks again. The person logs in again only when the connector is added anew, or after
+  the password or the signing secret changes, which ends every login at once.
+- **Stateless, no library**: client ids, codes and tokens are HMAC-signed with a key derived from a signing secret, the
+  service's id and the password, and carry their expiry. No storage is needed, every isolate accepts what another
+  issued, and it runs on Workers and Node alike (Web Crypto only). Cloudflare's `workers-oauth-provider`, named to
+  Björn first, was not used: it needs a KV namespace (eventually consistent, up to a minute, for rotating refresh
+  tokens), wraps the whole Worker and fixes its routes when the Worker loads, which fits neither a secret path read at
+  request time nor the several-service handler. The price of statelessness: a code can be redeemed more than once in
+  its two minutes (PKCE still binds it to the client that asked), and a replaced refresh token stays valid until it
+  expires. Revocation is the password or the signing secret.
+- **Rules**: a password of at least 16 characters and a signing secret of 32-256 characters (generated at random),
+  both secrets of the deployment; otherwise the service is off (404, one warning without a value). Redirect addresses
+  are HTTPS, or HTTP to this machine for a command-line client; never a redirect to an address the client did not
+  register, and a broken request to log in is shown on our own page, never sent to the client's address (registration
+  is open, so a registered address is not a trusted one). Registration is open to anyone, so the login page names the
+  host the code goes to, and a deployment can list the only hosts a client may be sent to (`redirectHosts`, e.g.
+  claude.ai and localhost); a loopback address matches on any port (RFC 8252). The login page forbids framing, sends no
+  referrer and is not cached; the password is compared in constant time and never shown or logged. No rate limit on
+  the page (stateless): the password's length carries that.
+- **The profile**: the SKOS profile offers the change tools only with `offerChanges: true`, which a host sets only
+  for a service behind a login; a vocabulary's write access alone no longer offers them.
+- **Reviewed**: mcp-reviewer, 2026-11-22: no blocker; a phishing path (a stranger registers their own address and
+  sends the person a link to the genuine page) and missing tests, fixed with the host shown on the page, the
+  deployment's redirect hosts and the tests; an open redirect for broken requests, two limits that contradicted each
+  other, an unset login still listed, loopback ports and an optional `redirect_uri` at the token endpoint, all fixed
+  with a test each that fails without the fix.
+- **Not yet**: the host's write service (its login page text in `en`/`sv`, the secrets, the writable test
+  vocabulary) waits for the write API on vocab.hagstrom.nu; a live check that claude.ai and Claude Code register,
+  log in and refresh as expected.
+
+## 2026-11-23: The change tools speak the write API's agreed format
+
+- **Why**: tematres-test's plan for the write API (`docs/skriv-api-plan.md` there, sections 2.1-2.8 and 14) set the
+  format, with our answers to its questions recorded in the handoff log of 2026-11-23. The provisional format of
+  2026-11-22 is replaced, in `src/adapters/tematres/write.ts` and in the tools' schema; nothing else changes.
+- **Request**: `POST <vocabulary>/write.php`, `{ action: "dryRun", vocabulary: <base URI>, reason, source, operations }`
+  (flat, not under `batch`) and `{ action: "apply", batchId }`. The tools take the plan's operation fields as they are:
+  a concept by `conceptId` (a number) or `conceptRef` (a concept the batch creates), a target likewise
+  (`targetId`/`targetRef`), a place in a note by `heading` and one of `paragraph`, `listItemContaining`,
+  `paragraphContaining`; `replaceNoteText` (words inside a paragraph, links kept), `addNote` with `sections` or
+  `paragraphs`, `moveConcept` with `expectedBroaderId`, `setStatus` with `expectedStatus`, and per operation
+  `reason`, `source`, `field` (`comment` on a new concept). Exactly one of each pair is checked before any request;
+  a label with `<`, `>` or `"` is refused here as the service would. Texts are plain text, never HTML.
+- **Dry run, fail-closed**: `ok: true` and `applicable` are required; `applicable` must be true exactly when there is
+  no conflict, and only then is there a batch id (with conflicts the answer has none, and ours neither). Every
+  operation still has to be accounted for. A new concept has no id until written; it is shown by its `conceptRef`.
+  The service's warning codes are shown with our text (`linkRemoved`), an unknown one by its code.
+- **Apply**: a 2xx with `applied: true` (and not `ok: false`) is a write, reported with the time, the backup, the changed concepts and the
+  new concepts' ids (`created`). A 4xx with a known code, and a 503 with `transactionsUnavailable`, `dumpFailed` or
+  `notInstalled` (refused before the transaction, the plan says), mean nothing was written: not marked, refused with our
+  text, the conflict's place (`index`) and the wait the service asks for (`Retry-After`) passed on. Anything else,
+  `serverError` and `outcomeUnknown` included, may have written: read fresh, "may or may not have been written".
+  `serverError` is counted so on purpose: the plan says nothing was written, but the MCP cannot tell a rollback from a
+  lost one, and the cost of the caution is one read back. `batchUsed` ("already written or used up", the plan says)
+  is refused as nothing written now, but the vocabulary is read fresh after it and the hint says to read back and
+  never to apply the batch again, since it may have been written earlier.
+- **Fields from the service** are read as strictly as the request: a new concept's `conceptRef` by the request's
+  pattern, `expiresAt` and `appliedAt` as ISO 8601 times (a malformed `expiresAt` makes the dry run unreadable, a
+  malformed `appliedAt` is left out of a confirmed write).
+- **Key**: exactly 64 hex characters, the API's form; anything else is no key and is never sent.
+- **Reviewed**: mcp-reviewer, 2026-11-23: no blocker; seven of ten operation kinds and four groups of hints untested,
+  and the too-large JSON answer's conflicts no longer asserted: tests added (every kind sent and compared field by
+  field). The `batchUsed` hint claimed a write; "nothing written" accepted for any 5xx with the three codes (now 503
+  only); `conceptRef` and `appliedAt` read loosely; a comment and two model-facing texts out of date: all fixed, each
+  with a test that fails without it. The reviewer could not read the plan (outside the repository); its open points
+  were checked against the plan by hand.
+- **Not used**: the API's `info` action. The tools are offered by the deployment's configuration (and a login); a key
+  without the right gets 403 `forbidden`, shown as such.
+
+
+## 2026-11-24: The write test service, and a batch's status
+
+- **Why**: tematres-test put the write API on the test instance (`https://vocab.hagstrom.nu/skrivprov/write.php`, a
+  copy of Svada) with a key for this server, and added the `status` action we asked for (their plan, 2.5b).
+- **Service**: `skrivprov` in host-services, private (secret path `SERVICES_SKRIVPROV_PATH`) and behind the core login
+  (`SKRIVPROV_LOGIN_PASSWORD`, `SKRIVPROV_LOGIN_SIGNING_SECRET`; clients sent back only to claude.ai, localhost and
+  127.0.0.1), with its own engine (`SKRIVPROV_*`, allowed host vocab.hagstrom.nu only). The only service that offers
+  the change tools, for one vocabulary, `skrivprov`, read live (no snapshot) with the key `SKRIVPROV_WRITE_KEY`.
+  Without the path, the password or the signing secret it is off (404); without the key it reads only.
+- **Status**: a third change tool, `vocab_change_status`, asks `{ action: "status", batchId }` what became of a batch:
+  `proposed` (not written so far), `applied` (with the apply's result; the vocabulary is then read fresh, as after an
+  apply), `expired`, `stale`, `failed` (not written). Read fail-closed: `ok: true`, the same batch id and a known status
+  are required. Only a refusal about the key or the id (401, 403, 404) is passed on; anything else (a server error, a
+  limit, a code meant for apply, no answer) is "did not say what became of the batch", never "nothing was written". The
+  hints after an unknown outcome or a used batch now send the model to this tool instead of reading back.
+- **`serverError` at apply, changed from 2026-11-23**: a 500 with `serverError` now counts as nothing written by that
+  request, not marked. The caution of 2026-11-23 rested on the MCP not being able to tell a rollback from a lost one;
+  the plan (2.6, and tematres-test's log of 2026-11-24) now separates them: every failure after a commit has begun is
+  `outcomeUnknown`, and `serverError` is given only before it, with the transaction rolled back. The batch may be
+  `failed` or still `proposed` afterwards, which the status tool tells; the hint says to ask it first. A `serverError`
+  on any other 5xx, `outcomeUnknown` and any other 5xx still count as possibly written.
+- **Fields shown**: a backup's name and a log id are shown only in a safe form (file-name and id characters), in JSON as
+  in Markdown.
+- **Tried live**, from Björn's computer through a real MCP client and the real engine (not deployed), 2026-11-24:
+  reading concept 18; a dry run of `replaceNoteText` on it (before, after, change note, an id); a dry run with a wrong
+  `expected` (`staleText`, no id); status `proposed` for the first and `unknownBatch` for an invented id; with Björn's
+  ok, that batch applied (backup, log entry, concept 18 changed, the change note written by the service), status
+  `applied`, a second apply refused as `batchUsed`, and the concept read back with the new text. The three status
+  answers are recorded as fixtures (`tests/fixtures/write/`).
+- **Reviewed**: mcp-reviewer, 2026-11-24: no blocker. A status `applied` promised live reads without marking them; the
+  `serverError` hint also given after a dry run; a rate-limited or busy status call answered "nothing was written";
+  four new behaviours and the login page's language untested; status answers only in shapes the test wrote; this entry
+  and the test table missing; two misleading `wrangler.toml` comments and three stale ones; a backup name or log id
+  passed into JSON unchecked. All fixed; each new behaviour has a test, and eight mutations were each caught.
+- **Not yet**: the deployment (with Björn's ok), a live check of
+  login and refresh from claude.ai and Claude Code, smoke cases for the change tools, and the frozen surface of the
+  three tools (after the first trial batches, while their text may still change).

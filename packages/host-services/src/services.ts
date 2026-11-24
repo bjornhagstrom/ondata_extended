@@ -3,11 +3,13 @@
  * MCP server, so nothing one service does reaches the other. No `ENGINE_*` alias: a setting names one service.
  */
 
-import { createConfig, createEngine, createMcpServer, pickTelemetryFields, registerProfiles, serverInstructions, type ConfigSource, type Engine, type McpServer, type WorkerService, type AnalyticsEngineDataset } from "@ondata-extended/core";
+import { createConfig, createEngine, createMcpServer, pickTelemetryFields, registerProfiles, serverInstructions, type ConfigSource, type Engine, type LoginPageText, type McpServer, type ServiceLogin, type WorkerService, type AnalyticsEngineDataset } from "@ondata-extended/core";
 import { createEcosystemProfile, PROFILE_VERSION as ECOSYSTEM_VERSION } from "@ondata-extended/profile-ckan-ecosystem";
 import { createSkosProfile, PROFILE_VERSION as VOCAB_VERSION } from "@ondata-extended/profile-skos";
 import type { InstanceEntry, Profile } from "@ondata-extended/profile-contract";
 import type { VocabExt } from "@ondata-extended/profile-skos";
+import en from "./i18n/en.json";
+import sv from "./i18n/sv.json";
 
 export type Env = ConfigSource & { ANALYTICS?: AnalyticsEngineDataset };
 
@@ -64,6 +66,19 @@ export const TEST_INSTANCE: InstanceEntry<VocabExt>[] = [
   { id: "unesco-test", baseUrl: "https://vocab.hagstrom.nu/unesco/", ext: { adapter: "tematres", conceptUriBase: "https://vocab.hagstrom.nu/unesco/skos/", snapshotUrl: "https://vocab.hagstrom.nu/dumps/unesco.ndjson", defaultLang: "en", title: "UNESCO Thesaurus (English), test copy on vocab.hagstrom.nu" } }
 ];
 
+/**
+ * The write test: a copy of Svada on the project's test instance (vocab.hagstrom.nu/skrivprov/), written through the
+ * instance's write API (tematres-test's write.php). Read live, never from a snapshot, so a change shows at once. The
+ * API key is the secret SKRIVPROV_WRITE_KEY; nothing else on the instance can be written with it.
+ */
+export const SKRIVPROV_VOCAB: InstanceEntry<VocabExt>[] = [{
+  id: "skrivprov", baseUrl: "https://vocab.hagstrom.nu/skrivprov/",
+  ext: {
+    adapter: "tematres", defaultLang: "sv", title: "Svada - termer och begrepp (skrivprov)", conceptUriBase: "https://vocab.hagstrom.nu/skrivprov/skos/",
+    noteTypes: { CH: "changeNote" }, write: { url: "https://vocab.hagstrom.nu/skrivprov/write.php", keySetting: "WRITE_KEY" }
+  }
+}];
+
 export const VOCAB: ServiceSetup = {
   id: "vocab", name: "vocab-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
     vocabularies: SVADA,
@@ -82,6 +97,15 @@ export const TEMATRES: ServiceSetup = {
     hostPolicies: UBA_HOST_POLICY
   }),
   configPrefix: "TEMATRES", keyArgs: ["query", "prefix", "id"]
+};
+export const SKRIVPROV: ServiceSetup = {
+  id: "skrivprov", name: "vocab-write-test-mcp-server", version: VOCAB_VERSION, profile: createSkosProfile({
+    vocabularies: SKRIVPROV_VOCAB,
+    offerChanges: true,
+    instructions: "skrivprov is a test copy of Svada, a Swedish vocabulary of terms and concepts, on which changes are tried " +
+      "out. Change it only as the user asks, with the change tools, and show every proposal to the user before it is applied."
+  }),
+  configPrefix: "SKRIVPROV", keyArgs: ["query", "prefix", "id", "batch_id"]
 };
 export const ECOSYSTEM: ServiceSetup = {
   id: "ecosystem", name: "ckan-ecosystem-mcp-server", version: ECOSYSTEM_VERSION, profile: createEcosystemProfile(), configPrefix: "ECOSYSTEM",
@@ -106,12 +130,13 @@ export const vocabSecretPath = (env: Env) => createConfig(env, ["SERVICES"]).get
  * limiter and the per-host throttle, which must span requests. `env` is the same for every request of a Worker
  * version, so building from the first one is safe.
  */
-export function workerService(setup: ServiceSetup, where: { path: string } | { secretPath: (env: Env) => string | undefined }): WorkerService<Env> {
+export function workerService(setup: ServiceSetup, where: { path: string } | { secretPath: (env: Env) => string | undefined }, login?: ServiceLogin<Env>): WorkerService<Env> {
   let engine: Engine | undefined;
   const { profile } = setup;
   return {
     id: setup.id,
     ...where,
+    ...(login ? { login } : {}),
     buildServer: (env) => buildServiceServer(setup, (engine ??= createServiceEngine(setup, env))),
     health: () => ({
       status: "ok", name: setup.name, version: setup.version, tools: profile.tools.length,
@@ -127,11 +152,36 @@ export function workerService(setup: ServiceSetup, where: { path: string } | { s
   };
 }
 
+/** The private path of the write test, from the secret SERVICES_SKRIVPROV_PATH. */
+export const skrivprovSecretPath = (env: Env) => createConfig(env, ["SERVICES"]).get("SKRIVPROV_PATH");
+
+/** The login page in the language the request asks for (?lang=, then Accept-Language), from the language files. */
+export function loginPage(request: Request): LoginPageText {
+  const q = new URL(request.url).searchParams.get("lang");
+  const lang = q === "sv" || q === "en" ? q : /^sv\b/i.test(request.headers.get("accept-language") ?? "") ? "sv" : "en";
+  const t = lang === "sv" ? sv : en;
+  return { lang, title: t.loginTitle, intro: t.loginIntro, password: t.loginPassword, submit: t.loginSubmit, wrong: t.loginWrong, badRequest: t.loginBadRequest, sendsTo: t.loginSendsTo };
+}
+
+/**
+ * The write test's login (core login.ts): the password SKRIVPROV_LOGIN_PASSWORD, typed once per client; tokens signed
+ * with SKRIVPROV_LOGIN_SIGNING_SECRET. Clients may be sent back only to claude.ai and to a command-line client on this
+ * computer.
+ */
+export const SKRIVPROV_LOGIN: ServiceLogin<Env> = {
+  password: (env) => createConfig(env, ["SKRIVPROV"]).get("LOGIN_PASSWORD"),
+  signingSecret: (env) => createConfig(env, ["SKRIVPROV"]).get("LOGIN_SIGNING_SECRET"),
+  page: loginPage,
+  redirectHosts: ["claude.ai", "localhost", "127.0.0.1"]
+};
+
 export const SERVICES = [
   workerService(ECOSYSTEM, { path: "ecosystem" }),
   workerService(VOCAB, { secretPath: vocabSecretPath }),
   // Public since the issue to TemaTres's maintainer (docs/DECISIONS.md); private at a secret path before that.
-  workerService(TEMATRES, { path: "tematres" })
+  workerService(TEMATRES, { path: "tematres" }),
+  // Private, and behind a login: the only service that can write (docs/DECISIONS.md).
+  workerService(SKRIVPROV, { secretPath: skrivprovSecretPath }, SKRIVPROV_LOGIN)
 ];
 
 /** What the landing page says about a public service. */

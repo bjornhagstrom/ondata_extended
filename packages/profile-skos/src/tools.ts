@@ -11,6 +11,8 @@ import type { EngineContext, InstanceEntry, ToolResult, ToolSpec } from "@ondata
 import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Note, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "./model.js";
 import { createResolver, type VocabExt } from "./vocabularies.js";
 import { localId } from "./ids.js";
+import { createChangeTools } from "./change-tools.js";
+import { writtenAt } from "./fresh.js";
 
 export { localId };
 
@@ -501,6 +503,8 @@ interface SourceEntry {
   until: number;
   /** One of the deployment's own vocabularies: never evicted. */
   known: boolean;
+  /** When the read that gave `value` started; a write to the vocabulary after it makes the value old (src/fresh.ts). */
+  readAt?: number;
   /** The latest read; only it may write. */
   pending?: { at: number; done: Promise<void> };
 }
@@ -534,7 +538,8 @@ function createSourceMemo(entries: Entries): SourceOf {
     };
     const now = Date.now();
     let e = memo.get(key);
-    if (e && now < e.until) return e.value ?? standIn;
+    const written = writtenAt(instance.baseUrl, now);
+    if (e && now < e.until && !(written !== undefined && (e.readAt ?? 0) <= written)) return e.value ?? standIn;
     if (!e) {
       if (!known && adHoc >= MAX_SOURCES) {
         for (const [k, v] of memo) if (!v.known) { memo.delete(k); adHoc--; break; }
@@ -551,6 +556,7 @@ function createSourceMemo(entries: Entries): SourceOf {
         if (!latest()) return;
         entry.value ??= standIn;
         entry.until = Date.now() + SOURCE_RETRY_MS;
+        entry.readAt = pending.at;
       };
       pending.done = adapter.schemeInfo(ctx, instance).then(
         (info) => {
@@ -565,6 +571,7 @@ function createSourceMemo(entries: Entries): SourceOf {
             ...(field(info.modified) ? { modified: field(info.modified) } : {})
           };
           entry.until = Date.now() + SOURCE_TTL_MS;
+          entry.readAt = pending.at;
         },
         failed
       ).finally(() => { if (latest()) entry.pending = undefined; });
@@ -579,6 +586,7 @@ function createSourceMemo(entries: Entries): SourceOf {
       // Not done in time: stand for five minutes, so later answers do not wait. The read may still finish and write.
       entry.value ??= standIn;
       entry.until = Date.now() + SOURCE_RETRY_MS;
+      entry.readAt = current.at;
     }
     return entry.value ?? standIn;
   };
@@ -610,7 +618,8 @@ function sourceMarkdown(ctx: EngineContext, s: Source): string {
  * first is the default. Any other vocabulary is reachable by its base URL when the deployment's allow-list lets the
  * request through.
  */
-export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
+/** `changes`: offer the change tools for the writable vocabularies (only on a service behind a login). */
+export function createSkosTools(entries: Entries = [], { changes = false }: { changes?: boolean } = {}): ToolSpec<any>[] {
   const vocabArg = vocabArgBase.describe(vocabArgDescription(entries));
   const sourceOf = createSourceMemo(entries);
 
@@ -795,7 +804,8 @@ export function createSkosTools(entries: Entries = []): ToolSpec<any>[] {
     }
   };
 
-  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo, randomConcept];
+  // The change tools only when the deployment offers them (a service behind a login) and gives a vocabulary write access (src/change-tools.ts).
+  return [searchConcepts, getConcept, broader, narrower, related, topConcepts, suggest, schemeInfo, randomConcept, ...(changes ? createChangeTools(entries) : [])];
 }
 
 export { ConceptNotFoundError };

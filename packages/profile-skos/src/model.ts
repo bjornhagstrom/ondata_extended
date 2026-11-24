@@ -97,6 +97,11 @@ export interface VocabularyInstance {
    * the instance exports as skos:changeNote). Used before the adapter's defaults; a private type stays hidden.
    */
   noteTypes?: Readonly<Record<string, Note["type"]>>;
+  /**
+   * Write access, when the deployment gives it: the backend's write endpoint and the name of the setting that holds the
+   * key (read from the core config at call time, so the key itself never sits in an instance object).
+   */
+  write?: { url: string; keySetting: string };
 }
 
 /** One backend. Every method returns SKOS-model data; a missing concept is `null`, not an error. */
@@ -115,6 +120,12 @@ export interface VocabularyAdapter {
    * cannot pick one leaves it out or throws RandomConceptNotOfferedError.
    */
   randomConcept?(ctx: EngineContext, instance: VocabularyInstance): Promise<Concept | null>;
+  /** A dry run of a batch: what it would change and what stands in the way, written nowhere. Needs `instance.write`. */
+  proposeChanges?(ctx: EngineContext, instance: VocabularyInstance, batch: ChangeBatch): Promise<ChangeProposal>;
+  /** Writes exactly the proposed batch with this id, all or nothing. Needs `instance.write`. */
+  applyChanges?(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<ChangeResult>;
+  /** What became of a batch this server proposed, as the backend recorded it; writes nothing. Needs `instance.write`. */
+  batchStatus?(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<BatchStatus>;
 }
 
 /** The vocabulary service cannot pick a random concept (the backend has no such call, or this version lacks it). */
@@ -122,5 +133,121 @@ export class RandomConceptNotOfferedError extends Error {
   constructor(vocab: string) {
     super(`The vocabulary service of "${vocab}" does not offer a random concept.`);
     this.name = "RandomConceptNotOfferedError";
+  }
+}
+
+// ---------------------------------------------------------------------------------------
+// Changes: a batch of operations, proposed (a dry run that writes nothing) and then applied by its id.
+
+/**
+ * The concept a change is about: its id in the vocabulary (`conceptId`) or the name (`conceptRef`) given to a concept
+ * created earlier in the same batch; exactly one. A target (a broader or related concept) likewise, with `targetId` or
+ * `targetRef`.
+ */
+export interface ConceptPointer { conceptId?: number; conceptRef?: string }
+export interface TargetPointer { targetId?: number; targetRef?: string }
+
+/** Where in a note: the element under a heading, by its number or by a text it contains; exactly one of the three. */
+export interface NoteSelector { heading: string; paragraph?: number; listItemContaining?: string; paragraphContaining?: string }
+
+/** For one change instead of the batch's: why, where from, and what the change note names as changed. */
+export interface ChangeExtras { reason?: string; source?: string; field?: string }
+
+export type ConceptStatus = "accepted" | "candidate" | "rejected";
+
+/** A new note's text: sections with a heading, plain paragraphs and links. */
+export interface NoteSectionInput { heading: string; paragraphs?: string[]; links?: { label: string; url: string }[] }
+
+export type ChangeOperation = ChangeExtras & (
+  | { op: "createConcept" | "createMetaTerm"; conceptRef: string; prefLabel: string; comment?: string }
+  | ({ op: "addAltLabel"; label: string } & ConceptPointer)
+  | ({ op: "addBroader" | "addRelated" } & ConceptPointer & TargetPointer)
+  | ({ op: "moveConcept"; toTop?: true; expectedBroaderId: number | null } & ConceptPointer & TargetPointer)
+  | ({ op: "setStatus"; status: ConceptStatus; expectedStatus: ConceptStatus } & ConceptPointer)
+  | ({ op: "addNote"; noteType: string; lang?: string; sections?: NoteSectionInput[]; paragraphs?: string[] } & ConceptPointer)
+  | ({ op: "replaceNoteSection"; noteType: string; lang?: string; expected: string; text: string } & NoteSelector & ConceptPointer)
+  | ({ op: "replaceNoteText"; noteType: string; lang?: string; expected: string; find: string; replaceWith: string } & NoteSelector & ConceptPointer)
+);
+
+/** What the user's material gives for every change: why, and where it comes from. The server writes them into its change notes. */
+export interface ChangeBatch {
+  reason: string;
+  source: string;
+  operations: ChangeOperation[];
+}
+
+/** One operation as the dry run would carry it out. Texts are the backend's, as stored (e.g. HTML). */
+export interface ProposedChange {
+  index: number;
+  op: ChangeOperation["op"];
+  /** Absent for a concept the batch creates: it has an id only once written. */
+  conceptId?: string;
+  conceptRef?: string;
+  conceptUri?: string;
+  prefLabel?: string;
+  noteType?: string;
+  selector?: NoteSelector;
+  before?: string;
+  after?: string;
+  /** The change note the server will write for this change. */
+  changeNote?: string;
+  /** The service's warning codes for this change (e.g. a link that the new text drops). */
+  warnings?: string[];
+}
+
+/** Why an operation cannot be applied as proposed (e.g. the text it replaces has changed, a label exists). */
+export interface ChangeConflict {
+  index: number;
+  code: string;
+}
+
+export interface ChangeProposal {
+  /** Whether the batch can be written: no conflict. Only then is there a batch id. */
+  applicable: boolean;
+  /** The id `applyChanges` takes; single use, bound to the key that proposed it, valid until `expiresAt`. */
+  batchId?: string;
+  expiresAt?: string;
+  changes: ProposedChange[];
+  conflicts: ChangeConflict[];
+}
+
+export interface ChangeResult {
+  batchId: string;
+  applied: true;
+  appliedAt?: string;
+  /** The backup the backend took before writing, by name. */
+  dump?: string;
+  changedConceptIds: string[];
+  /** The concepts the batch created, by the name the batch gave them. */
+  created: { conceptRef: string; conceptId: string; conceptUri?: string }[];
+  logId?: string;
+}
+
+/**
+ * A batch as the backend recorded it. `proposed`: nothing written so far; `expired`, `stale` (a conflict at apply) and
+ * `failed` (an error at apply): nothing written; `applied`: written, with `result` as the apply recorded it.
+ */
+export interface BatchStatus {
+  batchId: string;
+  status: "proposed" | "expired" | "stale" | "failed" | "applied";
+  expiresAt?: string;
+  result?: ChangeResult;
+}
+
+/** Changes are not offered for this vocabulary (no write access configured, or the backend has none). */
+export class ChangesNotOfferedError extends Error {
+  constructor(vocab: string) {
+    super(`Changes to "${vocab}" are not offered by this server.`);
+    this.name = "ChangesNotOfferedError";
+  }
+}
+
+/** The vocabulary service refused a batch or an apply, with its code (our text, never the service's). */
+export class ChangeRefusedError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "ChangeRefusedError";
+    this.code = code;
   }
 }

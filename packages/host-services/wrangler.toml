@@ -9,6 +9,15 @@
 #   P=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n'); echo "$P"
 #   printf %s "$P" | npx wrangler secret put SERVICES_VOCAB_PATH -c packages/host-services/wrangler.toml
 # The private URL is then https://<worker>/$P/mcp. To rotate: the same with a new value, then update the connectors.
+# The write test, private and behind a login (/<SERVICES_SKRIVPROV_PATH>/mcp). Four secrets:
+#   SERVICES_SKRIVPROV_PATH        its path, made as SERVICES_VOCAB_PATH above (printed once, to keep for the connector)
+#   SKRIVPROV_LOGIN_PASSWORD       the password typed on the login page (16-1024 characters; keep it, e.g. in the Keychain)
+#   SKRIVPROV_LOGIN_SIGNING_SECRET 32-256 characters of A-Z, a-z, 0-9, "_", "-", never printed and never needed again:
+#     openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n' | npx wrangler secret put SKRIVPROV_LOGIN_SIGNING_SECRET -c packages/host-services/wrangler.toml
+#   SKRIVPROV_WRITE_KEY            the write API's key (64 hex), from the Keychain entry tematres-skrivprov-mcp:
+#     security find-generic-password -s tematres-skrivprov-mcp -w | tr -d '\n' | npx wrangler secret put SKRIVPROV_WRITE_KEY -c packages/host-services/wrangler.toml
+# Without the path, the password or the signing secret the service is off (404); without the key it reads, and the
+# change tools answer that changes are not offered. Changing the password or the signing secret ends every login.
 # Deploy: npm run deploy:services (Björn's ok each time). Deployed 2026-11-15.
 name = "ondata-extended-services"
 main = "dist/worker.js"
@@ -41,6 +50,8 @@ ECOSYSTEM_ALLOWED_DOMAINS = "raw.githubusercontent.com"
 # request whose turn there is more than 30 s away fails at once. Any TemaTres on these hosts is reachable by its
 # address; the known ids are in src/services.ts.
 TEMATRES_ALLOWED_DOMAINS = "vocabularyserver.com,terminologias.filo.uba.ar,vocab.hagstrom.nu"
+# The write test (src/services.ts, SKRIVPROV): only the test instance.
+SKRIVPROV_ALLOWED_DOMAINS = "vocab.hagstrom.nu"
 TEMATRES_RATE_LIMIT_RPS = "5"
 TEMATRES_RATE_LIMIT_BURST = "1"
 TEMATRES_RATE_LIMIT_MAX_WAIT_MS = "10000"

@@ -19,6 +19,7 @@ import type { EngineContext } from "@ondata-extended/profile-contract";
 import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Label, type Mapping, type Note, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "./model.js";
 import { localId } from "./ids.js";
 import { htmlToText } from "./text.js";
+import { mustReadFresh } from "./fresh.js";
 
 /** How long a loaded snapshot is used before the server is asked whether it changed. */
 export const REVALIDATE_MS = 60_000;
@@ -395,8 +396,9 @@ function concept(s: Snapshot, c: SnapConcept, instance: VocabularyInstance): Con
  * snapshot changes where an answer comes from, not what a tool may return.
  */
 export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAdapter {
-  async function answer<T>(ctx: EngineContext, fromSnapshot: (s: Snapshot) => T | undefined, fromLive: () => Promise<T>): Promise<T> {
-    const s = await loadSnapshot(ctx, url);
+  async function answer<T>(ctx: EngineContext, instance: VocabularyInstance, fromSnapshot: (s: Snapshot) => T | undefined, fromLive: () => Promise<T>): Promise<T> {
+    // Just after a write (src/fresh.ts) the file may not have it yet: the live service answers.
+    const s = mustReadFresh(instance.baseUrl) ? undefined : await loadSnapshot(ctx, url);
     const value = s ? fromSnapshot(s) : undefined;
     if (value !== undefined) {
       ctx.telemetry.note({ source: "snapshot" });
@@ -412,7 +414,7 @@ export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAd
     async schemeInfo(ctx, instance) {
       const info = await live.schemeInfo(ctx, instance);
       // The live service may count alternative terms too; a loaded snapshot knows its concepts. Never loaded for this.
-      const s = loadedSnapshot(ctx, url);
+      const s = mustReadFresh(instance.baseUrl) ? undefined : loadedSnapshot(ctx, url);
       if (!s?.complete) return info;
       return {
         ...info,
@@ -421,26 +423,26 @@ export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAd
       };
     },
     search: (ctx, instance, query) =>
-      answer(ctx, (s) => nonEmpty(matches(s, instance, query, false)), () => live.search(ctx, instance, query)),
+      answer(ctx, instance, (s) => nonEmpty(matches(s, instance, query, false)), () => live.search(ctx, instance, query)),
     suggest: (ctx, instance, prefix) =>
-      answer(ctx, (s) => nonEmpty(matches(s, instance, prefix, true).slice(0, MAX_SUGGESTIONS)), () => live.suggest(ctx, instance, prefix)),
+      answer(ctx, instance, (s) => nonEmpty(matches(s, instance, prefix, true).slice(0, MAX_SUGGESTIONS)), () => live.suggest(ctx, instance, prefix)),
     getConcept: (ctx, instance, id) =>
-      answer(ctx, (s) => {
+      answer(ctx, instance, (s) => {
         const c = find(s, id, instance);
         return c ? concept(s, c, instance) : undefined;
       }, () => live.getConcept(ctx, instance, id)),
     broader: (ctx, instance, id) =>
-      answer(ctx, (s) => {
+      answer(ctx, instance, (s) => {
         const c = find(s, id, instance);
         return c ? refs(s, c.broader, instance) : undefined;
       }, () => live.broader(ctx, instance, id)),
     narrower: (ctx, instance, id) =>
-      answer(ctx, (s) => {
+      answer(ctx, instance, (s) => {
         const c = find(s, id, instance);
         return c ? refs(s, c.narrower, instance) : undefined;
       }, () => live.narrower(ctx, instance, id)),
     related: (ctx, instance, id) =>
-      answer(ctx, (s) => {
+      answer(ctx, instance, (s) => {
         const c = find(s, id, instance);
         return c ? refs(s, c.related, instance) : undefined;
       }, () => live.related(ctx, instance, id)),
@@ -448,7 +450,7 @@ export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAd
     // whole (a relation outside it) is read from the live service, and if that service no longer has it, the service
     // picks. Without a snapshot the live service picks.
     async randomConcept(ctx, instance) {
-      const s = await loadSnapshot(ctx, url);
+      const s = mustReadFresh(instance.baseUrl) ? undefined : await loadSnapshot(ctx, url);
       if (s) {
         s.list ??= [...s.byUri.values()];
         const c = s.list[Math.floor(Math.random() * s.list.length)];
@@ -466,11 +468,15 @@ export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAd
       return live.randomConcept(ctx, instance);
     },
     topConcepts: (ctx, instance) =>
-      answer(ctx, (s) => {
+      answer(ctx, instance, (s) => {
         // Without topConceptOf the snapshot cannot tell a top concept from a concept outside the hierarchy (TemaTres
         // lists neither concepts without broader and narrower ones), so the live service answers.
         if (!s.hasTopConceptOf) return undefined;
         return nonEmpty([...s.byUri.values()].filter((c) => c.top).map((c) => refOf(c, instance)).sort(byLabel(instance)));
-      }, () => live.topConcepts(ctx, instance))
+      }, () => live.topConcepts(ctx, instance)),
+    // Changes go to the live service; the snapshot only reads.
+    ...(live.proposeChanges ? { proposeChanges: live.proposeChanges.bind(live) } : {}),
+    ...(live.applyChanges ? { applyChanges: live.applyChanges.bind(live) } : {}),
+    ...(live.batchStatus ? { batchStatus: live.batchStatus.bind(live) } : {})
   };
 }

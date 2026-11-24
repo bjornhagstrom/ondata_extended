@@ -1,6 +1,6 @@
 /**
- * The several-service Worker: three services from two real profiles (CKAN ecosystem and the TemaTres demo, public;
- * SKOS vocabulary Svada, private) in one Worker, kept apart by path and by engine. The network is replaced by answers recorded from begrepp.hagstrom.nu (the SKOS
+ * The several-service Worker: four services from two real profiles (CKAN ecosystem and the TemaTres demo, public;
+ * SKOS vocabulary Svada and the write test, private) in one Worker, kept apart by path and by engine. The network is replaced by answers recorded from begrepp.hagstrom.nu (the SKOS
  * profile's fixtures); every request still passes the core's guards.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { __setDnsResolverForTests } from "@ondata-extended/core";
 import en from "../src/i18n/en.json";
 import sv from "../src/i18n/sv.json";
-import { ECOSYSTEM, SVADA, TEMATRES, VOCAB } from "../src/services.js";
+import { ECOSYSTEM, SKRIVPROV, SKRIVPROV_VOCAB, SVADA, TEMATRES, VOCAB } from "../src/services.js";
 
 const FIX = join(import.meta.dirname, "..", "..", "profile-skos", "tests", "fixtures", "tematres");
 const recorded = new Map<string, { body: string; contentType: string }>();
@@ -41,9 +41,13 @@ const answerRequests = () => requested.filter((u) => !isScheme(u));
 const schemeRequests = () => requested.filter(isScheme);
 
 const SECRET = "k3P_9xQ-vR7tW2yZ5bN8mL4hJ6gF1dSa0cE"; // 35 characters
+const SKRIVPROV_PATH = "w7Rt_2pQ-9xLm4Kd8vB3nY6hJ1gF5sA0zC"; // 34 characters
 const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DOMAINS: "raw.githubusercontent.com", SERVICES_VOCAB_PATH: SECRET,
   TEMATRES_ALLOWED_DOMAINS: "vocabularyserver.com,terminologias.filo.uba.ar,vocab.hagstrom.nu",
-  VOCAB_RATE_LIMIT_ENABLED: "false", ECOSYSTEM_RATE_LIMIT_ENABLED: "false", TEMATRES_RATE_LIMIT_ENABLED: "false" };
+  VOCAB_RATE_LIMIT_ENABLED: "false", ECOSYSTEM_RATE_LIMIT_ENABLED: "false", TEMATRES_RATE_LIMIT_ENABLED: "false",
+  SERVICES_SKRIVPROV_PATH: SKRIVPROV_PATH, SKRIVPROV_ALLOWED_DOMAINS: "vocab.hagstrom.nu", SKRIVPROV_RATE_LIMIT_ENABLED: "false",
+  SKRIVPROV_LOGIN_PASSWORD: "a-test-password-of-some-length", SKRIVPROV_LOGIN_SIGNING_SECRET: "s1gn1ng-s3cr3t_for-tests-only-0123456789",
+  SKRIVPROV_WRITE_KEY: "9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0" };
 
 let requested: string[] = [];
 let startedAt: { url: string; at: number }[] = [];
@@ -262,7 +266,8 @@ describe("visibility", () => {
     expect(page).toContain(en.tematresTitle);
     for (const text of [page, health]) {
       expect(text).not.toContain(SECRET);
-      expect(text).not.toMatch(/svada|begrepp/i);
+      expect(text).not.toMatch(/svada|begrepp|skrivprov/i);
+      expect(text).not.toContain(SKRIVPROV_PATH);
     }
   });
 
@@ -298,5 +303,62 @@ describe("landing page", () => {
 describe("Svada's own note types", () => {
   it("declares its change notes (CH) as skos:changeNote, as its SKOS export writes them", () => {
     expect(SVADA[0].ext.noteTypes).toEqual({ CH: "changeNote" });
+  });
+});
+
+describe("the write test (skrivprov)", () => {
+  const mcp = `/${SKRIVPROV_PATH}/mcp`;
+  const list = () => post(mcp, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+
+  it("lets no MCP request in without an access token, and points the client to the login", async () => {
+    const w = await worker();
+    const res = await w.fetch(list(), ENV);
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toContain(`https://s.example/.well-known/oauth-protected-resource/${SKRIVPROV_PATH}/mcp`);
+    const meta = await (await w.fetch(new Request(`https://s.example/.well-known/oauth-protected-resource/${SKRIVPROV_PATH}/mcp`), ENV)).json() as { resource: string };
+    expect(meta.resource).toBe(`https://s.example${mcp}`);
+    expect(requested).toEqual([]);
+  });
+
+  it("is off, like an unknown path, without any one of its secrets", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const missing of ["SERVICES_SKRIVPROV_PATH", "SKRIVPROV_LOGIN_PASSWORD", "SKRIVPROV_LOGIN_SIGNING_SECRET"]) {
+      const w = await worker();
+      expect((await w.fetch(list(), { ...ENV, [missing]: "" })).status, missing).toBe(404);
+    }
+  });
+
+  it("registers clients only for claude.ai and this computer, and shows its login page in Swedish for ?lang=sv", async () => {
+    const w = await worker();
+    const register = (uri: string) => w.fetch(new Request(`https://s.example/${SKRIVPROV_PATH}/register`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [uri], token_endpoint_auth_method: "none" })
+    }), ENV);
+    expect((await register("https://claude.ai/api/mcp/auth_callback")).status).toBe(201);
+    expect((await register("http://localhost:33418/callback")).status).toBe(201);
+    expect((await register("https://evil.example/callback")).status).toBe(400);
+    const client = await (await register("https://claude.ai/api/mcp/auth_callback")).json() as { client_id: string };
+    const q = new URLSearchParams({ response_type: "code", client_id: client.client_id, redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+      code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256", state: "s", lang: "sv" });
+    const page = await (await w.fetch(new Request(`https://s.example/${SKRIVPROV_PATH}/authorize?${q}`), ENV)).text();
+    expect(page).toContain(`lang="sv"`);
+    expect(page).toContain(sv.loginTitle);
+    expect(page).toContain("claude.ai");
+    expect(page).not.toContain(ENV.SKRIVPROV_LOGIN_PASSWORD);
+    q.delete("lang");
+    const english = await (await w.fetch(new Request(`https://s.example/${SKRIVPROV_PATH}/authorize?${q}`), ENV)).text();
+    expect(english).toContain(`lang="en"`);
+    expect(english).toContain(en.loginTitle);
+    const asked = await (await w.fetch(new Request(`https://s.example/${SKRIVPROV_PATH}/authorize?${q}`, { headers: { "accept-language": "sv-SE,sv;q=0.9" } }), ENV)).text();
+    expect(asked).toContain(sv.loginTitle);
+  });
+
+  it("is the only service with the change tools, for skrivprov only, with its key under the SKRIVPROV prefix", () => {
+    const names = (setup: typeof VOCAB) => setup.profile.tools.map((t) => t.name);
+    expect(names(SKRIVPROV)).toEqual(expect.arrayContaining(["vocab_propose_changes", "vocab_apply_changes", "vocab_change_status", "vocab_get_concept"]));
+    for (const other of [VOCAB, TEMATRES, ECOSYSTEM]) expect(names(other).filter((n) => /change/.test(n)), other.id).toEqual([]);
+    expect(SKRIVPROV.configPrefix).toBe("SKRIVPROV");
+    expect(SKRIVPROV_VOCAB.map((v) => v.id)).toEqual(["skrivprov"]);
+    expect(SKRIVPROV_VOCAB[0].ext.write).toEqual({ url: "https://vocab.hagstrom.nu/skrivprov/write.php", keySetting: "WRITE_KEY" });
+    expect(SKRIVPROV_VOCAB[0].ext.snapshotUrl).toBeUndefined();
   });
 });

@@ -10,5 +10,12 @@
   "tematresIntro": "Search and browse controlled vocabularies published with TemaTres: on vocabularyserver.com (the UNESCO Thesaurus and others), at most 5 requests a second, and a lunfardo lexicon on terminologias.filo.uba.ar (University of Buenos Aires), at most 2 a second, and a test copy of the UNESCO Thesaurus on vocab.hagstrom.nu. Read through TemaTres's web service.",
   "limits": "A proof of concept: no sign-in, no availability promise; it may be rate-limited or taken down. The arguments of each call (the search text, for example) are logged.",
   "status": "Not affiliated with the onData association; the engine is derived from their ckan-mcp-server (MIT).",
-  "language": "Svenska"
+  "language": "Svenska",
+  "loginTitle": "Log in to the write test",
+  "loginIntro": "This service can change the test vocabulary skrivprov. Type the password to let your MCP client in; it stays logged in as long as it is used at least every 90 days.",
+  "loginPassword": "Password",
+  "loginSubmit": "Log in",
+  "loginWrong": "Wrong password.",
+  "loginBadRequest": "This login request cannot be used. Start the login again from your MCP client.",
+  "loginSendsTo": "After logging in you are sent to"
 }

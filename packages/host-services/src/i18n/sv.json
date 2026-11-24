@@ -10,5 +10,12 @@
   "tematresIntro": "Sök och bläddra i kontrollerade vokabulärer som publiceras med TemaTres: på vocabularyserver.com (bland annat UNESCO:s tesaurus), högst 5 anrop i sekunden, och ett lunfardolexikon på terminologias.filo.uba.ar (Buenos Aires universitet), högst 2 i sekunden, och en testkopia av UNESCO:s tesaurus på vocab.hagstrom.nu. Lästa via TemaTres webbtjänst.",
   "limits": "Ett konceptbevis: ingen inloggning och inget löfte om tillgänglighet; tjänsten kan begränsas eller stängas. Argumenten i varje anrop (till exempel söktexten) loggas.",
   "status": "Inte knuten till föreningen onData; motorn bygger på deras ckan-mcp-server (MIT).",
-  "language": "English"
+  "language": "English",
+  "loginTitle": "Logga in till skrivprovet",
+  "loginIntro": "Den här tjänsten kan ändra testvokabulären skrivprov. Skriv lösenordet för att släppa in din MCP-klient; den förblir inloggad så länge den används minst var 90:e dag.",
+  "loginPassword": "Lösenord",
+  "loginSubmit": "Logga in",
+  "loginWrong": "Fel lösenord.",
+  "loginBadRequest": "Den här inloggningen går inte att använda. Börja om inloggningen från din MCP-klient.",
+  "loginSendsTo": "Efter inloggningen skickas du till"
 }

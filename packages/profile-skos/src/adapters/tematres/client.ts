@@ -11,6 +11,7 @@
 
 import type { EngineContext } from "@ondata-extended/profile-contract";
 import { HttpStatusError, TransportError } from "@ondata-extended/core";
+import { mustReadFresh } from "../../fresh.js";
 
 /** The tasks this adapter uses. Others are refused before a request is made. */
 export const TEMATRES_TASKS = [
@@ -130,7 +131,8 @@ export async function callTask(
   }
   const url = servicesUrl(baseUrl, task, arg);
   // The profile's own name (Vocab-MCP-Server/<version>), not a browser's: a vocabulary server should see who calls it.
-  const cache = ttlSeconds <= 0 ? undefined : task === "fetchVocabularyData" ? { ttlSeconds, accept: namesVocabulary } : { ttlSeconds };
+  // Just after a write (src/fresh.ts) nothing is read from or put into the cache.
+  const cache = ttlSeconds <= 0 || mustReadFresh(baseUrl) ? undefined : task === "fetchVocabularyData" ? { ttlSeconds, accept: namesVocabulary } : { ttlSeconds };
   const res = await ctx.http.request(url, { method: "GET" }, { ...(cache ? { cache } : {}), userAgent: "honest" });
   if (res.status < 200 || res.status >= 300) {
     // An edge answering for an origin it could not reach: no answer from the service (as the core's json()).
