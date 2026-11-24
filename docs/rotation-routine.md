@@ -26,46 +26,63 @@ the secret paths (DECISIONS, 2026-11-15).
 
 ## Changing a secret
 
-Change a secret once a year, at once when it may have been seen by anyone else, and when someone who knew it no longer
-should. Each change is a deployment and needs the maintainer's ok.
+Change a secret at once when it may have been seen by anyone else (a value shown in a chat counts), and when someone
+who knew it no longer should; a yearly change is good where it gets done. Each change is a deployment and needs the maintainer's ok.
 
-- **A secret path.** Make a new one in the Keychain and in the Worker, then copy the new connector address to the
-  clipboard without showing it, and replace the address in each client (claude.ai connector, Claude Desktop). The old
-  path answers 404 at once.
+Each command below runs in a subshell that stops at the first failure, so the value never outlives it and a failure
+reaches the caller. The new value goes first to a separate Keychain entry (`<entry>-new`), then to the Worker, and
+only then over the old entry: if the upload fails, the old entry still holds the value the Worker uses. Check
+afterwards with `npx wrangler secret list -c packages/host-services/wrangler.toml` (names only) and a call.
 
-  ```bash
-  cd /path/to/ondata_extended && P=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n') && \
-    security add-generic-password -U -s ondata-extended-vocab-path -a "$USER" -w "$P" && \
-    printf %s "$P" | npx wrangler secret put SERVICES_VOCAB_PATH -c packages/host-services/wrangler.toml && \
-    printf 'https://<worker host>/%s/mcp' "$P" | pbcopy; unset P
-  ```
-
-  The write test's path the same way, with `ondata-extended-skrivprov-path` and `SERVICES_SKRIVPROV_PATH`.
-- **The login password.** Every login ends; each client logs in again, with the password copied from the Keychain
-  (`security find-generic-password -s ondata-extended-skrivprov-password -w | tr -d '\n' | pbcopy`).
+- **A secret path.** The old path answers 404 at once. The new connector address goes to the clipboard without being
+  shown; replace it in each client (claude.ai connector, Claude Desktop), then empty the clipboard (`pbcopy </dev/null`).
 
   ```bash
-  cd /path/to/ondata_extended && P=$(openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n') && \
-    security add-generic-password -U -s ondata-extended-skrivprov-password -a "$USER" -w "$P" && \
-    printf %s "$P" | npx wrangler secret put SKRIVPROV_LOGIN_PASSWORD -c packages/host-services/wrangler.toml; unset P
+  cd /path/to/ondata_extended && (
+    set -e; E=ondata-extended-vocab-path; S=SERVICES_VOCAB_PATH
+    P=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n')
+    security add-generic-password -U -s "$E-new" -a "$USER" -w "$P"
+    printf %s "$P" | npx wrangler secret put "$S" -c packages/host-services/wrangler.toml
+    security add-generic-password -U -s "$E" -a "$USER" -w "$P"
+    security delete-generic-password -s "$E-new" >/dev/null
+    printf 'https://<worker host>/%s/mcp' "$P" | pbcopy
+  ) && echo rotated || echo "FAILED: the old value is still in the entry; a new one, if made, is in <entry>-new"
   ```
-- **The signing secret.** Made and set in one step, kept nowhere (the command is in `wrangler.toml`). Every login ends.
+
+  The write test's path the same way, with `E=ondata-extended-skrivprov-path` and `S=SERVICES_SKRIVPROV_PATH`.
+- **The login password.** The same command with `E=ondata-extended-skrivprov-password`,
+  `S=SKRIVPROV_LOGIN_PASSWORD`, `openssl rand -base64 24` (32 characters) and without the clipboard line. To log in,
+  copy it from the Keychain (`security find-generic-password -s ondata-extended-skrivprov-password -w | tr -d '\n' |
+  pbcopy`) and empty the clipboard afterwards.
+- **The signing secret.** Made and set in one step, kept nowhere (the command is in `wrangler.toml`).
+- **After a new password or signing secret**, every login ends, and so does every client's registration: a client id
+  is signed with a key derived from both. A client that keeps its old id gets the page "This login request cannot be
+  used" instead of the password form. Remove the connector and add it again, so that the client registers anew.
 - **The write key.** Issued by the TemaTres side: ask its project, in a handoff file, for a new key in the Keychain
   entry; then set it with the command in `wrangler.toml` and check a dry run. The old key is withdrawn there.
 
-After each change: the old value no longer works (404, or a refused login or key), the new one does, and the value
-appears in no file:
+After each change, the old value no longer works (404, or a refused login or key) and the new one does. Then check
+where the current value of one Keychain entry appears: this repository's files and its git history. The answer is a
+hit (with the file names), none, or an error; it says nothing about other folders, about earlier values, or about the
+signing secret, which has no copy to compare with. Run the same `grep` over the AI assistant's session logs when one
+was used.
 
 ```bash
-cd /path/to/ondata_extended && V=$(security find-generic-password -s <entry> -w) && \
-  grep -rlF -e "$V" . --exclude-dir=node_modules; unset V
+cd /path/to/ondata_extended && (
+  V=$(security find-generic-password -s <entry> -w) || { echo "ERROR: no such entry"; exit 2; }
+  grep -rlF -e "$V" . --exclude-dir=node_modules; t=$?
+  h=$(git log -p --all | grep -cF -e "$V")
+  case $t in 0) echo "files: HIT (above)";; 1) echo "files: none";; *) echo "files: ERROR";; esac
+  echo "history: $h lines"
+)
 ```
 
 ## Guards
 
 - A pre-commit hook runs gitleaks on what is staged (`.git/hooks/pre-commit`, local); `.gitleaksignore` lists the
-  findings in past commits checked and known to be made-up test values; a new or changed line with such a value
-  carries a `gitleaks:allow` comment, since the list's entries name commits.
+  findings in past commits checked and known to be made-up test values. Its entries name a commit, so they do not cover
+  a line changed later: a made-up value in a test is built in code (e.g. a part repeated), not written out whole, and
+  no line carries a lasting `gitleaks:allow`.
 
   ```bash
   printf '#!/bin/sh\nexec gitleaks git --pre-commit --staged --redact --no-banner\n' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit

@@ -265,7 +265,9 @@ export function createServicesHandler<Env>(options: ServicesHostOptions<Env>) {
   }
 
   /** Whether a service is on as far as its login goes (no login, or one that is set up); quiet, for the listings. */
-  const servedLogin = (s: WorkerService<Env>, env: Env) => !s.login || loginConfigured(s.login, env);
+  // Listed only when its own routes are served: login set up, and the attempt limiter present when the login names one.
+  const servedLogin = (s: WorkerService<Env>, env: Env) =>
+    !s.login || (loginConfigured(s.login, env) && (!s.login.attemptLimiter || !!s.login.attemptLimiter(env)));
 
   /** Whether a service's login is set up; says once, without any value, when it is not. */
   function loginReady(s: WorkerService<Env>, env: Env): boolean {

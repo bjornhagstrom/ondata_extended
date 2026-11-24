@@ -209,10 +209,13 @@ describe("a service behind a login", () => {
   it("is off, with one warning, when its login names an attempt limiter the deployment does not provide", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const unlimited: WorkerService<Env> = { ...service("guarded", { path: "guarded" }), login: { ...login, attemptLimiter: () => undefined } };
-    const h = createServicesHandler<Env>({ services: [unlimited] });
+    const h = createServicesHandler<Env>({ services: [service("open", { path: "open" }, false), unlimited] });
     for (const path of ["/guarded/register", "/guarded/authorize", "/guarded/mcp"]) {
       expect((await h.fetch(new Request(`${ORIGIN}${path}`, { method: "POST", body: "{}" }), ENV)).status, path).toBe(404);
     }
+    // Nor is it listed as served.
+    const health = (await (await h.fetch(new Request(`${ORIGIN}/health`), ENV)).json()) as { services: { id: string }[] };
+    expect(health.services.map((s) => s.id)).toEqual(["open"]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain("attempt limiter");
   });
