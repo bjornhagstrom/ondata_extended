@@ -1,6 +1,7 @@
 /**
- * The change tools: vocab_propose_changes (a dry run: the diff and a batch id, nothing written) and vocab_apply_changes
- * (writes the batch with that id, all or nothing).
+ * The change tools: vocab_propose_changes (a dry run: the diff and a batch id, nothing written), vocab_apply_changes
+ * (writes the batch with that id, all or nothing) and vocab_change_status (what became of a batch, when an apply gave no
+ * clear answer).
  *
  * Offered only when the deployment turns them on (`offerChanges`, for a service behind a login) and gives at least one
  * vocabulary write access (`VocabExt.write`), and then only for
@@ -11,7 +12,7 @@
 
 import { z } from "zod";
 import type { EngineContext, InstanceEntry, ToolResult, ToolSpec } from "@ondata-extended/profile-contract";
-import { ChangesNotOfferedError, type ChangeOperation, type ChangeProposal, type ChangeResult, type ProposedChange } from "./model.js";
+import { ChangesNotOfferedError, type BatchStatus, type ChangeOperation, type ChangeProposal, type ChangeResult, type ProposedChange } from "./model.js";
 import { createResolver, type VocabExt } from "./vocabularies.js";
 import { htmlToText } from "./text.js";
 import { FRESH_MS } from "./fresh.js";
@@ -216,6 +217,23 @@ function resultMarkdown(ctx: EngineContext, vocab: string, r: ChangeResult): str
   return md;
 }
 
+/** What each status means for the user, and what to do. */
+const STATUS_TEXT: Record<BatchStatus["status"], string> = {
+  applied: "Written.",
+  proposed: "Not written so far. If the user approved this batch, it may be applied with vocab_apply_changes and this id; only one apply can succeed.",
+  expired: "Not written: the batch expired. Propose it again if the user still wants it.",
+  stale: "Not written: something the batch builds on changed before it could be written. Read the concepts again and propose anew.",
+  failed: "Not written: the vocabulary service had an error while writing and rolled back. Propose the batch again if the user still wants it."
+};
+
+function statusMarkdown(ctx: EngineContext, vocab: string, s: BatchStatus): string {
+  const o = ctx.output;
+  let md = `# Batch \`${o.sanitizeInline(s.batchId)}\` in ${o.sanitizeInline(vocab)}: ${s.status}\n\n${STATUS_TEXT[s.status]}\n`;
+  if (s.status === "proposed" && s.expiresAt) md += `\n- **Valid until**: ${o.sanitizeInline(s.expiresAt)}\n`;
+  if (s.result) md += `\n${resultMarkdown(ctx, vocab, s.result).replace(/^# .*\n\n/, "")}`;
+  return md;
+}
+
 export function createChangeTools(entries: Entries): ToolSpec<any>[] {
   const writable = entries.filter((e) => e.ext.write);
   if (writable.length === 0) return [];
@@ -290,5 +308,28 @@ export function createChangeTools(entries: Entries): ToolSpec<any>[] {
     }
   };
 
-  return [propose, apply];
+  const status: ToolSpec<any> = {
+    name: "vocab_change_status",
+    title: "Status of proposed changes",
+    description:
+      "What became of a batch proposed with vocab_propose_changes, by its batch id: proposed (not written so far), applied " +
+      "(written, with what changed), expired, stale or failed (not written). Writes nothing. Use it when vocab_apply_changes " +
+      "gave no clear answer (the outcome is unknown, or the answer was lost), before anything is applied or proposed again.",
+    inputSchema: {
+      vocab: vocabArg,
+      batch_id: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/).describe("The batch id vocab_propose_changes returned"),
+      response_format: formatArg
+    },
+    strictInput: true,
+    annotations: { title: "Status of proposed changes", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    async handler(args, ctx) {
+      const { instance, adapter } = resolveWritable(args.vocab);
+      if (!adapter.batchStatus) throw new ChangesNotOfferedError(instance.id);
+      const s = await adapter.batchStatus(ctx, instance, args.batch_id);
+      ctx.telemetry.note({ batch_id: s.batchId });
+      return respond(ctx, args.response_format, { vocab: instance.id, ...s }, () => statusMarkdown(ctx, instance.id, s));
+    }
+  };
+
+  return [propose, apply, status];
 }

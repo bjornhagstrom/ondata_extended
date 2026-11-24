@@ -2,7 +2,7 @@
  * The SKOS vocabulary profile. Tools are prefixed `vocab_` and speak SKOS; backends are
  * adapters (TemaTres first).
  *
- * Nine reading tools (src/tools.ts), and two change tools where a vocabulary is writable and the deployment offers them (src/change-tools.ts), over one adapter (TemaTres), optionally answered from a snapshot (src/snapshot.ts).
+ * Nine reading tools (src/tools.ts), and three change tools where a vocabulary is writable and the deployment offers them (src/change-tools.ts), over one adapter (TemaTres), optionally answered from a snapshot (src/snapshot.ts).
  */
 
 import type { HostPolicy, InstanceEntry, Profile } from "@ondata-extended/profile-contract";
@@ -36,7 +36,7 @@ export interface SkosProfileOptions {
    */
   hostPolicies?: Readonly<Record<string, HostPolicy>>;
   /**
-   * Offer the change tools (vocab_propose_changes, vocab_apply_changes) for the vocabularies with write access. Off by
+   * Offer the change tools (vocab_propose_changes, vocab_apply_changes, vocab_change_status) for the vocabularies with write access. Off by
    * default: a deployment turns it on only for a service that no one reaches without logging in (core `login`), never
    * for an open one. A vocabulary's write access alone does not offer them.
    */
@@ -60,7 +60,7 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
     telemetryFields: ["vocab", "query", "prefix", "id", "limit", "response_format", "batch_id"],
     untrustedSourceLabel: "the vocabulary service",
     honestUserAgent: `Vocab-MCP-Server/${PROFILE_VERSION}`,
-    describeError(error) {
+    describeError(error, toolName) {
       if (error instanceof ForeignConceptUriError) {
         return "→ Pass the vocabulary it belongs to as `vocab` (its id or base URL), or use the concept's id from a search in this vocabulary.";
       }
@@ -75,6 +75,11 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
       }
       if (error instanceof ChangeRefusedError) {
         const code = error.code;
+        // A status call's own refusals (src/adapters/tematres/write.ts, batchStatus).
+        if (code === "status:unknownBatch") {
+          return "→ The service has no record of this batch for this server: it was never proposed with this id, or it was not written and has since been cleared (a written batch is kept). Read the concepts back with vocab_get_concept, tell the user, and propose anew only with their ok.";
+        }
+        if (code === "status:unauthorized" || code === "status:forbidden") return "→ Tell the user: this server's write access must be checked by its operator.";
         if (["staleText", "selectorNotFound", "selectorAmbiguous", "labelExists", "unknownConcept", "noteNotStructured", "noteExists", "relationExists"].includes(code)) {
           return "→ Read the concepts again with vocab_get_concept, show the user what differs, and ask how to proceed; then propose a corrected batch.";
         }
@@ -89,10 +94,17 @@ export function createSkosProfile(options: SkosProfileOptions = {}): Profile {
           return "→ Propose the batch again with vocab_propose_changes and show it to the user; a new batch needs the user's ok again.";
         }
         if (error.code === "batchUsed") {
-          return "→ Do not apply this batch again. It may have been written earlier, or used up by a refused apply: read the concepts back with vocab_get_concept to see whether its changes are there, and tell the user; propose anew only if they are not.";
+          return "→ Do not apply this batch again. Ask vocab_change_status with this batch id: it says whether it was written, and tell the user; propose anew only if it was not.";
         }
         if (error.code === "notApplied" || error.code === "unknownOutcome") {
-          return "→ The batch may or may not have been written: do not apply it again. Read the concepts back with vocab_get_concept to see what changed, and tell the user.";
+          return "→ The batch may or may not have been written: do not apply it again yet. Ask vocab_change_status with the same batch id, and tell the user what it says.";
+        }
+        if (error.code === "serverError" && toolName === "vocab_propose_changes") return "→ Nothing was written. Retry the dry run later.";
+        if (error.code === "serverError") {
+          return "→ Nothing was written by this request. Ask vocab_change_status with the same batch id before anything else: it says whether the batch can still be applied.";
+        }
+        if (error.code === "statusUnknown") {
+          return "→ Ask vocab_change_status again a little later. Until it answers, do not apply or propose this batch again; reading the concepts back with vocab_get_concept shows what is there now.";
         }
         if (error.code === "unreadableProposal") return "→ Nothing can be applied from this dry run. Tell the user; do not apply its id.";
         if (error.code === "unavailable") return "→ Nothing was written. Retry the dry run later.";

@@ -124,6 +124,8 @@ export interface VocabularyAdapter {
   proposeChanges?(ctx: EngineContext, instance: VocabularyInstance, batch: ChangeBatch): Promise<ChangeProposal>;
   /** Writes exactly the proposed batch with this id, all or nothing. Needs `instance.write`. */
   applyChanges?(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<ChangeResult>;
+  /** What became of a batch this server proposed, as the backend recorded it; writes nothing. Needs `instance.write`. */
+  batchStatus?(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<BatchStatus>;
 }
 
 /** The vocabulary service cannot pick a random concept (the backend has no such call, or this version lacks it). */
@@ -219,6 +221,17 @@ export interface ChangeResult {
   /** The concepts the batch created, by the name the batch gave them. */
   created: { conceptRef: string; conceptId: string; conceptUri?: string }[];
   logId?: string;
+}
+
+/**
+ * A batch as the backend recorded it. `proposed`: nothing written so far; `expired`, `stale` (a conflict at apply) and
+ * `failed` (an error at apply): nothing written; `applied`: written, with `result` as the apply recorded it.
+ */
+export interface BatchStatus {
+  batchId: string;
+  status: "proposed" | "expired" | "stale" | "failed" | "applied";
+  expiresAt?: string;
+  result?: ChangeResult;
 }
 
 /** Changes are not offered for this vocabulary (no write access configured, or the backend has none). */

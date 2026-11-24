@@ -1221,3 +1221,39 @@ report. Revisit only if a portal is seen sending gzip without the header.
 - **Not used**: the API's `info` action. The tools are offered by the deployment's configuration (and a login); a key
   without the right gets 403 `forbidden`, shown as such.
 
+
+## 2026-11-24: The write test service, and a batch's status
+
+- **Why**: tematres-test put the write API on the test instance (`https://vocab.hagstrom.nu/skrivprov/write.php`, a
+  copy of Svada) with a key for this server, and added the `status` action we asked for (their plan, 2.5b).
+- **Service**: `skrivprov` in host-services, private (secret path `SERVICES_SKRIVPROV_PATH`) and behind the core login
+  (`SKRIVPROV_LOGIN_PASSWORD`, `SKRIVPROV_LOGIN_SIGNING_SECRET`; clients sent back only to claude.ai, localhost and
+  127.0.0.1), with its own engine (`SKRIVPROV_*`, allowed host vocab.hagstrom.nu only). The only service that offers
+  the change tools, for one vocabulary, `skrivprov`, read live (no snapshot) with the key `SKRIVPROV_WRITE_KEY`.
+  Without the path, the password or the signing secret it is off (404); without the key it reads only.
+- **Status**: a third change tool, `vocab_change_status`, asks `{ action: "status", batchId }` what became of a batch:
+  `proposed` (not written so far), `applied` (with the apply's result; the vocabulary is then read fresh, as after an
+  apply), `expired`, `stale`, `failed` (not written). Read fail-closed: `ok: true`, the same batch id and a known status
+  are required. Only a refusal about the key or the id (401, 403, 404) is passed on; anything else (a server error, a
+  limit, a code meant for apply, no answer) is "did not say what became of the batch", never "nothing was written". The
+  hints after an unknown outcome or a used batch now send the model to this tool instead of reading back.
+- **`serverError` at apply, changed from 2026-11-23**: a 500 with `serverError` now counts as nothing written by that
+  request, not marked. The caution of 2026-11-23 rested on the MCP not being able to tell a rollback from a lost one;
+  the plan (2.6, and tematres-test's log of 2026-11-24) now separates them: every failure after a commit has begun is
+  `outcomeUnknown`, and `serverError` is given only before it, with the transaction rolled back. The batch may be
+  `failed` or still `proposed` afterwards, which the status tool tells; the hint says to ask it first. A `serverError`
+  on any other 5xx, `outcomeUnknown` and any other 5xx still count as possibly written.
+- **Fields shown**: a backup's name and a log id are shown only in a safe form (file-name and id characters), in JSON as
+  in Markdown.
+- **Tried live**, from Björn's computer through a real MCP client and the real engine (not deployed), 2026-11-24:
+  reading concept 18; a dry run of `replaceNoteText` on it (before, after, change note, an id); a dry run with a wrong
+  `expected` (`staleText`, no id); status `proposed` for the first and `unknownBatch` for an invented id. The two status
+  answers are recorded as fixtures (`tests/fixtures/write/`).
+- **Reviewed**: mcp-reviewer, 2026-11-24: no blocker. A status `applied` promised live reads without marking them; the
+  `serverError` hint also given after a dry run; a rate-limited or busy status call answered "nothing was written";
+  four new behaviours and the login page's language untested; status answers only in shapes the test wrote; this entry
+  and the test table missing; two misleading `wrangler.toml` comments and three stale ones; a backup name or log id
+  passed into JSON unchecked. All fixed; each new behaviour has a test, and eight mutations were each caught.
+- **Not yet**: an apply through the tools (each batch with Björn's ok), the deployment (with Björn's ok), a live check of
+  login and refresh from claude.ai and Claude Code, smoke cases for the change tools, and the frozen surface of the
+  three tools (after the first trial batches, while their text may still change).

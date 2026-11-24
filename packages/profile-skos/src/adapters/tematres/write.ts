@@ -3,7 +3,7 @@
  * the diff and, when nothing stands in the way, a batch id; and an apply that takes only that id.
  *
  * The format is the one agreed for the write API (POST JSON, `Authorization: Bearer`, `{ action: "dryRun", vocabulary,
- * reason, source, operations }` and `{ action: "apply", batchId }`, answers `{ ok, ... }` or `{ ok: false, error: { code,
+ * reason, source, operations }`, `{ action: "apply", batchId }` and `{ action: "status", batchId }`, answers `{ ok, ... }` or `{ ok: false, error: { code,
  * message } }`). TemaTres has no write API upstream; this speaks the one built for the project's own instances.
  *
  * The key is read from the core config at call time and must be 64 hex characters, the API's form (anything else is
@@ -23,6 +23,7 @@ import {
   type ChangeConflict,
   type ChangeProposal,
   type ChangeResult,
+  type BatchStatus,
   type NoteSelector,
   type ProposedChange,
   type VocabularyInstance
@@ -54,10 +55,13 @@ const REFUSALS: Record<string, string> = {
   transactionsUnavailable: "This vocabulary cannot be written safely (its tables do not support transactions); nothing was written.",
   dumpFailed: "The vocabulary service could not take its backup, so it wrote nothing.",
   notInstalled: "Writing is not set up in this vocabulary; nothing was written.",
+  serverError: "The vocabulary service had an unexpected error; this request changed nothing.",
+  statusUnknown: "The vocabulary service did not say what became of the batch.",
   unavailable: "The vocabulary service did not answer the dry run; nothing was written."
 };
 const GENERIC_REFUSAL = "The vocabulary service refused the change.";
 const UNKNOWN_OUTCOME = "The vocabulary service did not say whether the batch was written.";
+const STATUS_UNKNOWN = "The vocabulary service did not say what became of the batch.";
 
 /** Our text for the service's warnings on a proposed change; an unknown one is shown by its code. */
 const WARNINGS: Record<string, string> = {
@@ -83,6 +87,11 @@ const NOTHING_WRITTEN = new Set([
 ]);
 /** Of those, the ones the service answers with 503: before any write, it says. */
 const NOTHING_WRITTEN_5XX = new Set(["transactionsUnavailable", "dumpFailed", "notInstalled"]);
+/**
+ * A 500 with which the service says this request changed nothing (it rolled back). Not `outcomeUnknown`, its 500 after
+ * a commit began. The batch may be `failed` or still `proposed` afterwards; vocab_change_status tells which.
+ */
+const NOTHING_WRITTEN_500 = "serverError";
 
 const MAX_TEXT = 100_000;
 const CODE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
@@ -278,9 +287,11 @@ export async function applyChanges(ctx: EngineContext, instance: VocabularyInsta
   const ok = a.status >= 200 && a.status < 300 && a.obj !== undefined && a.obj.ok !== false;
   const code = ok ? undefined : codeOf(a);
   // A refusal before the transaction: the service says nothing was written. Of the 5xx answers only a 503 with a code
-  // the service gives before writing counts; any other (an unexpected error, an unknown outcome) may follow a write.
+  // the service gives before writing counts, and a 500 `serverError` (rolled back, the plan 2.6); any other (an
+  // unknown outcome, a 5xx from elsewhere) may follow a write.
   // `batchUsed` says nothing was written now, but the batch may have been written before: read fresh after it too.
-  if (code && NOTHING_WRITTEN.has(code) && ((a.status >= 400 && a.status < 500) || (a.status === 503 && NOTHING_WRITTEN_5XX.has(code)))) {
+  if (code && ((NOTHING_WRITTEN.has(code) && ((a.status >= 400 && a.status < 500) || (a.status === 503 && NOTHING_WRITTEN_5XX.has(code))))
+    || (a.status === 500 && code === NOTHING_WRITTEN_500))) {
     if (code === "batchUsed") markWritten(instance.baseUrl);
     throw refusal(a, code);
   }
@@ -292,11 +303,15 @@ export async function applyChanges(ctx: EngineContext, instance: VocabularyInsta
       : UNKNOWN_OUTCOME);
   }
   // Written: the rest is reported as far as it can be read, never turned into a refusal.
-  const o = a.obj!;
+  return resultOf(a.obj!, batchId);
+}
+
+/** A written batch's result, as far as it can be read. */
+function resultOf(o: Record<string, unknown>, batchId: string): ChangeResult {
   const ids = Array.isArray(o.changedConceptIds) ? o.changedConceptIds : [];
-  const dump = typeof o.dump === "string" && o.dump.length <= 300 ? o.dump : undefined;
+  const dump = typeof o.dump === "string" && /^[A-Za-z0-9._-]{1,300}$/.test(o.dump) ? o.dump : undefined;
   const appliedAt = typeof o.appliedAt === "string" && TIME.test(o.appliedAt) ? o.appliedAt : undefined;
-  const logId = typeof o.logId === "string" || typeof o.logId === "number" ? String(o.logId).slice(0, 64) : undefined;
+  const logId = (typeof o.logId === "string" || typeof o.logId === "number") && /^[A-Za-z0-9_-]{1,64}$/.test(String(o.logId)) ? String(o.logId) : undefined;
   return {
     batchId,
     applied: true,
@@ -305,5 +320,45 @@ export async function applyChanges(ctx: EngineContext, instance: VocabularyInsta
     changedConceptIds: ids.map((id) => String(id)).filter((id) => ID.test(id)),
     created: createdOf(o.created),
     ...(logId ? { logId } : {})
+  };
+}
+
+/** The refusals a status call passes on: the key, or the batch id. */
+const STATUS_REFUSALS = new Set(["unauthorized", "forbidden", "unknownBatch"]);
+const STATUSES = new Set<BatchStatus["status"]>(["proposed", "expired", "stale", "failed", "applied"]);
+
+/**
+ * What became of a batch, from the service's record (`status`): writes nothing. Read fail-closed: an answer without a
+ * known status, or for another batch, is an error, never a guess. Of the result only `applied` carries one.
+ */
+export async function batchStatus(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<BatchStatus> {
+  writeAccess(ctx, instance); // no key or no HTTPS: nothing is sent
+  let a: Answer;
+  try {
+    a = await post(ctx, instance, { action: "status", batchId });
+  } catch (error) {
+    if ((error as { name?: string } | null)?.name === "SsrfGuardError") throw error;
+    throw new ChangeRefusedError("statusUnknown", STATUS_UNKNOWN);
+  }
+  if (a.status < 200 || a.status >= 300 || a.obj?.ok === false) {
+    const code = codeOf(a);
+    // Only a refusal about the key or the batch id is passed on; anything else (a server error, a limit, a busy
+    // service, a code meant for apply) says nothing about the batch (the plan, 2.5b): ask again.
+    if (code && STATUS_REFUSALS.has(code) && a.status >= 400 && a.status < 500) throw new ChangeRefusedError(`status:${code}`, refusalText(code));
+    throw new ChangeRefusedError("statusUnknown", STATUS_UNKNOWN + (a.retryAfter ? ` It asks to wait ${a.retryAfter} seconds.` : ""));
+  }
+  const o = a.obj;
+  const status = o?.status;
+  if (!o || o.ok !== true || o.batchId !== batchId || typeof status !== "string" || !STATUSES.has(status as BatchStatus["status"])) {
+    throw new ChangeRefusedError("statusUnknown", STATUS_UNKNOWN);
+  }
+  const expiresAt = typeof o.expiresAt === "string" && TIME.test(o.expiresAt) ? o.expiresAt : undefined;
+  // Written: read this vocabulary fresh for a while, as after an apply (the answer says so).
+  if (status === "applied") markWritten(instance.baseUrl);
+  return {
+    batchId,
+    status: status as BatchStatus["status"],
+    ...(expiresAt ? { expiresAt } : {}),
+    ...(status === "applied" ? { result: resultOf(o, batchId) } : {})
   };
 }
