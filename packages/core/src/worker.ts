@@ -317,7 +317,7 @@ export function createServicesHandler<Env>(options: ServicesHostOptions<Env>) {
 
       const keys = (await loginKeys(service.login, env, service.id))!;
       const urls = loginUrls(request, segment);
-      if (what === "authorize") return authorize(request, keys, service.login.page(request), urls.issuer);
+      if (what === "authorize") return authorize(request, keys, service.login.page(request), urls.issuer, service.login.attemptLimiter?.(env), service.id);
       if (what === "token") return token(request, keys, service.login);
       if (what === "register") return register(request, keys, service.login.redirectHosts);
       // The CORS preflight carries no token; everything else on /mcp needs one.

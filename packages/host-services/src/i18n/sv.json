@@ -16,6 +16,7 @@
   "loginPassword": "Lösenord",
   "loginSubmit": "Logga in",
   "loginWrong": "Fel lösenord.",
+  "loginTooMany": "För många försök från den här adressen. Vänta en minut och försök igen.",
   "loginBadRequest": "Den här inloggningen går inte att använda. Börja om inloggningen från din MCP-klient.",
   "loginSendsTo": "Efter inloggningen skickas du till"
 }

@@ -352,6 +352,25 @@ describe("the write test (skrivprov)", () => {
     expect(asked).toContain(sv.loginTitle);
   });
 
+  it("limits password attempts with the deployment's binding, and says so in the person's language", async () => {
+    const w = await worker();
+    const keys: string[] = [];
+    const env = { ...ENV, SKRIVPROV_LOGIN_LIMITER: { limit: async ({ key }: { key: string }) => { keys.push(key); return { success: false }; } } } as unknown as typeof ENV;
+    const reg = await w.fetch(new Request(`https://s.example/${SKRIVPROV_PATH}/register`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], token_endpoint_auth_method: "none" })
+    }), env);
+    const { client_id } = await reg.json() as { client_id: string };
+    const body = new URLSearchParams({ response_type: "code", client_id, redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+      code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256", state: "s", password: ENV.SKRIVPROV_LOGIN_PASSWORD });
+    const res = await w.fetch(new Request(`https://s.example/${SKRIVPROV_PATH}/authorize`, {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "CF-Connecting-IP": "198.51.100.4", "accept-language": "sv-SE,sv;q=0.9" }, body
+    }), env);
+    expect(res.status).toBe(429);
+    expect(await res.text()).toContain(sv.loginTooMany);
+    expect(keys).toEqual(["skrivprov\u0000198.51.100.4"]);
+    expect(en.loginTooMany).toMatch(/wait a minute/i);
+  });
+
   it("is the only service with the change tools, for skrivprov only, with its key under the SKRIVPROV prefix", () => {
     const names = (setup: typeof VOCAB) => setup.profile.tools.map((t) => t.name);
     expect(names(SKRIVPROV)).toEqual(expect.arrayContaining(["vocab_propose_changes", "vocab_apply_changes", "vocab_change_status", "vocab_get_concept"]));

@@ -3,7 +3,7 @@
  * MCP server, so nothing one service does reaches the other. No `ENGINE_*` alias: a setting names one service.
  */
 
-import { createConfig, createEngine, createMcpServer, pickTelemetryFields, registerProfiles, serverInstructions, type ConfigSource, type Engine, type LoginPageText, type McpServer, type ServiceLogin, type WorkerService, type AnalyticsEngineDataset } from "@ondata-extended/core";
+import { createConfig, createEngine, createMcpServer, pickTelemetryFields, registerProfiles, serverInstructions, type ConfigSource, type Engine, type LoginPageText, type McpServer, type ServiceLogin, type WorkerService, type AnalyticsEngineDataset, type AttemptLimiter } from "@ondata-extended/core";
 import { createEcosystemProfile, PROFILE_VERSION as ECOSYSTEM_VERSION } from "@ondata-extended/profile-ckan-ecosystem";
 import { createSkosProfile, PROFILE_VERSION as VOCAB_VERSION } from "@ondata-extended/profile-skos";
 import type { InstanceEntry, Profile } from "@ondata-extended/profile-contract";
@@ -11,7 +11,7 @@ import type { VocabExt } from "@ondata-extended/profile-skos";
 import en from "./i18n/en.json";
 import sv from "./i18n/sv.json";
 
-export type Env = ConfigSource & { ANALYTICS?: AnalyticsEngineDataset };
+export type Env = ConfigSource & { ANALYTICS?: AnalyticsEngineDataset; SKRIVPROV_LOGIN_LIMITER?: AttemptLimiter };
 
 interface ServiceSetup {
   id: string;
@@ -160,7 +160,7 @@ export function loginPage(request: Request): LoginPageText {
   const q = new URL(request.url).searchParams.get("lang");
   const lang = q === "sv" || q === "en" ? q : /^sv\b/i.test(request.headers.get("accept-language") ?? "") ? "sv" : "en";
   const t = lang === "sv" ? sv : en;
-  return { lang, title: t.loginTitle, intro: t.loginIntro, password: t.loginPassword, submit: t.loginSubmit, wrong: t.loginWrong, badRequest: t.loginBadRequest, sendsTo: t.loginSendsTo };
+  return { lang, title: t.loginTitle, intro: t.loginIntro, password: t.loginPassword, submit: t.loginSubmit, wrong: t.loginWrong, tooMany: t.loginTooMany, badRequest: t.loginBadRequest, sendsTo: t.loginSendsTo };
 }
 
 /**
@@ -172,6 +172,8 @@ export const SKRIVPROV_LOGIN: ServiceLogin<Env> = {
   password: (env) => createConfig(env, ["SKRIVPROV"]).get("LOGIN_PASSWORD"),
   signingSecret: (env) => createConfig(env, ["SKRIVPROV"]).get("LOGIN_SIGNING_SECRET"),
   page: loginPage,
+  // Five password attempts a minute per address (wrangler.toml, [[ratelimits]]).
+  attemptLimiter: (env) => env.SKRIVPROV_LOGIN_LIMITER,
   redirectHosts: ["claude.ai", "localhost", "127.0.0.1"]
 };
 

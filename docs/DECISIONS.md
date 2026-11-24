@@ -1270,3 +1270,22 @@ report. Revisit only if a portal is seen sending gzip without the header.
   run, the model waited for the user's ok, apply, status `applied`, read back.
 - **Not yet**: Claude Code as a client, smoke cases for the change tools, and the frozen surface of the three tools
   (after the first trial batches, while their text may still change).
+
+## 2026-11-24: Secrets: a review, and what changed
+
+- **Review** (read-only, values never shown): every secret is a Worker secret in production and a Keychain entry on
+  the maintainer's machine; none is in the repository or its history (99 commits; gitleaks and a comparison against
+  the real values), none in `[vars]`, and the write key travels only in a header and is never echoed. Level: the
+  platform's secrets, the right level for one maintainer on Cloudflare Workers. Findings: the vocabulary service's
+  secret path had been shown in a chat session (2026-11-18) when its connector address was handed over; the write
+  test's login had no limit on password attempts; no local scanning; no written routine for changing a secret.
+- **Changed**: the vocabulary service's secret path replaced (the old one answers 404); connector addresses are now
+  handed over through the clipboard, never in a chat. The core login takes an optional `attemptLimiter` (structural,
+  so the core names no platform), counted per service and client address before the password is checked, right or
+  wrong, answering 429 with `Retry-After`; a limiter that fails lets nobody past. The services Worker gives the write
+  test a Workers rate limiting binding, five attempts a minute. `.gitignore` covers `.dev.vars.*` and key files; a
+  local gitleaks pre-commit hook, with `.gitleaksignore` for the checked test values; the routine is in
+  [rotation-routine.md](rotation-routine.md).
+- **Not changed**: GitHub's non-provider patterns could not be turned on for a personal repository (part of GitHub
+  Secret Protection); the local hook covers them. A managed secret store (Cloudflare Secrets Store) or revocable
+  tokens wait until more people deploy or more services share secrets.

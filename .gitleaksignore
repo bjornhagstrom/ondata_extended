@@ -1,0 +1,11 @@
+# Known false positives of gitleaks: made-up keys and secrets in tests, and an extension name in public data.
+# Checked 2026-11-24 against the real values; none of them is one. Format: commit:file:rule:line.
+221711527eb68f49b399b45dd3cfc8139975a94f:packages/core/tests/login.test.ts:generic-api-key:19
+221711527eb68f49b399b45dd3cfc8139975a94f:packages/host-services/tests/host.test.ts:generic-api-key:50
+221711527eb68f49b399b45dd3cfc8139975a94f:packages/profile-skos/tests/change-tools.test.ts:generic-api-key:17
+4c35d5ee8add830e23e8ff141c5bc9879562d619:packages/profile-skos/tests/change-tools.test.ts:generic-api-key:15
+766770ee0be93d34a0834436edf929d6286d4d09:packages/host-services/tests/host.test.ts:generic-api-key:50
+83388288b1b8804ae84484df222bc031e0f2253b:packages/core/tests/login.test.ts:generic-api-key:19
+9706fca1ed47cb772132c49888e285027a4c30e1:packages/profile-ckan-ecosystem/data/index.json:generic-api-key:1
+a77a00c8b6b99babd770668f43b5600676f4288f:packages/core/tests/services-handler.test.ts:generic-api-key:13
+a77a00c8b6b99babd770668f43b5600676f4288f:packages/host-services/tests/host.test.ts:generic-api-key:21

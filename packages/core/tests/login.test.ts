@@ -32,7 +32,7 @@ function profile(id: string): Profile {
 const login: ServiceLogin<Env> = {
   password: (env) => env.PW,
   signingSecret: (env) => env.SIGN,
-  page: () => ({ lang: "en", title: "Log in", intro: "Type the password.", password: "Password", submit: "Log in", wrong: "Wrong password.", badRequest: "Broken request.", sendsTo: "After logging in you are sent to" })
+  page: () => ({ lang: "en", title: "Log in", intro: "Type the password.", password: "Password", submit: "Log in", wrong: "Wrong password.", tooMany: "Too many attempts.", badRequest: "Broken request.", sendsTo: "After logging in you are sent to" })
 };
 
 function service(id: string, where: { path: string } | { secretPath: (env: Env) => string | undefined }, withLogin = true): WorkerService<Env> {
@@ -170,6 +170,34 @@ describe("a service behind a login", () => {
     const html = await res.text();
     expect(html).toContain("Wrong password.");
     expect(html).not.toContain(PASSWORD);
+  });
+
+  it("limits password attempts per service and client address, counting right and wrong ones, before the check", async () => {
+    const keys: string[] = [];
+    let allowed = 2;
+    const limiter = { limit: async ({ key }: { key: string }) => { keys.push(key); return { success: allowed-- > 0 }; } };
+    const limited: WorkerService<Env> = { ...service("guarded", { path: "guarded" }), login: { ...login, attemptLimiter: () => limiter } };
+    const h = createServicesHandler<Env>({ services: [limited] });
+    const clientId = await registerClient(h);
+    const attempt = async (password: string) => h.fetch(form("/guarded/authorize", { ...(await authParams(clientId)), password }, { "CF-Connecting-IP": "203.0.113.7" }), ENV);
+    expect((await attempt(`${PASSWORD}x`)).status).toBe(401);
+    expect((await attempt(PASSWORD)).status).toBe(302);
+    // Over the limit even the right password gets no code.
+    const over = await attempt(PASSWORD);
+    expect(over.status).toBe(429);
+    expect(over.headers.get("retry-after")).toBe("60");
+    expect(over.headers.get("location")).toBeNull();
+    expect(await over.text()).toContain("Too many attempts.");
+    expect(keys).toEqual(Array(3).fill("guarded\u0000203.0.113.7"));
+    // Showing the page and a broken request are not attempts.
+    await h.fetch(new Request(`${ORIGIN}/guarded/authorize?${new URLSearchParams(await authParams(clientId))}`), ENV);
+    await h.fetch(form("/guarded/authorize", { password: PASSWORD }), ENV);
+    expect(keys).toHaveLength(3);
+    // A limiter that fails lets nobody past it: the error leaves the handler, and the platform answers it as an error.
+    const broken: WorkerService<Env> = { ...limited, login: { ...login, attemptLimiter: () => ({ limit: async () => { throw new Error("binding down"); } }) } };
+    const hb = createServicesHandler<Env>({ services: [broken] });
+    const cb = await registerClient(hb);
+    await expect(hb.fetch(form("/guarded/authorize", { ...(await authParams(cb)), password: PASSWORD }), ENV)).rejects.toThrow("binding down");
   });
 
   it("shows the login page with the request's parameters escaped and framing forbidden", async () => {

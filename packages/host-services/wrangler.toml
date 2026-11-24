@@ -38,6 +38,14 @@ invocation_logs = false
 [observability.traces]
 enabled = false
 
+# The write test's login: at most five password attempts a minute per client address (src/services.ts, SKRIVPROV_LOGIN).
+# A Workers rate limiting binding; its counts are per Cloudflare location and approximate, which is enough against
+# guessing a password of 32 random characters. namespace_id is any number unique within the account.
+[[ratelimits]]
+name = "SKRIVPROV_LOGIN_LIMITER"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
 [vars]
 # Each service has its own namespace and its own engine: allowed hosts, cache and rate limit are not shared.
 VOCAB_ALLOWED_DOMAINS = "begrepp.hagstrom.nu"
