@@ -187,8 +187,14 @@ describe("a service behind a login", () => {
     expect(over.status).toBe(429);
     expect(over.headers.get("retry-after")).toBe("60");
     expect(over.headers.get("location")).toBeNull();
-    expect(await over.text()).toContain("Too many attempts.");
+    const overPage = await over.text();
+    expect(overPage).toContain("Too many attempts.");
+    expect(overPage).toContain('name="password"');
     expect(keys).toEqual(Array(3).fill("guarded\u0000203.0.113.7"));
+    // Without the platform's address header all such attempts share one count.
+    await h.fetch(form("/guarded/authorize", { ...(await authParams(clientId)), password: PASSWORD }), ENV);
+    expect(keys.at(-1)).toBe("guarded\u0000unknown");
+    keys.pop();
     // Showing the page and a broken request are not attempts.
     await h.fetch(new Request(`${ORIGIN}/guarded/authorize?${new URLSearchParams(await authParams(clientId))}`), ENV);
     await h.fetch(form("/guarded/authorize", { password: PASSWORD }), ENV);
@@ -198,6 +204,17 @@ describe("a service behind a login", () => {
     const hb = createServicesHandler<Env>({ services: [broken] });
     const cb = await registerClient(hb);
     await expect(hb.fetch(form("/guarded/authorize", { ...(await authParams(cb)), password: PASSWORD }), ENV)).rejects.toThrow("binding down");
+  });
+
+  it("is off, with one warning, when its login names an attempt limiter the deployment does not provide", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const unlimited: WorkerService<Env> = { ...service("guarded", { path: "guarded" }), login: { ...login, attemptLimiter: () => undefined } };
+    const h = createServicesHandler<Env>({ services: [unlimited] });
+    for (const path of ["/guarded/register", "/guarded/authorize", "/guarded/mcp"]) {
+      expect((await h.fetch(new Request(`${ORIGIN}${path}`, { method: "POST", body: "{}" }), ENV)).status, path).toBe(404);
+    }
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain("attempt limiter");
   });
 
   it("shows the login page with the request's parameters escaped and framing forbidden", async () => {

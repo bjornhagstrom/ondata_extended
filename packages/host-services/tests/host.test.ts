@@ -47,7 +47,9 @@ const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DO
   VOCAB_RATE_LIMIT_ENABLED: "false", ECOSYSTEM_RATE_LIMIT_ENABLED: "false", TEMATRES_RATE_LIMIT_ENABLED: "false",
   SERVICES_SKRIVPROV_PATH: SKRIVPROV_PATH, SKRIVPROV_ALLOWED_DOMAINS: "vocab.hagstrom.nu", SKRIVPROV_RATE_LIMIT_ENABLED: "false",
   SKRIVPROV_LOGIN_PASSWORD: "a-test-password-of-some-length", SKRIVPROV_LOGIN_SIGNING_SECRET: "s1gn1ng-s3cr3t_for-tests-only-0123456789",
-  SKRIVPROV_WRITE_KEY: "9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0" };
+  SKRIVPROV_WRITE_KEY: "9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0", // made up; gitleaks:allow
+  // The deployment's rate limiting binding for the write test's login; one that always lets through.
+  SKRIVPROV_LOGIN_LIMITER: { limit: async (_: { key: string }) => ({ success: true }) } };
 
 let requested: string[] = [];
 let startedAt: { url: string; at: number }[] = [];
@@ -71,7 +73,7 @@ afterEach(() => {
 });
 
 /** A fresh Worker module, so each test gets new engines (the engines live per isolate). */
-const worker = async () => { vi.resetModules(); return (await import("../src/worker.js")).default as { fetch(r: Request, env: Record<string, string>): Promise<Response> }; };
+const worker = async () => { vi.resetModules(); return (await import("../src/worker.js")).default as { fetch(r: Request, env: Record<string, unknown>): Promise<Response> }; };
 const post = (path: string, body: unknown) => new Request(`https://s.example${path}`, {
   method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify(body)
 });
@@ -322,7 +324,7 @@ describe("the write test (skrivprov)", () => {
 
   it("is off, like an unknown path, without any one of its secrets", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    for (const missing of ["SERVICES_SKRIVPROV_PATH", "SKRIVPROV_LOGIN_PASSWORD", "SKRIVPROV_LOGIN_SIGNING_SECRET"]) {
+    for (const missing of ["SERVICES_SKRIVPROV_PATH", "SKRIVPROV_LOGIN_PASSWORD", "SKRIVPROV_LOGIN_SIGNING_SECRET", "SKRIVPROV_LOGIN_LIMITER"]) {
       const w = await worker();
       expect((await w.fetch(list(), { ...ENV, [missing]: "" })).status, missing).toBe(404);
     }
@@ -355,7 +357,7 @@ describe("the write test (skrivprov)", () => {
   it("limits password attempts with the deployment's binding, and says so in the person's language", async () => {
     const w = await worker();
     const keys: string[] = [];
-    const env = { ...ENV, SKRIVPROV_LOGIN_LIMITER: { limit: async ({ key }: { key: string }) => { keys.push(key); return { success: false }; } } } as unknown as typeof ENV;
+    const env = { ...ENV, SKRIVPROV_LOGIN_LIMITER: { limit: async ({ key }: { key: string }) => { keys.push(key); return { success: false }; } } };
     const reg = await w.fetch(new Request(`https://s.example/${SKRIVPROV_PATH}/register`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: ["https://claude.ai/api/mcp/auth_callback"], token_endpoint_auth_method: "none" })
     }), env);

@@ -33,8 +33,10 @@ export interface LoginPageText {
 }
 
 /**
- * Counts password attempts, e.g. a Workers rate limiting binding: `success` is false once a key has had its share.
- * Structural, so the core names no platform.
+ * Counts password attempts, e.g. a Workers rate limiting binding: `success` is false once a key has had its share. A
+ * structural type, so the core depends on no platform's types. The address it counts by is Cloudflare's
+ * `CF-Connecting-IP` header, which only Cloudflare sets: behind another platform a client could set it, so a limiter
+ * there needs a host that sets the address itself.
  */
 export interface AttemptLimiter {
   limit(options: { key: string }): Promise<{ success: boolean }>;
@@ -58,7 +60,9 @@ export interface ServiceLogin<Env> {
   redirectHosts?: readonly string[];
   /**
    * Limits password attempts per client address (the `CF-Connecting-IP` header), counted before the password is
-   * checked, right or wrong. Without it the only defence against guessing is the password's length.
+   * checked, right or wrong; a refused attempt is told to wait a minute, so the limiter's period is a minute. A login
+   * that names a limiter is off (404) while the limiter is missing from the deployment, never open without it.
+   * Without one the only defence against guessing is the password's length.
    */
   attemptLimiter?(env: Env): AttemptLimiter | undefined;
   /** How long an access token lives, in seconds; default 3600. */
@@ -382,7 +386,8 @@ export async function authorize(request: Request, keys: LoginKeys, text: LoginPa
   if (limiter) {
     const address = request.headers.get("CF-Connecting-IP") ?? "unknown";
     if (!(await limiter.limit({ key: `${serviceId}\0${address}` })).success) {
-      const r = page(text, `<p class="err" role="alert">${esc(text.tooMany)}</p>`, 429);
+      // The form again, so the person can try once the minute has passed.
+      const r = page(text, `<p class="err" role="alert">${esc(text.tooMany)}</p>${loginForm(text, req, false)}`, 429);
       r.headers.set("Retry-After", "60");
       return r;
     }

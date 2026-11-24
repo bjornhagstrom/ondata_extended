@@ -4,19 +4,18 @@
 #   /tematres/mcp             the TemaTres demo (vocabularies on vocabularyserver.com, a lunfardo lexicon on
 #                             terminologias.filo.uba.ar and the project's test instance on vocab.hagstrom.nu),
 #                             public since the issue to its maintainer (listed on / and /health)
-# Set the secret (48 random characters; a Worker secret cannot be read back, so keep the value, e.g. in a password
-# manager, before it goes to Cloudflare):
-#   P=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n'); echo "$P"
-#   printf %s "$P" | npx wrangler secret put SERVICES_VOCAB_PATH -c packages/host-services/wrangler.toml
-# The private URL is then https://<worker>/$P/mcp. To rotate: the same with a new value, then update the connectors.
-# The write test, private and behind a login (/<SERVICES_SKRIVPROV_PATH>/mcp). Four secrets:
-#   SERVICES_SKRIVPROV_PATH        its path, made as SERVICES_VOCAB_PATH above (printed once, to keep for the connector)
-#   SKRIVPROV_LOGIN_PASSWORD       the password typed on the login page (16-1024 characters; keep it, e.g. in the Keychain)
+# Set the secret path (48 random characters), kept in the Keychain and never printed; the connector address goes to the
+# clipboard. A Worker secret cannot be read back. Setting it again with a new value is the rotation; then replace the
+# address in each connector. The commands for every secret: docs/rotation-routine.md.
+# The write test, private and behind a login (/<SERVICES_SKRIVPROV_PATH>/mcp). Four secrets and a binding:
+#   SERVICES_SKRIVPROV_PATH        its path, made as SERVICES_VOCAB_PATH above
+#   SKRIVPROV_LOGIN_PASSWORD       the password typed on the login page (16-1024 characters; kept in the Keychain)
 #   SKRIVPROV_LOGIN_SIGNING_SECRET 32-256 characters of A-Z, a-z, 0-9, "_", "-", never printed and never needed again:
 #     openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n' | npx wrangler secret put SKRIVPROV_LOGIN_SIGNING_SECRET -c packages/host-services/wrangler.toml
 #   SKRIVPROV_WRITE_KEY            the write API's key (64 hex), from the Keychain entry tematres-skrivprov-mcp:
 #     security find-generic-password -s tematres-skrivprov-mcp -w | tr -d '\n' | npx wrangler secret put SKRIVPROV_WRITE_KEY -c packages/host-services/wrangler.toml
-# Without the path, the password or the signing secret the service is off (404); without the key it reads, and the
+#   SKRIVPROV_LOGIN_LIMITER        the rate limiting binding below, five password attempts a minute per address
+# Without the path, the password, the signing secret or the binding the service is off (404); without the key it reads, and the
 # change tools answer that changes are not offered. Changing the password or the signing secret ends every login.
 # Deploy: npm run deploy:services (Björn's ok each time). Deployed 2026-11-15.
 name = "ondata-extended-services"

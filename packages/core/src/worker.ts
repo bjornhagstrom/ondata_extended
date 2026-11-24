@@ -269,6 +269,14 @@ export function createServicesHandler<Env>(options: ServicesHostOptions<Env>) {
 
   /** Whether a service's login is set up; says once, without any value, when it is not. */
   function loginReady(s: WorkerService<Env>, env: Env): boolean {
+    // A login that names an attempt limiter is never served without it: a lost binding must not lift the limit.
+    if (s.login?.attemptLimiter && loginConfigured(s.login, env) && !s.login.attemptLimiter(env)) {
+      if (!warned.has(`limiter:${s.id}`)) {
+        warned.add(`limiter:${s.id}`);
+        console.warn(`Service "${s.id}" is off: its login names an attempt limiter that the deployment does not provide.`);
+      }
+      return false;
+    }
     if (!s.login || loginConfigured(s.login, env)) return true;
     if (!warned.has(`login:${s.id}`)) {
       warned.add(`login:${s.id}`);
