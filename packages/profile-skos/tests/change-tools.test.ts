@@ -109,6 +109,29 @@ describe("the change tools", () => {
     expect(Object.keys(apply.inputSchema.properties ?? {}).sort()).toEqual(["batch_id", "response_format", "vocab"]);
   });
 
+  // Found in a trial round: the model guessed 'CN' for a change note, since the reading tools show types, not codes.
+  it("names the note type codes per writable vocabulary, the instance's own too, and the change note as the service's", async () => {
+    const withOwn = [{ ...WRITABLE[0], ext: { ...WRITABLE[0].ext, noteTypes: { CH: "changeNote" as const, XY: "example" as const, NP: "note" as const, NC: "example" as const } } }, WRITABLE[1]];
+    for (const [vocabs, own] of [[WRITABLE, false], [withOwn, true]] as const) {
+      const propose = (await (await client(vocabs)).listTools()).tools.find((t) => t.name === "vocab_propose_changes")!;
+      const d = propose.description!;
+      expect(d).toContain("Note type codes (noteType) this server knows for 'unesco-test', not all of them necessarily in use: 'DF' definition, 'NA' scope note, 'NH' history note, 'NB' bibliographic note, 'NC' ");
+      expect(d).toContain("'CH' change note: written by the service itself, never named in a change.");
+      expect(d.includes("'XY' example")).toBe(own);
+      // An instance's own meaning of a default code replaces TemaTres's name for it.
+      expect(d).toContain(own ? "'NC' example" : "'NC' cataloguer's note");
+      expect(d).not.toMatch(/'NP'|'CH' change note,|'readonly'/);
+      const props = propose.inputSchema.properties as Record<string, { description?: string }>;
+      expect(props.reason.description).toContain("do not write a reason of your own");
+      expect(props.source.description).toContain("do not write a source of your own");
+      expect(JSON.stringify(props.operations)).toContain("from the list in vocab_propose_changes's description");
+    }
+    // The same list through a vocabulary answered from a snapshot.
+    const withDump = [{ ...WRITABLE[0], ext: { ...WRITABLE[0].ext, snapshotUrl: "https://vocab.hagstrom.nu/dumps/unesco.ndjson" } }];
+    const viaSnapshot = (await (await client(withDump)).listTools()).tools.find((t) => t.name === "vocab_propose_changes")!;
+    expect(viaSnapshot.description).toContain("'NA' scope note");
+  });
+
   it("proposes: posts the batch with the key in the header only, shows before, after and the change note fenced, writes nothing", async () => {
     handler = () => jsonResponse(PROPOSAL);
     const c = await client();
@@ -227,6 +250,12 @@ describe("the change tools", () => {
     const outside = text.replace(/```text[\s\S]*?```/g, "");
     for (const line of outside.split("\n")) expect(line.startsWith("# SYSTEM")).toBe(false);
     expect((text.match(/```/g) ?? []).length % 2).toBe(0);
+  });
+
+  it("names an unknown note type as a cause of an operation the service did not accept", async () => {
+    handler = () => jsonResponse(withConflicts([{ index: 0, code: "invalidOperation", message: "unknown note type" }]));
+    const { text } = await call(await client(), "vocab_propose_changes", BATCH);
+    expect(text).toContain("- Change 1: invalidOperation: The vocabulary service did not accept an operation of the batch (for example a note type code it does not have).");
   });
 
   it("lists conflicts and says the batch cannot be applied", async () => {

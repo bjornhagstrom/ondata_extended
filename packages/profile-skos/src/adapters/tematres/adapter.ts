@@ -15,7 +15,7 @@ import type { EngineContext } from "@ondata-extended/profile-contract";
 import { RandomConceptNotOfferedError, type Concept, type ConceptRef, type Label, type Mapping, type Note, type SchemeInfo, type SearchHit, type VocabularyAdapter, type VocabularyInstance } from "../../model.js";
 import { htmlToText } from "../../text.js";
 import { TTL, TemaTresProtocolError, asBool, asId, asText, callTask, inOrder } from "./client.js";
-import { applyChanges, batchStatus, proposeChanges } from "./write.js";
+import { SERVICE_NOTE_TYPE, applyChanges, batchStatus, proposeChanges } from "./write.js";
 
 const NOTE_TYPES: Record<string, Note["type"]> = {
   DF: "definition",
@@ -24,6 +24,8 @@ const NOTE_TYPES: Record<string, Note["type"]> = {
   NB: "note",
   NC: "note"
 };
+/** TemaTres's names for the default codes that share a SKOS property, so a change can tell them apart. */
+const NOTE_TYPE_LABELS: Record<string, string> = { NB: "bibliographic note", NC: "cataloguer's note" };
 /** Never shown: TemaTres private notes (NP), even if an instance exposes them. */
 const PRIVATE_NOTE_TYPES = new Set(["NP"]);
 
@@ -322,5 +324,18 @@ export const temaTresAdapter: VocabularyAdapter = {
   // Through the instance's write endpoint, when the deployment gives one (write.ts).
   proposeChanges,
   applyChanges,
-  batchStatus
+  batchStatus,
+
+  noteTypeCodes(instance) {
+    const known = { ...NOTE_TYPES, ...(instance.noteTypes ?? {}) };
+    const codes = Object.entries(known).filter(([code]) => !PRIVATE_NOTE_TYPES.has(code)).map(([code, type]) => ({
+      code, type,
+      // The default name only where the instance has not given the code a meaning of its own.
+      ...(Object.hasOwn(NOTE_TYPE_LABELS, code) && !Object.hasOwn(instance.noteTypes ?? {}, code) ? { label: NOTE_TYPE_LABELS[code] } : {})
+    }));
+    return {
+      writable: codes.filter((c) => c.code !== SERVICE_NOTE_TYPE),
+      serviceOnly: [{ code: SERVICE_NOTE_TYPE, type: known[SERVICE_NOTE_TYPE] ?? "changeNote" }]
+    };
+  }
 };

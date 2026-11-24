@@ -126,6 +126,21 @@ export interface VocabularyAdapter {
   applyChanges?(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<ChangeResult>;
   /** What became of a batch this server proposed, as the backend recorded it; writes nothing. Needs `instance.write`. */
   batchStatus?(ctx: EngineContext, instance: VocabularyInstance, batchId: string): Promise<BatchStatus>;
+  /**
+   * The note type codes a change may name for this instance (`writable`), and those the backend writes itself and a
+   * change may not name (`serviceOnly`); the codes this server knows, not a promise that the vocabulary uses each. No
+   * network: the change tools list them in their description, since the reading tools' Markdown shows a note's type,
+   * not its code, and a concept shows no code for a type it has no note of.
+   */
+  noteTypeCodes?(instance: VocabularyInstance): { writable: NoteTypeCode[]; serviceOnly: NoteTypeCode[] };
+}
+
+/** A backend note type code and the SKOS note property it stands for. */
+export interface NoteTypeCode {
+  code: string;
+  type: Note["type"];
+  /** The backend's own name for the type, where the SKOS property alone does not tell two codes apart. */
+  label?: string;
 }
 
 /** The vocabulary service cannot pick a random concept (the backend has no such call, or this version lacks it). */

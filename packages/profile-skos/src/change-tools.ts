@@ -12,7 +12,7 @@
 
 import { z } from "zod";
 import type { EngineContext, InstanceEntry, ToolResult, ToolSpec } from "@ondata-extended/profile-contract";
-import { ChangesNotOfferedError, type BatchStatus, type ChangeOperation, type ChangeProposal, type ChangeResult, type ProposedChange } from "./model.js";
+import { ChangesNotOfferedError, type NoteTypeCode, type BatchStatus, type ChangeOperation, type ChangeProposal, type ChangeResult, type ProposedChange } from "./model.js";
 import { createResolver, type VocabExt } from "./vocabularies.js";
 import { htmlToText } from "./text.js";
 import { FRESH_MS } from "./fresh.js";
@@ -32,13 +32,14 @@ const targetRef = refName.optional().describe("Instead of targetId: the conceptR
 const label = z.string().min(1).max(200).regex(/^[^<>"]+$/, "A label may not contain <, > or \"");
 const place = z.string().min(1).max(500);
 const lang = z.string().regex(/^[a-z]{2,3}(-[A-Za-z0-9]{1,8})*$/).optional().describe("Language tag, e.g. 'en'; default: the vocabulary's");
-const noteType = z.string().regex(/^[A-Za-z]{2,8}$/).describe("The vocabulary's note type code, e.g. 'DF' (definition)");
+const noteType = z.string().regex(/^[A-Za-z]{2,8}$/)
+  .describe("The vocabulary's note type code, from the list in vocab_propose_changes's description (e.g. 'DF' for a definition)");
 const text = z.string().max(MAX_TEXT);
 const status = z.enum(["accepted", "candidate", "rejected"]);
 // For this change instead of the batch's: why, where from, and what the change note names as changed.
 const extras = {
-  reason: z.string().min(1).max(2000).optional().describe("Why this change is made, if not the batch's reason"),
-  source: z.string().min(1).max(2000).optional().describe("Where this change comes from, if not the batch's source"),
+  reason: z.string().min(1).max(2000).optional().describe("Why this change is made, if not the batch's reason; from the user, never your own"),
+  source: z.string().min(1).max(2000).optional().describe("Where this change comes from, if not the batch's source; from the user, never your own"),
   field: z.string().min(1).max(500).optional().describe("What the change note names as changed, instead of the service's own wording")
 };
 const comment = z.string().min(1).max(2000).optional().describe("An extra line for the new concept's change note, as the user's material gives it");
@@ -180,6 +181,26 @@ function proposalHead(ctx: EngineContext, vocab: string, p: ChangeProposal, with
   return md;
 }
 
+/** Readable names of the SKOS note properties, for the list of note type codes. */
+const NOTE_TYPE_NAMES: Record<NoteTypeCode["type"], string> = {
+  definition: "definition", scopeNote: "scope note", historyNote: "history note", editorialNote: "editorial note",
+  changeNote: "change note", example: "example", note: "note"
+};
+
+/**
+ * One sentence per writable vocabulary with the note type codes a change may name: the reading tools' Markdown shows a
+ * note's type, not its code, and no tool shows the code of a type a concept has no note of, so without this list a model
+ * can only guess the code.
+ */
+function noteTypeSentences(vocabs: readonly { id: string; codes?: { writable: NoteTypeCode[]; serviceOnly: NoteTypeCode[] } }[]): string {
+  const name = (c: NoteTypeCode) => `'${c.code}' ${c.label ?? NOTE_TYPE_NAMES[c.type]}`;
+  return vocabs.filter((v) => v.codes?.writable.length).map(({ id, codes }) => {
+    let line = ` Note type codes (noteType) this server knows for '${id}', not all of them necessarily in use: ${codes!.writable.map(name).join(", ")}.`;
+    if (codes!.serviceOnly.length) line += ` ${codes!.serviceOnly.map(name).join(", ")}: written by the service itself, never named in a change.`;
+    return line;
+  }).join("");
+}
+
 function proposalMarkdown(ctx: EngineContext, vocab: string, p: ChangeProposal): string {
   let md = proposalHead(ctx, vocab, p, true);
   for (const c of p.changes) md += changeMarkdown(ctx, c);
@@ -245,6 +266,11 @@ export function createChangeTools(entries: Entries): ToolSpec<any>[] {
   const vocabArg = z.string().min(1).max(500)
     .describe(`The vocabulary to change, by id: ${ids.map((id) => `'${id}'`).join(", ")}. The same vocabulary the concepts were read from.`);
 
+  const noteTypes = noteTypeSentences(ids.map((id) => {
+    const { instance, adapter } = resolver.resolve(id);
+    return { id, ...(adapter.noteTypeCodes ? { codes: adapter.noteTypeCodes(instance) } : {}) };
+  }));
+
   function resolveWritable(vocab: string) {
     const wanted = vocab.trim();
     // By id only: a base URL, even of a writable vocabulary, is not accepted.
@@ -268,11 +294,14 @@ export function createChangeTools(entries: Entries): ToolSpec<any>[] {
       "Read the concepts first with vocab_get_concept, and for a replaced note section pass the text now there as " +
       "`expected`, exactly. Texts are plain text, never HTML; to change words inside a paragraph that has links, use " +
       "replaceNoteText, which keeps them. The service writes a change note for every change itself. Show the result to the user; if it lists conflicts, ask the user how to resolve them before " +
-      "anything else. Applying is a separate step: vocab_apply_changes with the batch id, after the user's explicit ok.",
+      "anything else. Applying is a separate step: vocab_apply_changes with the batch id, after the user's explicit ok." +
+      noteTypes,
     inputSchema: {
       vocab: vocabArg,
-      reason: z.string().min(1).max(2000).describe("Why these changes are made, as the user's material says; written into every change note"),
-      source: z.string().min(1).max(2000).describe("The material the changes come from (title, version, date); written into every change note"),
+      reason: z.string().min(1).max(2000).describe("Why these changes are made, in the user's words or as their material says; " +
+        "written into every change note. If the user has not said why, ask; do not write a reason of your own"),
+      source: z.string().min(1).max(2000).describe("The material the changes come from (title, version, date), as the user gives it; " +
+        "written into every change note. If the user has not named one, ask; do not write a source of your own"),
       operations: operations.describe("The changes, in order; a concept is named by conceptId (a number) or, if this batch creates it, by its conceptRef"),
       response_format: formatArg
     },
