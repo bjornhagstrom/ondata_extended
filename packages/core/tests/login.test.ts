@@ -190,10 +190,10 @@ describe("a service behind a login", () => {
     const overPage = await over.text();
     expect(overPage).toContain("Too many attempts.");
     expect(overPage).toContain('name="password"');
-    expect(keys).toEqual(Array(3).fill("guarded\u0000203.0.113.7"));
+    expect(keys).toEqual(Array(3).fill("guarded:203.0.113.7"));
     // Without the platform's address header all such attempts share one count.
     await h.fetch(form("/guarded/authorize", { ...(await authParams(clientId)), password: PASSWORD }), ENV);
-    expect(keys.at(-1)).toBe("guarded\u0000unknown");
+    expect(keys.at(-1)).toBe("guarded:unknown");
     keys.pop();
     // Showing the page and a broken request are not attempts.
     await h.fetch(new Request(`${ORIGIN}/guarded/authorize?${new URLSearchParams(await authParams(clientId))}`), ENV);
@@ -209,10 +209,13 @@ describe("a service behind a login", () => {
   it("is off, with one warning, when its login names an attempt limiter the deployment does not provide", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const unlimited: WorkerService<Env> = { ...service("guarded", { path: "guarded" }), login: { ...login, attemptLimiter: () => undefined } };
-    const h = createServicesHandler<Env>({ services: [unlimited] });
+    const h = createServicesHandler<Env>({ services: [service("open", { path: "open" }, false), unlimited] });
     for (const path of ["/guarded/register", "/guarded/authorize", "/guarded/mcp"]) {
       expect((await h.fetch(new Request(`${ORIGIN}${path}`, { method: "POST", body: "{}" }), ENV)).status, path).toBe(404);
     }
+    // Nor is it listed as served.
+    const health = (await (await h.fetch(new Request(`${ORIGIN}/health`), ENV)).json()) as { services: { id: string }[] };
+    expect(health.services.map((s) => s.id)).toEqual(["open"]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain("attempt limiter");
   });

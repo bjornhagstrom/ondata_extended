@@ -14,7 +14,8 @@
 #     openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n' | npx wrangler secret put SKRIVPROV_LOGIN_SIGNING_SECRET -c packages/host-services/wrangler.toml
 #   SKRIVPROV_WRITE_KEY            the write API's key (64 hex), from the Keychain entry tematres-skrivprov-mcp:
 #     security find-generic-password -s tematres-skrivprov-mcp -w | tr -d '\n' | npx wrangler secret put SKRIVPROV_WRITE_KEY -c packages/host-services/wrangler.toml
-#   SKRIVPROV_LOGIN_LIMITER        the rate limiting binding below, five password attempts a minute per address
+#   SKRIVPROV_LOGIN_LIMITER        the rate limiting binding below, five password attempts a minute per address (not
+#                                  effective live so far; docs/DECISIONS.md, 2026-11-24)
 # Without the path, the password, the signing secret or the binding the service is off (404); without the key it reads, and the
 # change tools answer that changes are not offered. Changing the password or the signing secret ends every login.
 # Deploy: npm run deploy:services (Björn's ok each time). Deployed 2026-11-15.
@@ -37,9 +38,11 @@ invocation_logs = false
 [observability.traces]
 enabled = false
 
-# The write test's login: at most five password attempts a minute per client address (src/services.ts, SKRIVPROV_LOGIN).
-# A Workers rate limiting binding; its counts are per Cloudflare location and approximate, which is enough against
-# guessing a password of 32 random characters. namespace_id is any number unique within the account.
+# The write test's login: a configured threshold of five password attempts a minute per client address
+# (src/services.ts, SKRIVPROV_LOGIN). A Workers rate limiting binding, whose counts Cloudflare calls approximate, per
+# location and eventually consistent, with no stated bound on how far they may run over; it has refused nothing live so
+# far (docs/DECISIONS.md, 2026-11-24). The defence against guessing is the password's 32 random characters.
+# namespace_id is any number unique within the account.
 [[ratelimits]]
 name = "SKRIVPROV_LOGIN_LIMITER"
 namespace_id = "1001"

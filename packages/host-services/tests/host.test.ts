@@ -47,7 +47,8 @@ const ENV = { VOCAB_ALLOWED_DOMAINS: "begrepp.hagstrom.nu", ECOSYSTEM_ALLOWED_DO
   VOCAB_RATE_LIMIT_ENABLED: "false", ECOSYSTEM_RATE_LIMIT_ENABLED: "false", TEMATRES_RATE_LIMIT_ENABLED: "false",
   SERVICES_SKRIVPROV_PATH: SKRIVPROV_PATH, SKRIVPROV_ALLOWED_DOMAINS: "vocab.hagstrom.nu", SKRIVPROV_RATE_LIMIT_ENABLED: "false",
   SKRIVPROV_LOGIN_PASSWORD: "a-test-password-of-some-length", SKRIVPROV_LOGIN_SIGNING_SECRET: "s1gn1ng-s3cr3t_for-tests-only-0123456789",
-  SKRIVPROV_WRITE_KEY: "9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0", // made up; gitleaks:allow
+  // Made up, and built so that no scanner needs an exception for this line.
+  SKRIVPROV_WRITE_KEY: "9f8e7d6c".repeat(8),
   // The deployment's rate limiting binding for the write test's login; one that always lets through.
   SKRIVPROV_LOGIN_LIMITER: { limit: async (_: { key: string }) => ({ success: true }) } };
 
@@ -369,7 +370,7 @@ describe("the write test (skrivprov)", () => {
     }), env);
     expect(res.status).toBe(429);
     expect(await res.text()).toContain(sv.loginTooMany);
-    expect(keys).toEqual(["skrivprov\u0000198.51.100.4"]);
+    expect(keys).toEqual(["skrivprov:198.51.100.4"]);
     expect(en.loginTooMany).toMatch(/wait a minute/i);
   });
 
