@@ -317,7 +317,8 @@ function resultOf(o: Record<string, unknown>, batchId: string): ChangeResult {
     applied: true,
     ...(appliedAt ? { appliedAt } : {}),
     ...(dump ? { dump } : {}),
-    changedConceptIds: ids.map((id) => String(id)).filter((id) => ID.test(id)),
+    // Once each, whether the service lists a concept per operation or once: the answer counts concepts.
+    changedConceptIds: [...new Set(ids.map((id) => String(id)).filter((id) => ID.test(id)))],
     created: createdOf(o.created),
     ...(logId ? { logId } : {})
   };

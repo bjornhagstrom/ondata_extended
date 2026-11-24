@@ -1256,6 +1256,9 @@ report. Revisit only if a portal is seen sending gzip without the header.
   four new behaviours and the login page's language untested; status answers only in shapes the test wrote; this entry
   and the test table missing; two misleading `wrangler.toml` comments and three stale ones; a backup name or log id
   passed into JSON unchecked. All fixed; each new behaviour has a test, and eight mutations were each caught.
-- **Not yet**: the deployment (with Björn's ok), a live check of
-  login and refresh from claude.ai and Claude Code, smoke cases for the change tools, and the frozen surface of the
-  three tools (after the first trial batches, while their text may still change).
+- **Deployed** 2026-11-24 with Björn's ok: the four secrets set (the path and the password kept in the Keychain), the
+  login, refresh, a wrong password, a foreign redirect and a status call checked live through the Worker; claude.ai
+  added the service as a connector, logged in and answered a status question with the tool. That answer read "Changed
+  concepts: `18`" as eighteen concepts; the line now counts them and names the ids ("1 (id `18`)").
+- **Not yet**: Claude Code as a client, smoke cases for the change tools, and the frozen surface of the three tools
+  (after the first trial batches, while their text may still change).

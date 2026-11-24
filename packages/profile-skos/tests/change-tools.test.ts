@@ -269,6 +269,9 @@ describe("the change tools", () => {
     expect(r.text).toContain("dump-20261122-2031.sql.gz");
     expect(r.text).toContain("`18`, `55`");
     expect(r.text).toContain("- **New concepts**: `nytt` is id `81`\n");
+    expect(r.text).toContain("- **Changed concepts**: 2 (ids `18`, `55`)\n");
+    handler = () => jsonResponse({ ok: true, batchId: ID, applied: true, changedConceptIds: [18, 18, "18"] });
+    expect((await call(c, "vocab_apply_changes", { vocab: "unesco-test", batch_id: ID })).text).toContain("- **Changed concepts**: 1 (id `18`)\n");
     expect(r.text).toContain("2026-11-22T21:04:11Z");
     expect(r.text).not.toContain("`x`");
     expect(mustReadFresh(BASE)).toBe(true);
@@ -521,6 +524,8 @@ describe("the change tools", () => {
     const ap = JSON.parse((await call(c, "vocab_change_status", { vocab: "unesco-test", batch_id: BATCH_A, response_format: "json" })).text);
     expect(ap).toMatchObject({ batchId: BATCH_A, status: "applied", result: { applied: true, appliedAt: "2026-11-24T13:58:44Z", changedConceptIds: ["18"], created: [], logId: "27",
       dump: "skrivapi-skrivprov-20261124-135844-6af21e8e-183fd11d6343938f.sql.gz" } });
+    // One changed concept, named as one, by id (a model once read "18" as eighteen concepts).
+    expect((await call(c, "vocab_change_status", { vocab: "unesco-test", batch_id: BATCH_A })).text).toContain("- **Changed concepts**: 1 (id `18`)\n");
     handler = () => jsonResponse({ ok: true, batchId: ID, status: "proposed", expiresAt: "tomorrow" });
     expect((await call(c, "vocab_change_status", { vocab: "unesco-test", batch_id: ID })).text).not.toContain("Valid until");
 
