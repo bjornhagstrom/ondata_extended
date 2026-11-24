@@ -503,7 +503,7 @@ describe("the change tools", () => {
     const j = JSON.parse((await call(c, "vocab_change_status", { vocab: "unesco-test", batch_id: ID, response_format: "json" })).text);
     expect(j).toMatchObject({ vocab: "unesco-test", batchId: ID, status: "applied", result: { applied: true, changedConceptIds: ["18", "81"], logId: "412" } });
 
-    // The service's own answer for a proposed batch and an unknown id (recorded from vocab.hagstrom.nu/skrivprov/, 2026-11-24).
+    // The service's own answers for a proposed batch, an applied one and an unknown id (recorded from vocab.hagstrom.nu/skrivprov/, 2026-11-24).
     const BATCH_P = "dd24323384dbb7f8e4445e7f2a9d02d6";
     handler = () => new Response(readFileSync(join(WRITE_FIX, "status-proposed.body"), "utf8"), { headers: { "content-type": "application/json" } });
     const p = await call(c, "vocab_change_status", { vocab: "unesco-test", batch_id: BATCH_P });
@@ -516,6 +516,11 @@ describe("the change tools", () => {
     expect(u.isError).toBe(true);
     expect(u.text).toContain("no record of this batch");
     expect(u.text).not.toContain("Unknown batchId");
+    const BATCH_A = "6af21e8e8e94df23db0c65c60cca9685";
+    handler = () => new Response(readFileSync(join(WRITE_FIX, "status-applied.body"), "utf8"), { headers: { "content-type": "application/json" } });
+    const ap = JSON.parse((await call(c, "vocab_change_status", { vocab: "unesco-test", batch_id: BATCH_A, response_format: "json" })).text);
+    expect(ap).toMatchObject({ batchId: BATCH_A, status: "applied", result: { applied: true, appliedAt: "2026-11-24T13:58:44Z", changedConceptIds: ["18"], created: [], logId: "27",
+      dump: "skrivapi-skrivprov-20261124-135844-6af21e8e-183fd11d6343938f.sql.gz" } });
     handler = () => jsonResponse({ ok: true, batchId: ID, status: "proposed", expiresAt: "tomorrow" });
     expect((await call(c, "vocab_change_status", { vocab: "unesco-test", batch_id: ID })).text).not.toContain("Valid until");
 

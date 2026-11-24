@@ -1247,13 +1247,15 @@ report. Revisit only if a portal is seen sending gzip without the header.
   in Markdown.
 - **Tried live**, from Björn's computer through a real MCP client and the real engine (not deployed), 2026-11-24:
   reading concept 18; a dry run of `replaceNoteText` on it (before, after, change note, an id); a dry run with a wrong
-  `expected` (`staleText`, no id); status `proposed` for the first and `unknownBatch` for an invented id. The two status
+  `expected` (`staleText`, no id); status `proposed` for the first and `unknownBatch` for an invented id; with Björn's
+  ok, that batch applied (backup, log entry, concept 18 changed, the change note written by the service), status
+  `applied`, a second apply refused as `batchUsed`, and the concept read back with the new text. The three status
   answers are recorded as fixtures (`tests/fixtures/write/`).
 - **Reviewed**: mcp-reviewer, 2026-11-24: no blocker. A status `applied` promised live reads without marking them; the
   `serverError` hint also given after a dry run; a rate-limited or busy status call answered "nothing was written";
   four new behaviours and the login page's language untested; status answers only in shapes the test wrote; this entry
   and the test table missing; two misleading `wrangler.toml` comments and three stale ones; a backup name or log id
   passed into JSON unchecked. All fixed; each new behaviour has a test, and eight mutations were each caught.
-- **Not yet**: an apply through the tools (each batch with Björn's ok), the deployment (with Björn's ok), a live check of
+- **Not yet**: the deployment (with Björn's ok), a live check of
   login and refresh from claude.ai and Claude Code, smoke cases for the change tools, and the frozen surface of the
   three tools (after the first trial batches, while their text may still change).
