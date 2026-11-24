@@ -211,7 +211,9 @@ function resultMarkdown(ctx: EngineContext, vocab: string, r: ChangeResult): str
   if (r.created.length) {
     md += `- **New concepts**: ${r.created.map((c) => `\`${o.sanitizeInline(c.conceptRef)}\` is id \`${o.sanitizeInline(c.conceptId)}\``).join(", ")}\n`;
   }
-  md += `- **Changed concepts**: ${r.changedConceptIds.length ? r.changedConceptIds.map((id) => `\`${o.sanitizeInline(id)}\``).join(", ") : "none reported"}\n`;
+  // Counted and named by id, so a single id (e.g. 18) is never read as a number of concepts.
+  const n = r.changedConceptIds.length;
+  md += `- **Changed concepts**: ${n ? `${n} (${n === 1 ? "id" : "ids"} ${r.changedConceptIds.map((id) => `\`${o.sanitizeInline(id)}\``).join(", ")})` : "none reported"}\n`;
   md += `\nRead them back with vocab_get_concept to check the result; for the next ${Math.round(FRESH_MS / 60_000)} minutes this ` +
     "server reads this vocabulary live from its service.\n";
   return md;
