@@ -477,6 +477,7 @@ export function withSnapshot(live: VocabularyAdapter, url: string): VocabularyAd
     // Changes go to the live service; the snapshot only reads.
     ...(live.proposeChanges ? { proposeChanges: live.proposeChanges.bind(live) } : {}),
     ...(live.applyChanges ? { applyChanges: live.applyChanges.bind(live) } : {}),
-    ...(live.batchStatus ? { batchStatus: live.batchStatus.bind(live) } : {})
+    ...(live.batchStatus ? { batchStatus: live.batchStatus.bind(live) } : {}),
+    ...(live.noteTypeCodes ? { noteTypeCodes: live.noteTypeCodes.bind(live) } : {})
   };
 }

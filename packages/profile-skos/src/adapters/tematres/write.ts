@@ -42,7 +42,7 @@ const REFUSALS: Record<string, string> = {
   noteNotStructured: "A note the batch changes does not follow the heading-and-paragraph form, so no place in it can be named.",
   noteExists: "The concept already has a note of that type and language.",
   relationExists: "A relation the batch adds already exists.",
-  invalidOperation: "The vocabulary service did not accept an operation of the batch.",
+  invalidOperation: "The vocabulary service did not accept an operation of the batch (for example a note type code it does not have).",
   unknownBatch: "No proposed batch has this id.",
   batchUsed: "The proposed batch has already been applied or used up.",
   batchExpired: "The proposed batch has expired.",
@@ -67,6 +67,9 @@ const STATUS_UNKNOWN = "The vocabulary service did not say what became of the ba
 const WARNINGS: Record<string, string> = {
   linkRemoved: "a link in the replaced text is removed"
 };
+
+/** The write API writes a change note of this type for every change itself, and refuses a change that names it. */
+export const SERVICE_NOTE_TYPE = "CH";
 
 /** Our text for a code from the service. */
 export function refusalText(code: string): string {

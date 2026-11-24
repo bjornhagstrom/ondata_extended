@@ -1260,5 +1260,13 @@ report. Revisit only if a portal is seen sending gzip without the header.
   login, refresh, a wrong password, a foreign redirect and a status call checked live through the Worker; claude.ai
   added the service as a connector, logged in and answered a status question with the tool. That answer read "Changed
   concepts: `18`" as eighteen concepts; the line now counts them and names the ids ("1 (id `18`)").
+- **First trial round in claude.ai** (2026-11-24): asked to add a change note, the model guessed the code `CN` and the
+  dry run gave only `invalidOperation`. The reading tools' Markdown shows a note's type, not its code, and a change note
+  (`CH`) is written by the service itself and refused in a change. So the adapter now names the codes it knows per
+  instance (`noteTypeCodes`: its defaults and the instance's own, private ones left out, the service's change note apart,
+  TemaTres's own names where two codes share a SKOS property, as `NB` and `NC`), and `vocab_propose_changes` lists them in
+  its description; the refusal text names an unknown note type as an example. The model also wrote a reason and a source
+  of its own when the user gave none; `reason` and `source` now say to ask. The round then went through with `NA`: dry
+  run, the model waited for the user's ok, apply, status `applied`, read back.
 - **Not yet**: Claude Code as a client, smoke cases for the change tools, and the frozen surface of the three tools
   (after the first trial batches, while their text may still change).
