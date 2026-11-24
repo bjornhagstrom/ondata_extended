@@ -4,6 +4,10 @@ coverage/
 .env
 .env.*
 .dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
 .wrangler/
 *.log
 .DS_Store

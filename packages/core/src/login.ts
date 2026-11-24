@@ -24,10 +24,22 @@ export interface LoginPageText {
   submit: string;
   /** Shown after a wrong password. */
   wrong: string;
+  /** Shown when too many passwords have been tried from the same address; the person waits a minute. */
+  tooMany: string;
   /** Shown when the request to log in is broken (unknown client, a redirect address the client did not register). */
   badRequest: string;
   /** Before the host the person is sent to after logging in, e.g. "After logging in you are sent to". */
   sendsTo: string;
+}
+
+/**
+ * Counts password attempts, e.g. a Workers rate limiting binding: `success` is false once a key has had its share. A
+ * structural type, so the core depends on no platform's types. The address it counts by is Cloudflare's
+ * `CF-Connecting-IP` header, which only Cloudflare sets: behind another platform a client could set it, so a limiter
+ * there needs a host that sets the address itself.
+ */
+export interface AttemptLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 export interface ServiceLogin<Env> {
@@ -46,6 +58,13 @@ export interface ServiceLogin<Env> {
    * login page's naming of the host is the only check.
    */
   redirectHosts?: readonly string[];
+  /**
+   * Limits password attempts per client address (the `CF-Connecting-IP` header), counted before the password is
+   * checked, right or wrong; a refused attempt is told to wait a minute, so the limiter's period is a minute. A login
+   * that names a limiter is off (404) while the limiter is missing from the deployment, never open without it.
+   * Without one the only defence against guessing is the password's length.
+   */
+  attemptLimiter?(env: Env): AttemptLimiter | undefined;
   /** How long an access token lives, in seconds; default 3600. */
   accessSeconds?: number;
   /** How long a refresh token lives unused, in seconds; default 90 days. Each refresh starts it over. */
@@ -350,7 +369,7 @@ function loginForm(text: LoginPageText, req: AuthRequest, wrong: boolean): strin
 }
 
 /** GET shows the login page, POST checks the password and sends the person back to the client with a code. */
-export async function authorize(request: Request, keys: LoginKeys, text: LoginPageText, issuer: string): Promise<Response> {
+export async function authorize(request: Request, keys: LoginKeys, text: LoginPageText, issuer: string, limiter?: AttemptLimiter, serviceId = ""): Promise<Response> {
   const redirect = (to: string) => new Response(null, { status: 302, headers: { Location: to, ...NO_STORE, "Referrer-Policy": "no-referrer" } });
   const broken = () => page(text, `<p class="err">${esc(text.badRequest)}</p>`, 400);
   if (request.method === "GET") {
@@ -362,6 +381,17 @@ export async function authorize(request: Request, keys: LoginKeys, text: LoginPa
   const form = new URLSearchParams(body ?? "");
   const req = body === undefined ? undefined : await checkAuthRequest(form, keys);
   if (!req) return broken();
+  // Counted before the check, so a guess costs a share whether it is right or not. A limiter that fails is an error,
+  // never a way past the limit.
+  if (limiter) {
+    const address = request.headers.get("CF-Connecting-IP") ?? "unknown";
+    if (!(await limiter.limit({ key: `${serviceId}\0${address}` })).success) {
+      // The form again, so the person can try once the minute has passed.
+      const r = page(text, `<p class="err" role="alert">${esc(text.tooMany)}</p>${loginForm(text, req, false)}`, 429);
+      r.headers.set("Retry-After", "60");
+      return r;
+    }
+  }
   if (!(await keys.isPassword(form.get("password") ?? ""))) return page(text, loginForm(text, req, true), 401);
   const code = await keys.sign({ t: "code", cid: req.clientId, ru: req.redirectUri, cc: req.codeChallenge, exp: now() + CODE_SECONDS });
   const back = new URL(req.redirectUri);

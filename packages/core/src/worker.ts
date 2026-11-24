@@ -269,6 +269,14 @@ export function createServicesHandler<Env>(options: ServicesHostOptions<Env>) {
 
   /** Whether a service's login is set up; says once, without any value, when it is not. */
   function loginReady(s: WorkerService<Env>, env: Env): boolean {
+    // A login that names an attempt limiter is never served without it: a lost binding must not lift the limit.
+    if (s.login?.attemptLimiter && loginConfigured(s.login, env) && !s.login.attemptLimiter(env)) {
+      if (!warned.has(`limiter:${s.id}`)) {
+        warned.add(`limiter:${s.id}`);
+        console.warn(`Service "${s.id}" is off: its login names an attempt limiter that the deployment does not provide.`);
+      }
+      return false;
+    }
     if (!s.login || loginConfigured(s.login, env)) return true;
     if (!warned.has(`login:${s.id}`)) {
       warned.add(`login:${s.id}`);
@@ -317,7 +325,7 @@ export function createServicesHandler<Env>(options: ServicesHostOptions<Env>) {
 
       const keys = (await loginKeys(service.login, env, service.id))!;
       const urls = loginUrls(request, segment);
-      if (what === "authorize") return authorize(request, keys, service.login.page(request), urls.issuer);
+      if (what === "authorize") return authorize(request, keys, service.login.page(request), urls.issuer, service.login.attemptLimiter?.(env), service.id);
       if (what === "token") return token(request, keys, service.login);
       if (what === "register") return register(request, keys, service.login.redirectHosts);
       // The CORS preflight carries no token; everything else on /mcp needs one.

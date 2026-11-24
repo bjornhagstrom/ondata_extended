@@ -100,7 +100,7 @@ export {
   type ServicesHostOptions,
   type AnalyticsEngineDataset
 } from "./worker.js";
-export { type ServiceLogin, type LoginPageText } from "./login.js";
+export { type ServiceLogin, type LoginPageText, type AttemptLimiter } from "./login.js";
 export {
   validateSelectQuery,
   injectLimit,

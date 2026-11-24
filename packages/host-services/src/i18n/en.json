@@ -16,6 +16,7 @@
   "loginPassword": "Password",
   "loginSubmit": "Log in",
   "loginWrong": "Wrong password.",
+  "loginTooMany": "Too many attempts from this address. Wait a minute and try again.",
   "loginBadRequest": "This login request cannot be used. Start the login again from your MCP client.",
   "loginSendsTo": "After logging in you are sent to"
 }
