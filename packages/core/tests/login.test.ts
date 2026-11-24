@@ -190,10 +190,10 @@ describe("a service behind a login", () => {
     const overPage = await over.text();
     expect(overPage).toContain("Too many attempts.");
     expect(overPage).toContain('name="password"');
-    expect(keys).toEqual(Array(3).fill("guarded\u0000203.0.113.7"));
+    expect(keys).toEqual(Array(3).fill("guarded:203.0.113.7"));
     // Without the platform's address header all such attempts share one count.
     await h.fetch(form("/guarded/authorize", { ...(await authParams(clientId)), password: PASSWORD }), ENV);
-    expect(keys.at(-1)).toBe("guarded\u0000unknown");
+    expect(keys.at(-1)).toBe("guarded:unknown");
     keys.pop();
     // Showing the page and a broken request are not attempts.
     await h.fetch(new Request(`${ORIGIN}/guarded/authorize?${new URLSearchParams(await authParams(clientId))}`), ENV);

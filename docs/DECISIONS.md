@@ -1286,6 +1286,11 @@ report. Revisit only if a portal is seen sending gzip without the header.
   test a Workers rate limiting binding, five attempts a minute. `.gitignore` covers `.dev.vars.*` and key files; a
   local gitleaks pre-commit hook, with `.gitleaksignore` for the checked test values; the routine is in
   [rotation-routine.md](rotation-routine.md).
+- **Deployed and tried** 2026-11-24 with Björn's ok: the services Worker runs the limit, and the vocabulary service
+  answers at its new path. The limit did not hold live: 32 wrong passwords from one address over a few minutes all got
+  401, while the same Worker under the local simulator gave 429 after five. Cloudflare calls the binding approximate,
+  but not to that degree. The key held a NUL between the service id and the address, the suspected cause; it now uses
+  ":" (a service id is lower-case letters, digits and "-").
 - **Not changed**: GitHub's non-provider patterns could not be turned on for a personal repository (part of GitHub
   Secret Protection); the local hook covers them. A managed secret store (Cloudflare Secrets Store) or revocable
   tokens wait until more people deploy or more services share secrets.

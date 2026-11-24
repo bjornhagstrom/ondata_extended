@@ -369,7 +369,7 @@ describe("the write test (skrivprov)", () => {
     }), env);
     expect(res.status).toBe(429);
     expect(await res.text()).toContain(sv.loginTooMany);
-    expect(keys).toEqual(["skrivprov\u0000198.51.100.4"]);
+    expect(keys).toEqual(["skrivprov:198.51.100.4"]);
     expect(en.loginTooMany).toMatch(/wait a minute/i);
   });
 
