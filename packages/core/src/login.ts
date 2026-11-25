@@ -385,9 +385,8 @@ export async function authorize(request: Request, keys: LoginKeys, text: LoginPa
   // never a way past the limit; one that wrongly says yes is not caught here, so the limit is tried live.
   if (limiter) {
     const address = request.headers.get("CF-Connecting-IP") ?? "unknown";
-    // Printable characters only, the safer form for a key. (Deployed, the limiter refused nothing with a NUL here, nor
-    // with ":"; docs/DECISIONS.md, 2026-11-24.) A service id has no ":", so the key stays unambiguous with an IPv6
-    // address after it.
+    // Printable characters only, the safer form for a key. A service id has no ":", so the key stays unambiguous with
+    // an IPv6 address after it. How exactly a deployed limiter counts: docs/DECISIONS.md, 2026-11-24.
     if (!(await limiter.limit({ key: `${serviceId}:${address}` })).success) {
       // The form again, so the person can try once the minute has passed.
       const r = page(text, `<p class="err" role="alert">${esc(text.tooMany)}</p>${loginForm(text, req, false)}`, 429);

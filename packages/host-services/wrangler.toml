@@ -40,8 +40,8 @@ enabled = false
 
 # The write test's login: a configured threshold of five password attempts a minute per client address
 # (src/services.ts, SKRIVPROV_LOGIN). A Workers rate limiting binding, whose counts Cloudflare calls approximate, per
-# location and eventually consistent, with no stated bound on how far they may run over; it has refused nothing live so
-# far (docs/DECISIONS.md, 2026-11-24). The defence against guessing is the password's 32 random characters.
+# location and eventually consistent: exact on one connection, loose across many (measured, docs/DECISIONS.md,
+# 2026-11-24). The main defence against guessing is the password's 32 random characters.
 # namespace_id is any number unique within the account.
 [[ratelimits]]
 name = "SKRIVPROV_LOGIN_LIMITER"
